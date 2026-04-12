@@ -6,8 +6,8 @@ Last updated: 2026-04-12
 
 ## Current Sprint
 
-**Sprint 3 — Milestone 3: Conversation UI + Orchestrator Mode**
-Status: ✅ Complete — You can now open a project, send messages to the AI, and see responses stream back in real time
+**Sprint 7 — Milestone 6: DevOps Subsystem + Templates**
+Status: ✅ Complete — DevOps templates, GitHub Actions monitoring, Coolify deploy, and health checks
 
 ---
 
@@ -18,7 +18,10 @@ Status: ✅ Complete — You can now open a project, send messages to the AI, an
 - Sprint 1: All documentation files and repo structure created
 - Milestone 1: Electron app launches, GitHub OAuth sign-in works, project list screen works
 - Milestone 2: Mode system with 6 default Modes, OpenRouter API key management, model picker, bottom status bar
-- **Milestone 3: Conversation UI + Orchestrator Mode** — 5-panel layout, chat with AI, streaming responses, conversation history
+- Milestone 3: Conversation UI + Orchestrator Mode — 5-panel layout, chat with AI, streaming responses, conversation history
+- Milestone 4: Cloud Sync + Real-time + Device Ownership
+- **Milestone 5: Local Tooling (Files, Terminal, Git, SSH)** — File reading/writing, terminal commands, git status, SSH management
+- **Milestone 6: DevOps Subsystem + Templates** — DevOps templates, GitHub Actions monitoring, Coolify deploy, health checks
 
 **What is a "Mode"?**
 A Mode is like a different AI personality with a specific job. Think of it like having 6 different specialists on your team:
@@ -35,7 +38,7 @@ Each Mode has its own "soul" (detailed instructions) that you can edit, and you 
 OpenRouter is the service that provides the AI models (like Claude, Gemini, etc.). You need an API key from OpenRouter to use AI features. The key is stored securely in your Windows Credential Manager — never in plain text.
 
 **Next step:**
-- Milestone 4: Add tool calling so the AI can actually read and write files
+- Milestone 7: AI tool calling — the AI can actually use these tools to read/write files, run commands, and manage git
 
 ---
 
@@ -52,13 +55,29 @@ OpenRouter is the service that provides the AI models (like Claude, Gemini, etc.
 - After entering the API key, a list of available AI models loads with pricing
 - You can assign different models to different Modes
 - A bottom status bar shows the current Mode and assigned model
-- **NEW:** Clicking a project opens the main workspace with a 5-panel layout
-- **NEW:** The workspace has: a conversation list sidebar, a chat area, an execution stream (left), and an editor placeholder (right)
-- **NEW:** You can type a message and send it to the Orchestrator AI
-- **NEW:** The AI response streams back token by token (you see it appear in real time)
-- **NEW:** Conversation history is saved and shows previous messages
-- **NEW:** You can create multiple conversations within the same project
-- **NEW:** A "← Back to Projects" button returns to the project list
+- Clicking a project opens the main workspace with a 5-panel layout
+- The workspace has: a conversation list sidebar, a chat area, an execution stream (left), and an editor panel (right)
+- You can type a message and send it to the Orchestrator AI
+- The AI response streams back token by token (you see it appear in real time)
+- Conversation history is saved and shows previous messages
+- You can create multiple conversations within the same project
+- A "← Back to Projects" button returns to the project list
+- **NEW:** The right panel now shows file contents when a file is opened, with syntax-highlighted code view
+- **NEW:** The right panel shows diffs (green for additions, red for deletions) when the AI proposes code changes
+- **NEW:** The bottom panel has a Terminal tab showing command output streaming in real time
+- **NEW:** The bottom panel has a Git tab showing your current branch, staged files, modified files, and untracked files
+- **NEW:** A "🔑 SSH" button in the project sidebar opens the SSH management screen
+- **NEW:** The SSH screen discovers hosts from your `~/.ssh/config` file and lists your SSH keys
+- **NEW:** You can test SSH connections from the app — it shows ✅ with latency or ❌ with the error
+- **NEW:** A "⚙️ DevOps" button in the project sidebar opens the DevOps management screen
+- **NEW:** Two DevOps templates appear: "Standard" (feature branch + PR workflow) and "Albert" (push-to-main workflow)
+- **NEW:** Each template has a plain-English explanation of "what happens when you push"
+- **NEW:** You can enter and save your GitHub token securely (stored in Windows Credential Manager)
+- **NEW:** GitHub Actions workflow runs appear in a table with status icons (✅ ❌ 🔄)
+- **NEW:** You can enter and save your Coolify API key and base URL securely
+- **NEW:** A "Deploy Now" button triggers a Coolify deploy
+- **NEW:** A health check runs against any URL and shows ✅ Healthy, ⚠️ Unhealthy, or 🔴 Unreachable with response time
+- **NEW:** Deploy run history shows timestamp, status, triggered by, and commit SHA
 
 ---
 
@@ -116,7 +135,7 @@ After that, you'll see a list of available AI models with pricing and can assign
 
 ## Sync Status Summary
 
-Not applicable yet — cloud sync will be tested in Milestone 4.
+Cloud sync was implemented in Milestone 4. The sync indicator in the top bar shows 🟢 Synced, 🟡 Syncing, or 🔴 Offline.
 
 ---
 

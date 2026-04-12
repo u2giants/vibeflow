@@ -84,6 +84,38 @@ Every agent must update this file when work begins and when work ends.
 
 ---
 
+### Sprint 6 — Milestone 5: Local Tooling (Files, Terminal, Git, SSH) (Complete)
+- File service: read, write, list, exists, diff generation with path traversal protection
+- Terminal service: run commands with streaming output, kill processes
+- Git service: status (branch, staged/unstaged/untracked), diff, commit, push, log
+- SSH service: discover hosts from ~/.ssh/config, discover keys, test connections
+- Right panel: shows file contents with monospace font, diff view with green/red highlighting
+- Bottom panel: Terminal tab (streaming command output) and Git tab (branch + changed files)
+- SSH screen: discovered hosts list with test connection buttons, SSH keys list
+- All IPC calls typed with ToolingChannel interface
+- Every tool action runs in Electron main process for security
+
+**Current Step:** Milestone 5 complete. Ready for Milestone 6 (DevOps Subsystem + Templates).
+
+---
+
+### Sprint 7 — Milestone 6: DevOps Subsystem + Templates (Complete)
+- DevOps templates: Standard (feature branch + PR) and Albert (push-to-main) defined with plain-English explanations
+- GitHub Actions client: fetches workflow runs from GitHub API with status, branch, commit SHA
+- Coolify client: deploy, restart, stop operations via Coolify REST API
+- Health check: URL-based health monitoring with response time and status
+- DevOps types: ProjectDevOpsConfig and DeployRun added to shared entities
+- DevOps IPC: 11 channels (listTemplates, getProjectConfig, saveProjectConfig, setGitHubToken, setCoolifyApiKey, listWorkflowRuns, deploy, restart, stop, healthCheck, listDeployRuns)
+- Local SQLite: project_devops_configs and deploy_runs tables with full CRUD
+- DevOpsScreen: 4-tab UI (Overview, GitHub Actions, Deploy, Health) with template selector sidebar
+- Secrets stored via keytar (Windows Credential Manager) — GitHub token and Coolify API key
+- All API calls run in Electron main process via IPC — no keys in renderer
+- DevOps button added to ProjectScreen sidebar
+
+**Current Step:** Milestone 6 complete. Ready for Milestone 7 (AI Tool Calling).
+
+---
+
 ## BLOCKERS
 
 **Resolved:** Windows EPERM file lock on `node_modules/electron-vite` — use `pnpm install --ignore-scripts` then manually run `node node_modules/electron/install.js`.
@@ -99,5 +131,5 @@ Every agent must update this file when work begins and when work ends.
 ## LAST UPDATED
 
 - Date: 2026-04-12
-- Updated by: Builder (Milestone 4 implementation complete — Cloud Sync, Real-time, Device Ownership)
-- Next update due: After Supabase migration is run and smoke testing passes
+- Updated by: Builder (Milestone 6 implementation complete — DevOps Subsystem + Templates)
+- Next update due: After Milestone 7 (AI Tool Calling) implementation

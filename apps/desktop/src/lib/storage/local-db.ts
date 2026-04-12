@@ -3,7 +3,7 @@
 import Database from 'better-sqlite3';
 import * as path from 'path';
 import * as fs from 'fs';
-import type { Mode, ApprovalPolicy, ConversationThread, Message, RunState } from '../shared-types';
+import type { Mode, ApprovalPolicy, ConversationThread, Message, RunState, ProjectDevOpsConfig, DeployRun } from '../shared-types';
 
 // Minimal Project type (mirrors shared-types)
 interface Project {
@@ -94,6 +94,30 @@ export class LocalDb {
         mode_id TEXT,
         model_id TEXT,
         created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS project_devops_configs (
+        project_id TEXT PRIMARY KEY,
+        template_id TEXT NOT NULL,
+        github_owner TEXT NOT NULL DEFAULT '',
+        github_repo TEXT NOT NULL DEFAULT '',
+        coolify_app_id TEXT NOT NULL DEFAULT '',
+        coolify_base_url TEXT NOT NULL DEFAULT '',
+        image_name TEXT NOT NULL DEFAULT '',
+        health_check_url TEXT NOT NULL DEFAULT '',
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS deploy_runs (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        template_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        commit_sha TEXT,
+        triggered_by TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        completed_at TEXT,
+        error TEXT
       );
     `);
   }
@@ -328,6 +352,81 @@ export class LocalDb {
     stmt.run(msg.id, msg.conversationId, msg.role, msg.content, msg.modeId, msg.modelId, msg.createdAt);
   }
 
+  // ── DevOps Config CRUD ────────────────────────────────────────────
+
+  getProjectDevOpsConfig(projectId: string): ProjectDevOpsConfig | null {
+    if (!this.db) return null;
+    const stmt = this.db.prepare('SELECT * FROM project_devops_configs WHERE project_id = ?');
+    const row = stmt.get(projectId) as Record<string, unknown> | undefined;
+    return row ? rowToProjectDevOpsConfig(row) : null;
+  }
+
+  saveProjectDevOpsConfig(config: ProjectDevOpsConfig): void {
+    if (!this.db) return;
+    const stmt = this.db.prepare(
+      `INSERT OR REPLACE INTO project_devops_configs
+       (project_id, template_id, github_owner, github_repo, coolify_app_id, coolify_base_url, image_name, health_check_url, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    stmt.run(
+      config.projectId,
+      config.templateId,
+      config.githubOwner,
+      config.githubRepo,
+      config.coolifyAppId,
+      config.coolifyBaseUrl,
+      config.imageName,
+      config.healthCheckUrl,
+      config.updatedAt
+    );
+  }
+
+  // ── Deploy Run CRUD ───────────────────────────────────────────────
+
+  insertDeployRun(run: DeployRun): void {
+    if (!this.db) return;
+    const stmt = this.db.prepare(
+      `INSERT INTO deploy_runs (id, project_id, template_id, status, commit_sha, triggered_by, started_at, completed_at, error)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    stmt.run(
+      run.id,
+      run.projectId,
+      run.templateId,
+      run.status,
+      run.commitSha,
+      run.triggeredBy,
+      run.startedAt,
+      run.completedAt,
+      run.error
+    );
+  }
+
+  updateDeployRun(run: DeployRun): void {
+    if (!this.db) return;
+    const stmt = this.db.prepare(
+      `UPDATE deploy_runs SET status = ?, commit_sha = ?, triggered_by = ?, started_at = ?, completed_at = ?, error = ? WHERE id = ?`
+    );
+    stmt.run(
+      run.status,
+      run.commitSha,
+      run.triggeredBy,
+      run.startedAt,
+      run.completedAt,
+      run.error,
+      run.id
+    );
+  }
+
+  listDeployRuns(projectId: string): DeployRun[] {
+    if (!this.db) return [];
+    const stmt = this.db.prepare(
+      'SELECT * FROM deploy_runs WHERE project_id = ? ORDER BY started_at DESC'
+    );
+    const rows = stmt.all(projectId) as Array<Record<string, unknown>>;
+    return rows.map(rowToDeployRun);
+  }
+
   close(): void {
     if (this.db) {
       this.db.close();
@@ -380,6 +479,34 @@ function rowToConversation(row: Record<string, unknown>): ConversationThread {
     leaseExpiresAt: (row.lease_expires_at as string) ?? null,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
+  };
+}
+
+function rowToProjectDevOpsConfig(row: Record<string, unknown>): ProjectDevOpsConfig {
+  return {
+    projectId: row.project_id as string,
+    templateId: row.template_id as string,
+    githubOwner: (row.github_owner as string) ?? '',
+    githubRepo: (row.github_repo as string) ?? '',
+    coolifyAppId: (row.coolify_app_id as string) ?? '',
+    coolifyBaseUrl: (row.coolify_base_url as string) ?? '',
+    imageName: (row.image_name as string) ?? '',
+    healthCheckUrl: (row.health_check_url as string) ?? '',
+    updatedAt: row.updated_at as string,
+  };
+}
+
+function rowToDeployRun(row: Record<string, unknown>): DeployRun {
+  return {
+    id: row.id as string,
+    projectId: row.project_id as string,
+    templateId: row.template_id as string,
+    status: row.status as DeployRun['status'],
+    commitSha: (row.commit_sha as string) ?? null,
+    triggeredBy: row.triggered_by as string,
+    startedAt: row.started_at as string,
+    completedAt: (row.completed_at as string) ?? null,
+    error: (row.error as string) ?? null,
   };
 }
 

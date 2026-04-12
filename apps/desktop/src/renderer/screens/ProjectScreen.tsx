@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import type { Project, ConversationThread, Mode } from '../../lib/shared-types';
 import ConversationScreen from './ConversationScreen';
+import SshScreen from './SshScreen';
+import DevOpsScreen from './DevOpsScreen';
 import TopBar from '../components/TopBar';
 import BottomBar from '../components/BottomBar';
 
@@ -18,6 +20,8 @@ export default function ProjectScreen({ project, email, currentMode, onBack, onO
   const [conversations, setConversations] = useState<ConversationThread[]>([]);
   const [activeConversation, setActiveConversation] = useState<ConversationThread | null>(null);
   const [openRouterConnected, setOpenRouterConnected] = useState(false);
+  const [showSsh, setShowSsh] = useState(false);
+  const [showDevOps, setShowDevOps] = useState(false);
 
   useEffect(() => {
     window.vibeflow.openrouter.getApiKey().then((r) => setOpenRouterConnected(r.hasKey));
@@ -76,6 +80,38 @@ export default function ProjectScreen({ project, email, currentMode, onBack, onO
             <div style={{ fontSize: 14, color: '#c9d1d9', fontWeight: 600 }}>
               {project.name}
             </div>
+            <button
+              onClick={() => setShowSsh(true)}
+              style={{
+                marginTop: 8,
+                padding: '4px 8px',
+                backgroundColor: '#1a2332',
+                color: '#58a6ff',
+                border: '1px solid #30363d',
+                borderRadius: 4,
+                cursor: 'pointer',
+                fontSize: 12,
+                width: '100%',
+              }}
+            >
+              🔑 SSH
+            </button>
+            <button
+              onClick={() => setShowDevOps(true)}
+              style={{
+                marginTop: 4,
+                padding: '4px 8px',
+                backgroundColor: '#1a2332',
+                color: '#58a6ff',
+                border: '1px solid #30363d',
+                borderRadius: 4,
+                cursor: 'pointer',
+                fontSize: 12,
+                width: '100%',
+              }}
+            >
+              ⚙️ DevOps
+            </button>
           </div>
 
           {/* Conversation list */}
@@ -124,7 +160,11 @@ export default function ProjectScreen({ project, email, currentMode, onBack, onO
 
         {/* Main conversation area */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          {activeConversation ? (
+          {showDevOps ? (
+            <DevOpsScreen projectId={project.id} onBack={() => setShowDevOps(false)} />
+          ) : showSsh ? (
+            <SshScreen onBack={() => setShowSsh(false)} />
+          ) : activeConversation ? (
             <ConversationScreen
               conversation={activeConversation}
               currentMode={currentMode}

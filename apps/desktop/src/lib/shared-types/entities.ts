@@ -119,3 +119,29 @@ export interface OpenRouterModel {
   outputPricePerMillion: number;
   supportsTools: boolean;
 }
+
+// ── DevOps ─────────────────────────────────────────────────────
+
+export interface ProjectDevOpsConfig {
+  projectId: string;
+  templateId: string;
+  githubOwner: string;
+  githubRepo: string;
+  coolifyAppId: string;
+  coolifyBaseUrl: string;
+  imageName: string;
+  healthCheckUrl: string;
+  updatedAt: string;
+}
+
+export interface DeployRun {
+  id: string;
+  projectId: string;
+  templateId: string;
+  status: 'pending' | 'running' | 'success' | 'failed';
+  commitSha: string | null;
+  triggeredBy: string;
+  startedAt: string;
+  completedAt: string | null;
+  error: string | null;
+}

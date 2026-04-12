@@ -32,14 +32,35 @@ import type {
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { runOrchestrator } from '../lib/orchestrator/orchestrator';
 import { SyncEngine } from '../lib/sync/sync-engine';
+import { FileService } from '../lib/tooling/file-service';
+import { TerminalService } from '../lib/tooling/terminal-service';
+import { GitService } from '../lib/tooling/git-service';
+import { SshService } from '../lib/tooling/ssh-service';
+import { BUILT_IN_TEMPLATES } from '../lib/devops/devops-templates';
+import { GitHubActionsClient } from '../lib/devops/github-actions-client';
+import { CoolifyClient } from '../lib/devops/coolify-client';
+import { runHealthCheck } from '../lib/devops/health-check';
+import type {
+  TerminalRunArgs,
+  GitCommitArgs,
+  GitPushArgs,
+  SshHost,
+  ProjectDevOpsConfig,
+} from '../lib/shared-types';
 
 const KEYTAR_SERVICE = 'vibeflow';
 const KEYTAR_OPENROUTER_KEY = 'openrouter-api-key';
+const KEYTAR_GITHUB_TOKEN = 'github-token';
+const KEYTAR_COOLIFY_KEY = 'coolify-api-key';
 
 let mainWindow: BrowserWindow | null = null;
 let localDb: LocalDb | null = null;
 let supabase: SupabaseClient | null = null;
 let syncEngine: SyncEngine | null = null;
+const fileService = new FileService();
+const terminalService = new TerminalService();
+const gitService = new GitService();
+const sshService = new SshService();
 
 function getSupabaseClient(): SupabaseClient | null {
   if (supabase) return supabase;
@@ -542,6 +563,106 @@ app.whenReady().then(async () => {
       return syncEngine.getLease(conversationId);
     }
   );
+
+  // ── Tooling IPC Handlers ──────────────────────────────────────────
+
+  // File handlers
+  ipcMain.handle('files:read', (_event, filePath: string, projectRoot?: string) =>
+    fileService.readFile(filePath, projectRoot));
+  ipcMain.handle('files:write', (_event, filePath: string, content: string, projectRoot?: string) =>
+    fileService.writeFile(filePath, content, projectRoot));
+  ipcMain.handle('files:list', (_event, dirPath: string, projectRoot?: string) =>
+    fileService.listDirectory(dirPath, projectRoot));
+  ipcMain.handle('files:exists', (_event, filePath: string, projectRoot?: string) =>
+    fileService.fileExists(filePath, projectRoot));
+
+  // Terminal handlers
+  ipcMain.handle('terminal:run', async (event, args: TerminalRunArgs) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) throw new Error('No window');
+    return terminalService.runCommand(args.command, args.cwd, args.commandId, win);
+  });
+  ipcMain.handle('terminal:kill', (_event, commandId: string) =>
+    terminalService.killCommand(commandId));
+
+  // Git handlers
+  ipcMain.handle('git:status', (_event, repoPath: string) => gitService.getStatus(repoPath));
+  ipcMain.handle('git:diff', (_event, repoPath: string, staged: boolean = false) =>
+    gitService.getDiff(repoPath, staged));
+  ipcMain.handle('git:commit', (_event, args: GitCommitArgs) =>
+    gitService.commit(args.repoPath, args.message));
+  ipcMain.handle('git:push', async (event, args: GitPushArgs) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) throw new Error('No window');
+    return gitService.push(args.repoPath, args.remote, args.branch, win);
+  });
+  ipcMain.handle('git:log', (_event, repoPath: string, limit: number = 10) =>
+    gitService.getLog(repoPath, limit));
+
+  // SSH handlers
+  ipcMain.handle('ssh:discoverHosts', () => sshService.discoverHosts());
+  ipcMain.handle('ssh:discoverKeys', () => sshService.discoverKeys());
+  ipcMain.handle('ssh:testConnection', (_event, host: SshHost) =>
+    sshService.testConnection(host));
+
+  // ── DevOps IPC Handlers ──────────────────────────────────────────
+
+  ipcMain.handle('devops:listTemplates', () => BUILT_IN_TEMPLATES);
+
+  ipcMain.handle('devops:getProjectConfig', (_event, projectId: string) => {
+    return localDb?.getProjectDevOpsConfig(projectId) ?? null;
+  });
+
+  ipcMain.handle('devops:saveProjectConfig', (_event, config: ProjectDevOpsConfig) => {
+    localDb?.saveProjectDevOpsConfig(config);
+    return { success: true };
+  });
+
+  ipcMain.handle('devops:setGitHubToken', async (_event, token: string) => {
+    await keytar.setPassword(KEYTAR_SERVICE, KEYTAR_GITHUB_TOKEN, token);
+    return { success: true };
+  });
+
+  ipcMain.handle('devops:setCoolifyApiKey', async (_event, apiKey: string) => {
+    await keytar.setPassword(KEYTAR_SERVICE, KEYTAR_COOLIFY_KEY, apiKey);
+    return { success: true };
+  });
+
+  ipcMain.handle('devops:listWorkflowRuns', async (_event, owner: string, repo: string) => {
+    const token = await keytar.getPassword(KEYTAR_SERVICE, KEYTAR_GITHUB_TOKEN);
+    if (!token) throw new Error('GitHub token not set');
+    const client = new GitHubActionsClient(token);
+    return client.listWorkflowRuns(owner, repo);
+  });
+
+  ipcMain.handle('devops:deploy', async (_event, appId: string, baseUrl: string) => {
+    const apiKey = await keytar.getPassword(KEYTAR_SERVICE, KEYTAR_COOLIFY_KEY);
+    if (!apiKey) throw new Error('Coolify API key not set');
+    const client = new CoolifyClient(apiKey, baseUrl);
+    return client.deploy(appId);
+  });
+
+  ipcMain.handle('devops:restart', async (_event, appId: string, baseUrl: string) => {
+    const apiKey = await keytar.getPassword(KEYTAR_SERVICE, KEYTAR_COOLIFY_KEY);
+    if (!apiKey) throw new Error('Coolify API key not set');
+    const client = new CoolifyClient(apiKey, baseUrl);
+    return client.restart(appId);
+  });
+
+  ipcMain.handle('devops:stop', async (_event, appId: string, baseUrl: string) => {
+    const apiKey = await keytar.getPassword(KEYTAR_SERVICE, KEYTAR_COOLIFY_KEY);
+    if (!apiKey) throw new Error('Coolify API key not set');
+    const client = new CoolifyClient(apiKey, baseUrl);
+    return client.stop(appId);
+  });
+
+  ipcMain.handle('devops:healthCheck', async (_event, url: string) => {
+    return runHealthCheck(url);
+  });
+
+  ipcMain.handle('devops:listDeployRuns', (_event, projectId: string) => {
+    return localDb?.listDeployRuns(projectId) ?? [];
+  });
 
   createWindow();
 
