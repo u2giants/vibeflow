@@ -15,6 +15,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
 import { app, BrowserWindow, ipcMain, shell, type IpcMainInvokeEvent } from 'electron';
 import * as http from 'http';
 import * as url from 'url';
+import * as os from 'os';
 import keytar from 'keytar';
 import { LocalDb } from '../lib/storage';
 import { BUILD_METADATA } from '../lib/build-metadata';
@@ -28,9 +29,9 @@ import type {
   SendMessageArgs,
   Message,
 } from '../lib/shared-types';
-import { SyncStatus } from '../lib/shared-types';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { runOrchestrator } from '../lib/orchestrator/orchestrator';
+import { SyncEngine } from '../lib/sync/sync-engine';
 
 const KEYTAR_SERVICE = 'vibeflow';
 const KEYTAR_OPENROUTER_KEY = 'openrouter-api-key';
@@ -38,6 +39,7 @@ const KEYTAR_OPENROUTER_KEY = 'openrouter-api-key';
 let mainWindow: BrowserWindow | null = null;
 let localDb: LocalDb | null = null;
 let supabase: SupabaseClient | null = null;
+let syncEngine: SyncEngine | null = null;
 
 function getSupabaseClient(): SupabaseClient | null {
   if (supabase) return supabase;
@@ -51,6 +53,40 @@ function getSupabaseClient(): SupabaseClient | null {
 
   supabase = createClient(supabaseUrl, anonKey);
   return supabase;
+}
+
+// ── Sync Engine ─────────────────────────────────────────────────────
+
+async function initSyncEngine(userId: string): Promise<void> {
+  if (syncEngine) return;
+
+  const supabaseUrl = process.env.VITE_SUPABASE_URL ?? '';
+  const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY ?? '';
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.warn('[main] Supabase not configured, sync disabled');
+    return;
+  }
+
+  let deviceId = localDb?.getDeviceId() ?? null;
+  if (!deviceId) {
+    deviceId = crypto.randomUUID();
+    localDb?.setDeviceId(deviceId);
+  }
+
+  const deviceName = os.hostname();
+
+  syncEngine = new SyncEngine(supabaseUrl, supabaseAnonKey, deviceId, deviceName, userId, localDb!);
+
+  // Forward sync status events to renderer
+  syncEngine.on((event) => {
+    if (event.type === 'sync-status-changed' && mainWindow) {
+      mainWindow.webContents.send('sync:statusChanged', event.data);
+    }
+  });
+
+  await syncEngine.start();
+  console.log('[main] Sync engine started for user', userId);
 }
 
 function createWindow(): void {
@@ -114,13 +150,13 @@ app.whenReady().then(async () => {
               // Exchange the code for a session
               client.auth
                 .exchangeCodeForSession(code)
-                .then(({ data, error: exchangeError }) => {
+                .then(async ({ data, error: exchangeError }) => {
                   if (exchangeError) {
                     resolve({ success: false, error: exchangeError.message });
                     return;
                   }
 
-                  resolve({
+                  const result: AuthSignInResult = {
                     success: true,
                     account: {
                       id: data.session?.user?.id ?? '',
@@ -128,7 +164,18 @@ app.whenReady().then(async () => {
                       displayName: data.session?.user?.user_metadata?.display_name ?? null,
                       createdAt: data.session?.user?.created_at ?? '',
                     },
-                  });
+                  };
+
+                  // Initialize sync engine after successful sign-in
+                  if (result.success && result.account) {
+                    try {
+                      await initSyncEngine(result.account.id);
+                    } catch (err) {
+                      console.error('[main] Failed to init sync:', err);
+                    }
+                  }
+
+                  resolve(result);
                 })
                 .catch((err) => {
                   resolve({ success: false, error: String(err) });
@@ -265,6 +312,20 @@ app.whenReady().then(async () => {
     localDb = null;
   }
 
+  // Try to init sync for existing session (user already signed in)
+  try {
+    const client = getSupabaseClient();
+    if (client) {
+      const { data } = await client.auth.getSession();
+      if (data.session?.user?.id) {
+        await initSyncEngine(data.session.user.id);
+        console.log('[main] Sync engine initialized for existing session');
+      }
+    }
+  } catch (err) {
+    console.log('[main] No existing session, sync will start on sign-in');
+  }
+
   // ── Modes IPC Handlers ────────────────────────────────────────────
 
   ipcMain.handle('modes:list', async () => {
@@ -351,7 +412,12 @@ app.whenReady().then(async () => {
     const conv = {
       id: crypto.randomUUID(),
       projectId: args.projectId,
+      userId: '', // TODO: Get from session
       title: args.title,
+      runState: 'idle' as const,
+      ownerDeviceId: null,
+      ownerDeviceName: null,
+      leaseExpiresAt: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -420,6 +486,63 @@ app.whenReady().then(async () => {
     return assistantMsg;
   });
 
+  // ── Sync IPC Handlers ─────────────────────────────────────────────
+
+  ipcMain.handle('sync:getDeviceId', async (): Promise<string | null> => {
+    return localDb?.getDeviceId() ?? null;
+  });
+
+  ipcMain.handle(
+    'sync:registerDevice',
+    async (): Promise<{ deviceId: string; deviceName: string }> => {
+      if (!localDb) throw new Error('DB not initialized');
+      if (!syncEngine) throw new Error('Sync engine not initialized');
+
+      return {
+        deviceId: syncEngine.getDeviceId(),
+        deviceName: syncEngine.getDeviceName(),
+      };
+    }
+  );
+
+  ipcMain.handle('sync:syncAll', async (): Promise<{ success: boolean }> => {
+    if (!syncEngine) throw new Error('Sync engine not initialized');
+    await syncEngine.syncAll();
+    return { success: true };
+  });
+
+  ipcMain.handle(
+    'sync:acquireLease',
+    async (_event: IpcMainInvokeEvent, conversationId: string): Promise<{ success: boolean; error?: string }> => {
+      if (!syncEngine) throw new Error('Sync engine not initialized');
+      return syncEngine.acquireLease(conversationId);
+    }
+  );
+
+  ipcMain.handle(
+    'sync:releaseLease',
+    async (_event: IpcMainInvokeEvent, conversationId: string): Promise<{ success: boolean }> => {
+      if (!syncEngine) throw new Error('Sync engine not initialized');
+      return syncEngine.releaseLease(conversationId);
+    }
+  );
+
+  ipcMain.handle(
+    'sync:takeoverLease',
+    async (_event: IpcMainInvokeEvent, conversationId: string): Promise<{ success: boolean; error?: string }> => {
+      if (!syncEngine) throw new Error('Sync engine not initialized');
+      return syncEngine.takeoverLease(conversationId);
+    }
+  );
+
+  ipcMain.handle(
+    'sync:getLease',
+    async (_event: IpcMainInvokeEvent, conversationId: string) => {
+      if (!syncEngine) throw new Error('Sync engine not initialized');
+      return syncEngine.getLease(conversationId);
+    }
+  );
+
   createWindow();
 
   app.on('activate', () => {
@@ -436,5 +559,6 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  syncEngine?.stop();
   localDb?.close();
 });

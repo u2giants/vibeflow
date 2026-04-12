@@ -106,6 +106,18 @@ export interface ConversationsChannel {
   removeStreamListeners: () => void;
 }
 
+// ── Sync IPC ──────────────────────────────────────────────────────
+
+export interface SyncChannel {
+  getDeviceId: () => Promise<string | null>;
+  registerDevice: () => Promise<{ deviceId: string; deviceName: string }>;
+  syncAll: () => Promise<{ success: boolean }>;
+  acquireLease: (conversationId: string) => Promise<{ success: boolean; error?: string }>;
+  releaseLease: (conversationId: string) => Promise<{ success: boolean }>;
+  takeoverLease: (conversationId: string) => Promise<{ success: boolean; error?: string }>;
+  getLease: (conversationId: string) => Promise<{ deviceId: string; deviceName: string; expiresAt: string } | null>;
+}
+
 // ── Full window API ──────────────────────────────────────────────
 
 export interface VibeFlowAPI {
@@ -118,4 +130,5 @@ export interface VibeFlowAPI {
   modes: ModesChannel;
   openrouter: OpenRouterChannel;
   conversations: ConversationsChannel;
+  sync: SyncChannel;
 }

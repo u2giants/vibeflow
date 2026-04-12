@@ -1,21 +1,54 @@
 /** ConversationScreen — 3-panel layout: execution stream, chat, editor placeholder. */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { Message, ConversationThread, Mode, StreamTokenData } from '../../lib/shared-types';
+import type { Message, ConversationThread, Mode, StreamTokenData, RunState } from '../../lib/shared-types';
 
 interface ConversationScreenProps {
   conversation: ConversationThread;
   currentMode: Mode | null;
   onNewConversation: () => void;
+  onConversationUpdated?: (conv: ConversationThread) => void;
 }
 
-export default function ConversationScreen({ conversation, currentMode, onNewConversation }: ConversationScreenProps) {
+const RUN_STATE_LABELS: Record<RunState, string> = {
+  idle: 'Idle',
+  queued: 'Queued',
+  running: 'Running',
+  waiting_for_second_model_review: 'Waiting for review',
+  waiting_for_human_approval: 'Waiting for approval',
+  waiting_for_user_input: 'Waiting for input',
+  paused: 'Paused',
+  failed: 'Failed',
+  completed: 'Completed',
+  abandoned: 'Abandoned',
+  recoverable: 'Recoverable',
+};
+
+const RUN_STATE_COLORS: Record<RunState, string> = {
+  idle: '#8b949e',
+  queued: '#007bff',
+  running: '#28a745',
+  waiting_for_second_model_review: '#ffc107',
+  waiting_for_human_approval: '#fd7e14',
+  waiting_for_user_input: '#17a2b8',
+  paused: '#6c757d',
+  failed: '#dc3545',
+  completed: '#28a745',
+  abandoned: '#6c757d',
+  recoverable: '#ffc107',
+};
+
+export default function ConversationScreen({ conversation, currentMode, onNewConversation, onConversationUpdated }: ConversationScreenProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
   const [executionEvents, setExecutionEvents] = useState<string[]>(['Ready']);
+  const [leaseInfo, setLeaseInfo] = useState<{ deviceId: string; deviceName: string; expiresAt: string } | null>(null);
+  const [leaseError, setLeaseError] = useState<string | null>(null);
+  const [isTakingOver, setIsTakingOver] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const leaseCheckTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Load messages on mount or conversation change
   useEffect(() => {
@@ -23,6 +56,9 @@ export default function ConversationScreen({ conversation, currentMode, onNewCon
     setStreamingContent('');
     setStreaming(false);
     setExecutionEvents(['Ready']);
+    setLeaseInfo(null);
+    setLeaseError(null);
+    setIsTakingOver(false);
     window.vibeflow.conversations.getMessages(conversation.id).then((msgs) => {
       setMessages(msgs);
     });
@@ -48,11 +84,15 @@ export default function ConversationScreen({ conversation, currentMode, onNewCon
       window.vibeflow.conversations.getMessages(conversation.id).then((msgs) => {
         setMessages(msgs);
       });
+      // Release lease when done
+      window.vibeflow.sync.releaseLease(conversation.id).catch(() => {});
     };
     const handleError = (data: { conversationId: string; error: string }) => {
       if (data.conversationId === conversation.id) {
         setStreaming(false);
         setExecutionEvents(prev => [...prev, `Error: ${data.error}`]);
+        // Release lease on error
+        window.vibeflow.sync.releaseLease(conversation.id).catch(() => {});
       }
     };
 
@@ -65,9 +105,70 @@ export default function ConversationScreen({ conversation, currentMode, onNewCon
     };
   }, [conversation.id]);
 
+  // Check lease status periodically
+  useEffect(() => {
+    const checkLease = async () => {
+      const lease = await window.vibeflow.sync.getLease(conversation.id);
+      if (lease) {
+        const isExpired = new Date(lease.expiresAt) < new Date();
+        if (isExpired) {
+          setLeaseInfo(null);
+          // Update local conversation state to recoverable
+          if (onConversationUpdated) {
+            onConversationUpdated({
+              ...conversation,
+              runState: 'recoverable',
+              ownerDeviceId: null,
+              ownerDeviceName: null,
+              leaseExpiresAt: null,
+            });
+          }
+        } else {
+          setLeaseInfo(lease);
+        }
+      } else {
+        setLeaseInfo(null);
+      }
+    };
+
+    checkLease();
+    leaseCheckTimer.current = setInterval(checkLease, 5000);
+
+    return () => {
+      if (leaseCheckTimer.current) {
+        clearInterval(leaseCheckTimer.current);
+      }
+    };
+  }, [conversation.id, conversation, onConversationUpdated]);
+
   const handleSend = useCallback(async () => {
     if (!input.trim() || streaming) return;
 
+    // Check if another device owns the run
+    if (leaseInfo && leaseInfo.expiresAt && new Date(leaseInfo.expiresAt) > new Date()) {
+      setLeaseError(`Active on ${leaseInfo.deviceName} — Read-only while this run is in progress`);
+      return;
+    }
+
+    // If lease is stale (recoverable), take over
+    if (leaseInfo && leaseInfo.expiresAt && new Date(leaseInfo.expiresAt) <= new Date()) {
+      setIsTakingOver(true);
+      const result = await window.vibeflow.sync.takeoverLease(conversation.id);
+      setIsTakingOver(false);
+      if (!result.success) {
+        setLeaseError(result.error ?? 'Failed to take over');
+        return;
+      }
+    } else if (!leaseInfo) {
+      // No lease, acquire one
+      const result = await window.vibeflow.sync.acquireLease(conversation.id);
+      if (!result.success) {
+        setLeaseError(result.error ?? 'Failed to acquire lease');
+        return;
+      }
+    }
+
+    setLeaseError(null);
     const userContent = input.trim();
     setInput('');
     setStreaming(true);
@@ -83,8 +184,9 @@ export default function ConversationScreen({ conversation, currentMode, onNewCon
     } catch (err) {
       setStreaming(false);
       setExecutionEvents(prev => [...prev, `Error: ${String(err)}`]);
+      window.vibeflow.sync.releaseLease(conversation.id).catch(() => {});
     }
-  }, [input, streaming, conversation.id, currentMode]);
+  }, [input, streaming, conversation.id, currentMode, leaseInfo]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -92,6 +194,11 @@ export default function ConversationScreen({ conversation, currentMode, onNewCon
       handleSend();
     }
   };
+
+  const isReadOnly = !!leaseInfo && new Date(leaseInfo.expiresAt) > new Date();
+  const runState = conversation.runState ?? 'idle';
+  const runStateColor = RUN_STATE_COLORS[runState] ?? '#8b949e';
+  const runStateLabel = RUN_STATE_LABELS[runState] ?? 'Unknown';
 
   return (
     <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
@@ -134,7 +241,21 @@ export default function ConversationScreen({ conversation, currentMode, onNewCon
           justifyContent: 'space-between',
           alignItems: 'center',
         }}>
-          <h3 style={{ margin: 0, fontSize: 16, color: '#c9d1d9' }}>{conversation.title}</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <h3 style={{ margin: 0, fontSize: 16, color: '#c9d1d9' }}>{conversation.title}</h3>
+            <span
+              style={{
+                padding: '2px 8px',
+                borderRadius: 12,
+                backgroundColor: runStateColor + '22',
+                color: runStateColor,
+                fontSize: 11,
+                fontWeight: 600,
+              }}
+            >
+              {runStateLabel}
+            </span>
+          </div>
           <button
             onClick={onNewConversation}
             style={{
@@ -150,6 +271,95 @@ export default function ConversationScreen({ conversation, currentMode, onNewCon
             + New Conversation
           </button>
         </div>
+
+        {/* Ownership Banner */}
+        {isReadOnly && leaseInfo && (
+          <div style={{
+            padding: '8px 16px',
+            backgroundColor: '#3d2e00',
+            borderBottom: '1px solid #ffc107',
+            color: '#ffc107',
+            fontSize: 13,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}>
+            <span>🔒</span>
+            <span>Active on <strong>{leaseInfo.deviceName}</strong> — Read-only while this run is in progress</span>
+          </div>
+        )}
+
+        {/* Recoverable Banner */}
+        {runState === 'recoverable' && !isReadOnly && (
+          <div style={{
+            padding: '8px 16px',
+            backgroundColor: '#2d2200',
+            borderBottom: '1px solid #ffc107',
+            color: '#ffc107',
+            fontSize: 13,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}>
+            <span>⚠️ Previous run lost connection — you can resume on this device</span>
+            <button
+              onClick={async () => {
+                setIsTakingOver(true);
+                const result = await window.vibeflow.sync.takeoverLease(conversation.id);
+                setIsTakingOver(false);
+                if (result.success && onConversationUpdated) {
+                  onConversationUpdated({
+                    ...conversation,
+                    runState: 'running',
+                  });
+                }
+              }}
+              disabled={isTakingOver}
+              style={{
+                padding: '4px 12px',
+                backgroundColor: '#ffc107',
+                color: '#000',
+                border: 'none',
+                borderRadius: 4,
+                cursor: isTakingOver ? 'not-allowed' : 'pointer',
+                fontSize: 12,
+                fontWeight: 600,
+              }}
+            >
+              {isTakingOver ? 'Taking over...' : 'Resume on this device'}
+            </button>
+          </div>
+        )}
+
+        {/* Lease Error */}
+        {leaseError && (
+          <div style={{
+            padding: '8px 16px',
+            backgroundColor: '#3d1f28',
+            borderBottom: '1px solid #f85149',
+            color: '#f85149',
+            fontSize: 13,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}>
+            <span>{leaseError}</span>
+            <button
+              onClick={() => setLeaseError(null)}
+              style={{
+                padding: '2px 8px',
+                backgroundColor: 'transparent',
+                color: '#f85149',
+                border: '1px solid #f85149',
+                borderRadius: 4,
+                cursor: 'pointer',
+                fontSize: 12,
+              }}
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
 
         {/* Messages */}
         <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
@@ -211,13 +421,13 @@ export default function ConversationScreen({ conversation, currentMode, onNewCon
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Type a message... (Enter to send)"
-            disabled={streaming}
+            placeholder={isReadOnly ? 'Read-only — active on another device' : 'Type a message... (Enter to send)'}
+            disabled={streaming || isReadOnly}
             style={{
               flex: 1,
               padding: 10,
-              backgroundColor: '#0d1117',
-              color: '#c9d1d9',
+              backgroundColor: isReadOnly ? '#1a1a2e' : '#0d1117',
+              color: isReadOnly ? '#555' : '#c9d1d9',
               border: '1px solid #30363d',
               borderRadius: 8,
               resize: 'none',
@@ -229,14 +439,14 @@ export default function ConversationScreen({ conversation, currentMode, onNewCon
           />
           <button
             onClick={handleSend}
-            disabled={streaming || !input.trim()}
+            disabled={streaming || !input.trim() || isReadOnly}
             style={{
               padding: '8px 20px',
-              backgroundColor: streaming ? '#30363d' : '#238636',
+              backgroundColor: (streaming || !input.trim() || isReadOnly) ? '#30363d' : '#238636',
               color: '#fff',
               border: 'none',
               borderRadius: 8,
-              cursor: streaming ? 'not-allowed' : 'pointer',
+              cursor: (streaming || !input.trim() || isReadOnly) ? 'not-allowed' : 'pointer',
               fontSize: 14,
               alignSelf: 'flex-end',
             }}

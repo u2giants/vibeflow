@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { SyncStatus } from '../../lib/shared-types';
+import type { SyncStatus } from '../../lib/shared-types';
 
 interface TopBarProps {
   email: string;
@@ -15,41 +15,41 @@ interface BuildInfo {
   commitSha: string;
 }
 
+const SYNC_LABELS: Record<SyncStatus, string> = {
+  synced: 'Synced',
+  syncing: 'Syncing...',
+  degraded: 'Degraded',
+  offline: 'Offline',
+};
+
+const SYNC_ICONS: Record<SyncStatus, string> = {
+  synced: '🟢',
+  syncing: '🟡',
+  degraded: '🟡',
+  offline: '🔴',
+};
+
 export default function TopBar({ email }: TopBarProps) {
   const [buildInfo, setBuildInfo] = useState<BuildInfo>({
     version: 'dev',
     commitSha: 'dev',
   });
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>(SyncStatus.Connecting);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('offline');
 
   useEffect(() => {
     window.vibeflow.buildMetadata.get().then((meta) => {
       setBuildInfo({ version: meta.version, commitSha: meta.commitSha });
     });
 
-    // TODO: Replace with real sync status subscription
-    const timer = setTimeout(() => {
-      setSyncStatus(SyncStatus.Offline);
-    }, 2000);
+    // Subscribe to real sync status events
+    const unsubscribe = window.vibeflow.syncStatus.subscribe((status) => {
+      setSyncStatus(status);
+    });
 
-    return () => clearTimeout(timer);
+    return () => {
+      unsubscribe();
+    };
   }, []);
-
-  const syncLabel: Record<SyncStatus, string> = {
-    [SyncStatus.Offline]: 'Offline',
-    [SyncStatus.Connecting]: 'Connecting...',
-    [SyncStatus.Connected]: 'Connected',
-    [SyncStatus.Syncing]: 'Syncing...',
-    [SyncStatus.Error]: 'Sync Error',
-  };
-
-  const syncColor: Record<SyncStatus, string> = {
-    [SyncStatus.Offline]: '#999',
-    [SyncStatus.Connecting]: '#ffc107',
-    [SyncStatus.Connected]: '#28a745',
-    [SyncStatus.Syncing]: '#007bff',
-    [SyncStatus.Error]: '#dc3545',
-  };
 
   return (
     <div
@@ -69,8 +69,8 @@ export default function TopBar({ email }: TopBarProps) {
         <span style={{ color: '#888' }}>commit: {buildInfo.commitSha}</span>
       </div>
       <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-        <span style={{ color: syncColor[syncStatus] }}>
-          ● {syncLabel[syncStatus]}
+        <span title={SYNC_LABELS[syncStatus]}>
+          {SYNC_ICONS[syncStatus]} {SYNC_LABELS[syncStatus]}
         </span>
         <span>{email}</span>
       </div>

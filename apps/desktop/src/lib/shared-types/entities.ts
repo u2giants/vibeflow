@@ -29,7 +29,12 @@ export interface Project {
 export interface ConversationThread {
   id: string;
   projectId: string;
+  userId?: string;
   title: string;
+  runState: RunState;
+  ownerDeviceId: string | null;
+  ownerDeviceName: string | null;
+  leaseExpiresAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -53,20 +58,35 @@ export interface ExecutionEvent {
   createdAt: string;
 }
 
-export enum RunState {
-  Idle = 'idle',
-  Running = 'running',
-  Paused = 'paused',
-  Completed = 'completed',
-  Failed = 'failed',
+export type RunState =
+  | 'idle'
+  | 'queued'
+  | 'running'
+  | 'waiting_for_second_model_review'
+  | 'waiting_for_human_approval'
+  | 'waiting_for_user_input'
+  | 'paused'
+  | 'failed'
+  | 'completed'
+  | 'abandoned'
+  | 'recoverable';
+
+export type SyncStatus = 'synced' | 'syncing' | 'degraded' | 'offline';
+
+export interface DeviceInfo {
+  id: string;
+  name: string;
+  userId: string;
+  lastSeenAt: string;
 }
 
-export enum SyncStatus {
-  Offline = 'offline',
-  Connecting = 'connecting',
-  Connected = 'connected',
-  Syncing = 'syncing',
-  Error = 'error',
+export interface ConversationLease {
+  conversationId: string;
+  deviceId: string;
+  deviceName: string;
+  acquiredAt: string;
+  expiresAt: string;
+  heartbeatIntervalSeconds: number;
 }
 
 // ── Mode System ─────────────────────────────────────────────────────

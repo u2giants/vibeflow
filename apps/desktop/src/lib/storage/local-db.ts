@@ -3,7 +3,7 @@
 import Database from 'better-sqlite3';
 import * as path from 'path';
 import * as fs from 'fs';
-import type { Mode, ApprovalPolicy, ConversationThread, Message } from '../shared-types';
+import type { Mode, ApprovalPolicy, ConversationThread, Message, RunState } from '../shared-types';
 
 // Minimal Project type (mirrors shared-types)
 interface Project {
@@ -71,9 +71,19 @@ export class LocalDb {
       CREATE TABLE IF NOT EXISTS conversations (
         id TEXT PRIMARY KEY,
         project_id TEXT NOT NULL,
+        user_id TEXT DEFAULT '',
         title TEXT NOT NULL,
+        run_state TEXT NOT NULL DEFAULT 'idle',
+        owner_device_id TEXT,
+        owner_device_name TEXT,
+        lease_expires_at TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
       );
 
       CREATE TABLE IF NOT EXISTS messages (
@@ -214,6 +224,23 @@ export class LocalDb {
     insertMany(modes);
   }
 
+  // ── Settings (device ID storage) ──────────────────────────────────
+
+  getDeviceId(): string | null {
+    if (!this.db) return null;
+    const stmt = this.db.prepare('SELECT value FROM settings WHERE key = ?');
+    const row = stmt.get('device_id') as { value: string } | undefined;
+    return row?.value ?? null;
+  }
+
+  setDeviceId(id: string): void {
+    if (!this.db) return;
+    const stmt = this.db.prepare(
+      'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)'
+    );
+    stmt.run('device_id', id);
+  }
+
   // ── Conversation CRUD ─────────────────────────────────────────────
 
   listConversations(projectId: string): ConversationThread[] {
@@ -228,10 +255,50 @@ export class LocalDb {
   createConversation(conv: ConversationThread): void {
     if (!this.db) return;
     const stmt = this.db.prepare(
-      `INSERT INTO conversations (id, project_id, title, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?)`
+      `INSERT INTO conversations (id, project_id, user_id, title, run_state, owner_device_id, owner_device_name, lease_expires_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
-    stmt.run(conv.id, conv.projectId, conv.title, conv.createdAt, conv.updatedAt);
+    stmt.run(
+      conv.id,
+      conv.projectId,
+      conv.userId ?? '',
+      conv.title,
+      conv.runState ?? 'idle',
+      conv.ownerDeviceId ?? null,
+      conv.ownerDeviceName ?? null,
+      conv.leaseExpiresAt ?? null,
+      conv.createdAt,
+      conv.updatedAt
+    );
+  }
+
+  upsertConversation(conv: ConversationThread): void {
+    if (!this.db) return;
+    const stmt = this.db.prepare(
+      `INSERT OR REPLACE INTO conversations
+       (id, project_id, user_id, title, run_state, owner_device_id, owner_device_name, lease_expires_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    stmt.run(
+      conv.id,
+      conv.projectId,
+      conv.userId ?? '',
+      conv.title,
+      conv.runState ?? 'idle',
+      conv.ownerDeviceId ?? null,
+      conv.ownerDeviceName ?? null,
+      conv.leaseExpiresAt ?? null,
+      conv.createdAt,
+      conv.updatedAt
+    );
+  }
+
+  updateConversationRunState(id: string, state: RunState, ownerDeviceId?: string, ownerDeviceName?: string, leaseExpiresAt?: string): void {
+    if (!this.db) return;
+    const stmt = this.db.prepare(
+      'UPDATE conversations SET run_state = ?, owner_device_id = ?, owner_device_name = ?, lease_expires_at = ?, updated_at = ? WHERE id = ?'
+    );
+    stmt.run(state, ownerDeviceId ?? null, ownerDeviceName ?? null, leaseExpiresAt ?? null, new Date().toISOString(), id);
   }
 
   listMessages(conversationId: string): Message[] {
@@ -247,6 +314,15 @@ export class LocalDb {
     if (!this.db) return;
     const stmt = this.db.prepare(
       `INSERT INTO messages (id, conversation_id, role, content, mode_id, model_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    );
+    stmt.run(msg.id, msg.conversationId, msg.role, msg.content, msg.modeId, msg.modelId, msg.createdAt);
+  }
+
+  upsertMessage(msg: Message): void {
+    if (!this.db) return;
+    const stmt = this.db.prepare(
+      `INSERT OR REPLACE INTO messages (id, conversation_id, role, content, mode_id, model_id, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`
     );
     stmt.run(msg.id, msg.conversationId, msg.role, msg.content, msg.modeId, msg.modelId, msg.createdAt);
@@ -296,7 +372,12 @@ function rowToConversation(row: Record<string, unknown>): ConversationThread {
   return {
     id: row.id as string,
     projectId: row.project_id as string,
+    userId: (row.user_id as string) ?? '',
     title: row.title as string,
+    runState: (row.run_state as RunState) ?? 'idle',
+    ownerDeviceId: (row.owner_device_id as string) ?? null,
+    ownerDeviceName: (row.owner_device_name as string) ?? null,
+    leaseExpiresAt: (row.lease_expires_at as string) ?? null,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };

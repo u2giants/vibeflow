@@ -22,9 +22,15 @@ const api: VibeFlowAPI = {
   },
   syncStatus: {
     subscribe: (callback) => {
-      // TODO: Implement real sync status events from main process
-      callback(SyncStatus.Offline);
-      return () => {};
+      // Initial status
+      callback('offline' as SyncStatus);
+      const handler = (_event: unknown, status: string) => {
+        callback(status as SyncStatus);
+      };
+      ipcRenderer.on('sync:statusChanged', handler);
+      return () => {
+        ipcRenderer.removeListener('sync:statusChanged', handler);
+      };
     },
   },
   modes: {
@@ -57,6 +63,15 @@ const api: VibeFlowAPI = {
       ipcRenderer.removeAllListeners('conversations:streamDone');
       ipcRenderer.removeAllListeners('conversations:streamError');
     },
+  },
+  sync: {
+    getDeviceId: () => ipcRenderer.invoke('sync:getDeviceId'),
+    registerDevice: () => ipcRenderer.invoke('sync:registerDevice'),
+    syncAll: () => ipcRenderer.invoke('sync:syncAll'),
+    acquireLease: (conversationId: string) => ipcRenderer.invoke('sync:acquireLease', conversationId),
+    releaseLease: (conversationId: string) => ipcRenderer.invoke('sync:releaseLease', conversationId),
+    takeoverLease: (conversationId: string) => ipcRenderer.invoke('sync:takeoverLease', conversationId),
+    getLease: (conversationId: string) => ipcRenderer.invoke('sync:getLease', conversationId),
   },
 };
 

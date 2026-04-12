@@ -69,6 +69,21 @@ Every agent must update this file when work begins and when work ends.
 
 ---
 
+### Sprint 5 — Milestone 4: Cloud Sync + Real-time + Device Ownership (In Progress)
+- Supabase migration SQL created at `docs/supabase-migration-m4.sql` (needs to be run by DevOps/Orchestrator)
+- New sync types: `RunState`, `SyncStatus`, `DeviceInfo`, `ConversationLease`
+- `ConversationThread` extended with `runState`, `ownerDeviceId`, `ownerDeviceName`, `leaseExpiresAt`
+- Local SQLite extended with `settings` table for device ID, conversation run state columns
+- Sync engine created: device registration, initial sync, push to Supabase, lease/heartbeat, realtime subscriptions
+- Sync IPC handlers added: `getDeviceId`, `registerDevice`, `syncAll`, `acquireLease`, `releaseLease`, `takeoverLease`, `getLease`
+- TopBar updated with real sync status indicator (🟢 Synced / 🟡 Syncing / 🔴 Offline)
+- ConversationScreen updated with ownership banner, run state badge, recoverable takeover UI
+- Preload exposes sync API to renderer
+
+**Current Step:** Milestone 4 implementation complete. Needs Supabase migration to be run before full testing.
+
+---
+
 ## BLOCKERS
 
 **Resolved:** Windows EPERM file lock on `node_modules/electron-vite` — use `pnpm install --ignore-scripts` then manually run `node node_modules/electron/install.js`.
@@ -77,10 +92,12 @@ Every agent must update this file when work begins and when work ends.
 
 **Known constraint:** D: drive is exFAT — no symlinks. pnpm `workspace:*` deps cannot be used. Workaround: source files from `packages/` are copied into `apps/desktop/src/lib/`. See `docs/idiosyncrasies.md`.
 
+**Pending:** Supabase migration `docs/supabase-migration-m4.sql` must be run before sync features work. Tables: `conversations`, `messages`, `conversation_leases`.
+
 ---
 
 ## LAST UPDATED
 
 - Date: 2026-04-12
-- Updated by: Builder (Milestone 3 complete — Conversation UI, Orchestrator streaming, 5-panel layout)
-- Next update due: Start of Milestone 4 (Tool Calling + File Operations)
+- Updated by: Builder (Milestone 4 implementation complete — Cloud Sync, Real-time, Device Ownership)
+- Next update due: After Supabase migration is run and smoke testing passes
