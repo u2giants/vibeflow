@@ -83,9 +83,11 @@ export default function ConversationScreen({ conversation, currentMode, onNewCon
     window.vibeflow.conversations.getMessages(conversation.id).then((msgs) => {
       setMessages(msgs);
     });
-    // Load git status on mount
-    window.vibeflow.tooling.git.status(process.cwd()).then((status) => {
+    // Load git status on mount — use a safe default path
+    window.vibeflow.tooling.git.status('D:\\repos\\vibeflow').then((status) => {
       if (status.isRepo) setGitStatus(status);
+    }).catch(() => {
+      // Git status is non-critical — ignore errors
     });
   }, [conversation.id]);
 
