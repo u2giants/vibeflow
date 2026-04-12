@@ -4,7 +4,7 @@
   "private": true,
   "description": "VibeFlow — Windows-first Electron AI IDE",
   "scripts": {
-    "dev": "node scripts/inject-build-metadata.js && pnpm --filter @vibeflow/desktop dev",
+    "dev": "node scripts/inject-build-metadata.js && powershell -Command \"Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue; pnpm --filter @vibeflow/desktop dev\"",
     "build": "node scripts/inject-build-metadata.js && pnpm --filter @vibeflow/desktop build",
     "build:metadata": "node scripts/inject-build-metadata.js",
     "typecheck": "pnpm -r typecheck"
