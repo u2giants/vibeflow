@@ -1,13 +1,13 @@
 # VibeFlow — Owner Dashboard
 
-Last updated: 2026-04-12 (Milestone 8 complete)
+Last updated: 2026-04-12 (Milestone 9 complete)
 
 ---
 
 ## Current Sprint
 
-**Sprint 9 — Milestone 8: Handoff System + Idiosyncrasies Tracking**
-Status: ✅ Complete — Handoff button, document generation, copy-to-clipboard, cloud storage
+**Sprint 10 — Milestone 9: Build Metadata + Auto-Update**
+Status: ✅ Complete — Real version numbers in top bar, auto-update from GitHub Releases
 
 ---
 
@@ -24,6 +24,7 @@ Status: ✅ Complete — Handoff button, document generation, copy-to-clipboard,
 - **Milestone 6: DevOps Subsystem + Templates** — DevOps templates, GitHub Actions monitoring, Coolify deploy, health checks
 - **Milestone 7: Approval System + Second-Model Review** — Three-tier approval system, second-model review, approval cards
 - **Milestone 8: Handoff System + Idiosyncrasies Tracking** — One-click handoff to new AI sessions
+- **Milestone 9: Build Metadata + Auto-Update** — Real version numbers, commit SHA, and auto-update from GitHub Releases
 
 **What is a "Mode"?**
 A Mode is like a different AI personality with a specific job. Think of it like having 6 different specialists on your team:
@@ -40,7 +41,7 @@ Each Mode has its own "soul" (detailed instructions) that you can edit, and you 
 OpenRouter is the service that provides the AI models (like Claude, Gemini, etc.). You need an API key from OpenRouter to use AI features. The key is stored securely in your Windows Credential Manager — never in plain text.
 
 **Next step:**
-- Milestone 9: (TBD — awaiting Orchestrator direction)
+- Milestone 10: (TBD — awaiting Orchestrator direction)
 
 ---
 

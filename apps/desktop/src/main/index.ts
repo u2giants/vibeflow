@@ -12,7 +12,11 @@ import * as path from 'path';
 // In packaged: use app.getAppPath() instead (handled below after app is ready)
 dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
 
-import { app, BrowserWindow, ipcMain, shell, IpcMainInvokeEvent } from 'electron';
+// Electron must be imported via require to work correctly with electron-vite externalization
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const electron = require('electron');
+const { app, BrowserWindow, ipcMain, shell } = electron;
+type IpcMainInvokeEvent = import('electron').IpcMainInvokeEvent;
 import * as http from 'http';
 import * as url from 'url';
 import * as os from 'os';
@@ -55,13 +59,14 @@ import { generateHandoffDoc, generateHandoffPrompt } from '../lib/handoff/handof
 import { HandoffStorage } from '../lib/handoff/handoff-storage';
 import type { GenerateHandoffArgs, HandoffResult } from '../lib/shared-types';
 import * as fs from 'fs';
+import { initAutoUpdater, downloadUpdate, installUpdate } from '../lib/updater/auto-updater';
 
 const KEYTAR_SERVICE = 'vibeflow';
 const KEYTAR_OPENROUTER_KEY = 'openrouter-api-key';
 const KEYTAR_GITHUB_TOKEN = 'github-token';
 const KEYTAR_COOLIFY_KEY = 'coolify-api-key';
 
-let mainWindow: BrowserWindow | null = null;
+let mainWindow: InstanceType<typeof BrowserWindow> | null = null;
 let localDb: LocalDb | null = null;
 let supabase: SupabaseClient | null = null;
 let syncEngine: SyncEngine | null = null;
@@ -155,111 +160,189 @@ app.whenReady().then(async () => {
         return { success: false, error: 'Supabase not configured. Please create a .env file.' };
       }
 
-      // Find an available port for the temporary callback server
       const callbackPort = 54321;
       const callbackPath = '/callback';
 
-      return new Promise<AuthSignInResult>((resolve) => {
-        // Create a temporary HTTP server to capture the OAuth callback
-        const server = http.createServer((req, res) => {
-          const parsedUrl = url.parse(req.url ?? '', true);
+      // Wait for OAuth callback — returns either a PKCE code or implicit flow tokens
+      function waitForOAuthCallback(): Promise<{ type: 'code'; code: string } | { type: 'tokens'; accessToken: string; refreshToken: string } | { type: 'error'; error: string }> {
+        return new Promise((resolve, reject) => {
+          const server = http.createServer((req, res) => {
+            const rawUrl = req.url ?? '/';
 
-          if (parsedUrl.pathname === callbackPath) {
-            const code = parsedUrl.query.code as string | undefined;
-            const error = parsedUrl.query.error as string | undefined;
+            if (rawUrl === callbackPath || rawUrl.startsWith(`${callbackPath}?`)) {
+              // Check for PKCE code in query params
+              const parsedUrl = url.parse(rawUrl, true);
+              const code = parsedUrl.query.code as string | undefined;
+              const error = parsedUrl.query.error as string | undefined;
 
-            // Send a response to the browser
-            res.writeHead(200, { 'Content-Type': 'text/html' });
-            if (error) {
-              res.end('<html><body><h1>Authentication failed</h1><p>You can close this window and return to VibeFlow.</p></body></html>');
-              resolve({ success: false, error: `OAuth error: ${error}` });
-            } else if (code) {
-              res.end('<html><body><h1>Authentication successful!</h1><p>You can close this window and return to VibeFlow.</p></body></html>');
-
-              // Exchange the code for a session
-              client.auth
-                .exchangeCodeForSession(code)
-                .then(async ({ data, error: exchangeError }) => {
-                  if (exchangeError) {
-                    resolve({ success: false, error: exchangeError.message });
-                    return;
-                  }
-
-                  const result: AuthSignInResult = {
-                    success: true,
-                    account: {
-                      id: data.session?.user?.id ?? '',
-                      email: data.session?.user?.email ?? '',
-                      displayName: data.session?.user?.user_metadata?.display_name ?? null,
-                      createdAt: data.session?.user?.created_at ?? '',
-                    },
-                  };
-
-                  // Initialize sync engine after successful sign-in
-                  if (result.success && result.account) {
-                    try {
-                      await initSyncEngine(result.account.id);
-                    } catch (err) {
-                      console.error('[main] Failed to init sync:', err);
-                    }
-                  }
-
-                  resolve(result);
-                })
-                .catch((err) => {
-                  resolve({ success: false, error: String(err) });
-                });
-            } else {
-              res.end('<html><body><h1>No auth code received</h1><p>You can close this window and return to VibeFlow.</p></body></html>');
-              resolve({ success: false, error: 'No auth code received' });
-            }
-
-            // Close the server after handling the callback
-            server.close();
-          } else {
-            res.writeHead(404);
-            res.end('Not found');
-          }
-        });
-
-        server.listen(callbackPort, '127.0.0.1', () => {
-          console.log(`[main] OAuth callback server listening on http://127.0.0.1:${callbackPort}`);
-
-          const redirectUrl = `http://127.0.0.1:${callbackPort}${callbackPath}`;
-
-          client.auth
-            .signInWithOAuth({
-              provider: 'github',
-              options: {
-                redirectTo: redirectUrl,
-                skipBrowserRedirect: true,
-              },
-            })
-            .then(({ data, error: oauthError }) => {
-              if (oauthError) {
+              if (error) {
+                res.writeHead(200, { 'Content-Type': 'text/html' });
+                res.end('<html><body><h2>Sign-in failed</h2><p>You can close this tab and return to VibeFlow.</p></body></html>');
                 server.close();
-                resolve({ success: false, error: oauthError.message });
+                resolve({ type: 'error', error: `OAuth error: ${error}` });
                 return;
               }
 
-              if (data?.url) {
-                shell.openExternal(data.url);
-              } else {
+              if (code) {
+                // PKCE flow — exchange code for session
+                res.writeHead(200, { 'Content-Type': 'text/html' });
+                res.end('<html><body><h2>Sign-in successful! You can close this tab and return to VibeFlow.</h2></body></html>');
                 server.close();
-                resolve({ success: false, error: 'No OAuth URL received from Supabase' });
+                resolve({ type: 'code', code });
+                return;
               }
-            })
-            .catch((err) => {
-              server.close();
-              resolve({ success: false, error: String(err) });
-            });
+
+              // No code in query params — serve a page that extracts hash fragment and posts it back
+              res.writeHead(200, { 'Content-Type': 'text/html' });
+              res.end(`<!DOCTYPE html>
+<html>
+<head><title>VibeFlow Sign-in</title></head>
+<body>
+<h2>Completing sign-in...</h2>
+<script>
+  // Extract tokens from hash fragment
+  const hash = window.location.hash.substring(1);
+  const params = new URLSearchParams(hash);
+  const accessToken = params.get('access_token');
+  const refreshToken = params.get('refresh_token');
+
+  if (accessToken) {
+    // Send tokens back to the local server
+    fetch('/callback-tokens', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accessToken, refreshToken })
+    }).then(() => {
+      document.body.innerHTML = '<h2>Sign-in successful! You can close this tab and return to VibeFlow.</h2>';
+    }).catch(() => {
+      document.body.innerHTML = '<h2>Sign-in failed. Could not send tokens. Please try again.</h2>';
+    });
+  } else {
+    document.body.innerHTML = '<h2>Sign-in failed. No tokens received. Please try again.</h2>';
+  }
+</script>
+</body>
+</html>`);
+              return;
+            }
+
+            if (rawUrl === '/callback-tokens' && req.method === 'POST') {
+              // Receive tokens posted from the browser page
+              let body = '';
+              req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+              req.on('end', () => {
+                try {
+                  const { accessToken, refreshToken } = JSON.parse(body);
+                  res.writeHead(200, { 'Content-Type': 'application/json' });
+                  res.end('{"ok":true}');
+                  server.close();
+                  resolve({ type: 'tokens', accessToken, refreshToken });
+                } catch {
+                  res.writeHead(400);
+                  res.end('Bad request');
+                  reject(new Error('Failed to parse tokens'));
+                }
+              });
+              return;
+            }
+
+            // Unknown path
+            res.writeHead(404);
+            res.end('Not found');
+          });
+
+          server.listen(callbackPort, '127.0.0.1', () => {
+            console.log(`[main] OAuth callback server listening on http://127.0.0.1:${callbackPort}`);
+          });
+
+          server.on('error', (err) => {
+            console.error('[main] OAuth callback server error:', err);
+            reject(new Error(`Failed to start callback server: ${err.message}`));
+          });
+
+          // Timeout after 5 minutes
+          setTimeout(() => {
+            server.close();
+            reject(new Error('OAuth timeout — no response received within 5 minutes'));
+          }, 5 * 60 * 1000);
+        });
+      }
+
+      // Start the OAuth flow
+      const redirectUrl = `http://127.0.0.1:${callbackPort}${callbackPath}`;
+
+      try {
+        const { data, error: oauthError } = await client.auth.signInWithOAuth({
+          provider: 'github',
+          options: {
+            redirectTo: redirectUrl,
+            skipBrowserRedirect: true,
+          },
         });
 
-        server.on('error', (err) => {
-          console.error('[main] OAuth callback server error:', err);
-          resolve({ success: false, error: `Failed to start callback server: ${err.message}` });
-        });
-      });
+        if (oauthError) {
+          return { success: false, error: oauthError.message };
+        }
+
+        if (data?.url) {
+          shell.openExternal(data.url);
+        } else {
+          return { success: false, error: 'No OAuth URL received from Supabase' };
+        }
+
+        // Wait for callback result
+        const callbackResult = await waitForOAuthCallback();
+
+        if (callbackResult.type === 'error') {
+          return { success: false, error: callbackResult.error };
+        }
+
+        // Exchange tokens for session
+        let sessionData: any;
+        let sessionError: any;
+
+        if (callbackResult.type === 'code') {
+          // PKCE flow
+          const result = await client.auth.exchangeCodeForSession(callbackResult.code);
+          sessionData = result.data;
+          sessionError = result.error;
+        } else {
+          // Implicit flow — set session directly
+          const result = await client.auth.setSession({
+            access_token: callbackResult.accessToken,
+            refresh_token: callbackResult.refreshToken ?? '',
+          });
+          sessionData = result.data;
+          sessionError = result.error;
+        }
+
+        if (sessionError) {
+          return { success: false, error: sessionError.message };
+        }
+
+        const result: AuthSignInResult = {
+          success: true,
+          account: {
+            id: sessionData.session?.user?.id ?? '',
+            email: sessionData.session?.user?.email ?? '',
+            displayName: sessionData.session?.user?.user_metadata?.display_name ?? null,
+            createdAt: sessionData.session?.user?.created_at ?? '',
+          },
+        };
+
+        // Initialize sync engine after successful sign-in
+        if (result.success && result.account) {
+          try {
+            await initSyncEngine(result.account.id);
+          } catch (err) {
+            console.error('[main] Failed to init sync:', err);
+          }
+        }
+
+        return result;
+      } catch (err) {
+        return { success: false, error: String(err) };
+      }
     }
   );
 
@@ -312,6 +395,10 @@ app.whenReady().then(async () => {
   );
 
   ipcMain.handle('buildMetadata:get', async () => BUILD_METADATA);
+
+  // ── Updater IPC (only in packaged builds) ─────────────────────────
+  ipcMain.handle('updater:downloadUpdate', async () => downloadUpdate());
+  ipcMain.handle('updater:installUpdate', async () => installUpdate());
 
   // ── App initialization ────────────────────────────────────────────
 
@@ -853,6 +940,11 @@ app.whenReady().then(async () => {
   ipcMain.handle('approval:getLog', () => getRecentApprovals(20));
 
   createWindow();
+
+  // Only init auto-updater in packaged builds (not dev mode)
+  if (app.isPackaged && mainWindow) {
+    initAutoUpdater(mainWindow);
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

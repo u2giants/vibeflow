@@ -13,6 +13,8 @@ interface TopBarProps {
 interface BuildInfo {
   version: string;
   commitSha: string;
+  commitDate: string;
+  releaseChannel: string;
 }
 
 const SYNC_LABELS: Record<SyncStatus, string> = {
@@ -33,12 +35,19 @@ export default function TopBar({ email }: TopBarProps) {
   const [buildInfo, setBuildInfo] = useState<BuildInfo>({
     version: 'dev',
     commitSha: 'dev',
+    commitDate: '',
+    releaseChannel: 'dev',
   });
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('offline');
 
   useEffect(() => {
     window.vibeflow.buildMetadata.get().then((meta) => {
-      setBuildInfo({ version: meta.version, commitSha: meta.commitSha });
+      setBuildInfo({
+        version: meta.version,
+        commitSha: meta.commitSha,
+        commitDate: meta.commitDate,
+        releaseChannel: meta.releaseChannel,
+      });
     });
 
     // Subscribe to real sync status events
@@ -65,8 +74,9 @@ export default function TopBar({ email }: TopBarProps) {
       }}
     >
       <div style={{ display: 'flex', gap: 16 }}>
-        <span>VibeFlow {buildInfo.version}</span>
-        <span style={{ color: '#888' }}>commit: {buildInfo.commitSha}</span>
+        <span>VibeFlow v{buildInfo.version}</span>
+        <span style={{ color: '#888' }}>{buildInfo.commitSha}</span>
+        <span style={{ color: '#888' }}>{buildInfo.releaseChannel}</span>
       </div>
       <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
         <span title={SYNC_LABELS[syncStatus]}>

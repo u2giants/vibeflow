@@ -162,7 +162,42 @@ Every agent must update this file when work begins and when work ends.
 
 ---
 
-### Sprint 10 — Bug Fix: Runaway Streaming Loop (Listener Stacking) (Complete)
+### Sprint 10 — Milestone 9: Build Metadata + Auto-Update (Complete)
+- Build metadata injection script rewritten as plain CommonJS (`scripts/inject-build-metadata.js`)
+  - Reads version from `apps/desktop/package.json`
+  - Gets commit SHA via `git rev-parse --short HEAD`
+  - Gets commit date via `git log -1 --format=%ci`
+  - Reads `RELEASE_CHANNEL` from environment (default: `dev`)
+  - Writes to `apps/desktop/src/lib/build-metadata/generated.ts`
+- `build-metadata/index.ts` updated with try/catch fallback — safe if generated.ts doesn't exist yet
+- `generated.ts` added to `.gitignore` and removed from git tracking
+- Root `package.json` scripts updated: `pnpm dev` and `pnpm build` now run metadata injection first
+- `electron-updater` added to `apps/desktop/package.json` dependencies
+- Auto-updater module created: `apps/desktop/src/lib/updater/auto-updater.ts`
+  - Configured for GitHub Releases publishing
+  - `autoDownload = false` — user decides when to download
+  - Non-fatal error handling — app never crashes on updater failures
+  - Only runs in packaged builds (`app.isPackaged` check)
+  - Checks for updates 5 seconds after startup
+- Updater IPC handlers added to `main/index.ts`: `updater:downloadUpdate`, `updater:installUpdate`
+- Updater API exposed in `preload/index.ts`: downloadUpdate, installUpdate, onUpdateAvailable, onDownloadProgress, onUpdateDownloaded, removeListeners
+- Updater types added to `shared-types/ipc.ts`: `UpdaterChannel` interface
+- `UpdateBanner.tsx` component created:
+  - Shows "Update available: v{version}" with "Install Now" and "Later" buttons
+  - Shows download progress bar during download
+  - Shows "Update ready — Restart to apply" with "Restart Now" button
+  - Non-intrusive banner below TopBar, not a modal
+- `TopBar.tsx` updated to show version, commit SHA, and release channel
+- `App.tsx` updated to include `UpdateBanner` below `TopBar`
+- `electron-builder.yml` updated with GitHub publish config (owner: u2giants, repo: vibeflow)
+- `.github/workflows/ci.yml` created: type check on push/PR to master/main
+- `.github/workflows/release.yml` created: build and publish on `v*` tags
+
+**Current Step:** Milestone 9 complete. Ready for Milestone 10.
+
+---
+
+### Sprint 11 — Bug Fix: Runaway Streaming Loop (Listener Stacking) (Complete)
 - Root cause: `onStreamToken`, `onStreamDone`, `onStreamError` in `apps/desktop/src/preload/index.ts` used `ipcRenderer.on()` which accumulates listeners
 - When `ConversationScreen.tsx` re-renders or switches conversations, new listeners stack up, causing each token to be appended N times (producing `7a7a7a7a...` repeating tokens)
 - Fix: added `ipcRenderer.removeAllListeners()` before `ipcRenderer.on()` in all three `onStream*` functions
@@ -170,6 +205,20 @@ Every agent must update this file when work begins and when work ends.
 - File changed: `apps/desktop/src/preload/index.ts` (lines 52–65 only)
 
 **Current Step:** Bug fix complete. Ready for review.
+
+---
+
+### Sprint 12 — Bug Fix: GitHub OAuth Sign-in Broken (Complete)
+- Root cause: Supabase returns OAuth tokens as hash fragment (`#access_token=...&refresh_token=...`) instead of PKCE code (`?code=...`) in the implicit flow
+- The original handler only checked for `?code=` query parameter, resulting in "No auth code received" error
+- Fix: refactored `auth:signInWithGitHub` handler in `apps/desktop/src/main/index.ts` to handle BOTH flows:
+  - PKCE flow: `?code=` query param → `exchangeCodeForSession()`
+  - Implicit flow: no code in query → serve HTML page that extracts hash fragment via JS and POSTs tokens to `/callback-tokens` → `setSession()`
+- Additional fix: `ELECTRON_RUN_AS_NODE=1` environment variable was set, causing Electron to run as plain Node.js (pre-existing issue, documented in idiosyncrasies.md)
+- Additional fix: `node_modules/electron/path.txt` was missing — created with content `electron.exe`
+- Files changed: `apps/desktop/src/main/index.ts` (OAuth handler refactored), `docs/idiosyncrasies.md` (updated OAuth entry with implicit flow detail)
+
+**Current Step:** Bug fix complete. Sign-in tested and working. Ready for review.
 
 ---
 
@@ -188,5 +237,5 @@ Every agent must update this file when work begins and when work ends.
 ## LAST UPDATED
 
 - Date: 2026-04-12
-- Updated by: Builder (Bug fix: runaway streaming loop — listener stacking in preload/index.ts)
+- Updated by: Builder (Milestone 9: Build Metadata + Auto-Update)
 - Next update due: After next task

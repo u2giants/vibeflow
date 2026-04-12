@@ -1,6 +1,6 @@
 # VibeFlow — Idiosyncrasies
 
-Last updated: 2026-04-12 (Sprint 9 — Milestone 8 Handoff System)
+Last updated: 2026-04-12 (Sprint 12 — Bug Fix: GitHub OAuth Implicit Flow)
 
 ---
 
@@ -48,10 +48,11 @@ If you see something in the codebase that looks odd and it is NOT in this file, 
 - **How to safely remove later:** Add `"@vibeflow/shared-types": "workspace:*"` to storage's `package.json`, replace the inline type with `import type { Project } from '@vibeflow/shared-types'`.
 
 ### GitHub OAuth uses a temporary localhost HTTP server instead of a custom URL scheme
-- **What looks odd:** In `apps/desktop/src/main/index.ts`, the `auth:signInWithGitHub` handler starts a temporary Node.js `http` server on port 54321, opens the GitHub OAuth URL in the system browser, waits for the callback on `http://127.0.0.1:54321/callback`, exchanges the code for a session, and then closes the server.
-- **Where it is:** `apps/desktop/src/main/index.ts` — `auth:signInWithGitHub` IPC handler
+- **What looks odd:** In `apps/desktop/src/main/index.ts`, the `auth:signInWithGitHub` handler starts a temporary Node.js `http` server on port 54321, opens the GitHub OAuth URL in the system browser, waits for the callback on `http://127.0.0.1:54321/callback`, and handles TWO different OAuth response formats.
+- **Where it is:** `apps/desktop/src/main/index.ts` — `auth:signInWithGitHub` IPC handler (lines 151-343)
 - **Why it was done:** In a desktop Electron app, OAuth cannot use a simple redirect URL like a web app. The two common approaches are: (1) register a custom URL scheme (e.g., `vibeflow://auth/callback`) and capture the callback via Electron protocol handler, or (2) spin up a temporary local HTTP server. Approach (1) requires registering the custom scheme in the Electron app and configuring it in Supabase, which is more complex and error-prone for Milestone 1. Approach (2) is simpler and works reliably — the server only lives for the duration of the OAuth flow and closes itself after receiving the callback.
-- **What breaks if cleaned up:** If you remove the HTTP server, OAuth will not work. If you change the port from 54321, you must also update the redirect URL in Supabase Dashboard → Authentication → URL Configuration → Redirect URLs.
+- **OAuth flow detail (implicit vs PKCE):** Supabase may return OAuth tokens in two different formats depending on configuration. (a) **PKCE flow**: returns `?code=...` as a query parameter — handled by `exchangeCodeForSession()`. (b) **Implicit flow**: returns `#access_token=...&refresh_token=...` as a hash fragment — hash fragments are NOT sent to the server by browsers, so the callback handler serves an HTML page with JavaScript that extracts the hash, then POSTs the tokens to `/callback-tokens` which resolves the promise. The handler then uses `setSession()` to establish the session. This dual-flow support was added after Albert reported "No auth code received" because Supabase was returning implicit flow tokens.
+- **What breaks if cleaned up:** If you remove the HTTP server, OAuth will not work. If you change the port from 54321, you must also update the redirect URL in Supabase Dashboard → Authentication → URL Configuration → Redirect URLs. If you remove the implicit flow handling, sign-in will fail with "No auth code received" when Supabase returns hash fragment tokens.
 - **Permanent or temporary:** Temporary — a custom URL scheme (`vibeflow://`) is the more "proper" Electron OAuth approach and should be implemented later. The localhost approach is intentional for Milestone 1 simplicity.
 - **How to safely remove later:** (1) Register a custom URL scheme in `electron-builder.yml` (Windows: `protocols` array). (2) Handle `app.on('open-url', ...)` or `setAsDefaultProtocolClient` in main process. (3) Update Supabase redirect URL to `vibeflow://auth/callback`. (4) Remove the temporary HTTP server code from `auth:signInWithGitHub`.
 

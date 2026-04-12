@@ -377,6 +377,17 @@ export interface HandoffApi {
   getIdiosyncrasies: () => Promise<string>;
 }
 
+// ── Updater IPC ────────────────────────────────────────────────────
+
+export interface UpdaterChannel {
+  downloadUpdate: () => Promise<void>;
+  installUpdate: () => Promise<void>;
+  onUpdateAvailable: (callback: (info: { version: string; releaseDate: string }) => void) => void;
+  onDownloadProgress: (callback: (progress: { percent: number }) => void) => void;
+  onUpdateDownloaded: (callback: (info: { version: string }) => void) => void;
+  removeListeners: () => void;
+}
+
 // ── Full window API ──────────────────────────────────────────────
 
 export interface VibeFlowAPI {
@@ -394,4 +405,5 @@ export interface VibeFlowAPI {
   devops: DevOpsApi;
   approval: ApprovalApi;
   handoff: HandoffApi;
+  updater: UpdaterChannel;
 }

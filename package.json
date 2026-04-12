@@ -4,8 +4,8 @@
   "private": true,
   "description": "VibeFlow — Windows-first Electron AI IDE",
   "scripts": {
-    "dev": "pnpm --filter @vibeflow/desktop dev",
-    "build": "pnpm --filter @vibeflow/desktop build",
+    "dev": "node scripts/inject-build-metadata.js && pnpm --filter @vibeflow/desktop dev",
+    "build": "node scripts/inject-build-metadata.js && pnpm --filter @vibeflow/desktop build",
     "build:metadata": "node scripts/inject-build-metadata.js",
     "typecheck": "pnpm -r typecheck"
   },

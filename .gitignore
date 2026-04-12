@@ -13,6 +13,7 @@ build/
 
 # Generated files
 packages/build-metadata/src/generated.ts
+apps/desktop/src/lib/build-metadata/generated.ts
 
 # SQLite databases
 *.db

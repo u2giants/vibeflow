@@ -139,6 +139,24 @@ const api: VibeFlowAPI = {
     generate: (args: GenerateHandoffArgs) => ipcRenderer.invoke('handoff:generate', args),
     getIdiosyncrasies: () => ipcRenderer.invoke('handoff:getIdiosyncrasies'),
   },
+  updater: {
+    downloadUpdate: () => ipcRenderer.invoke('updater:downloadUpdate'),
+    installUpdate: () => ipcRenderer.invoke('updater:installUpdate'),
+    onUpdateAvailable: (callback: (info: { version: string; releaseDate: string }) => void) => {
+      ipcRenderer.on('updater:update-available', (_event, info) => callback(info));
+    },
+    onDownloadProgress: (callback: (progress: { percent: number }) => void) => {
+      ipcRenderer.on('updater:download-progress', (_event, progress) => callback(progress));
+    },
+    onUpdateDownloaded: (callback: (info: { version: string }) => void) => {
+      ipcRenderer.on('updater:update-downloaded', (_event, info) => callback(info));
+    },
+    removeListeners: () => {
+      ipcRenderer.removeAllListeners('updater:update-available');
+      ipcRenderer.removeAllListeners('updater:download-progress');
+      ipcRenderer.removeAllListeners('updater:update-downloaded');
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld('vibeflow', api);

@@ -1,4 +1,4 @@
-appId: com.vibeflow.app
+appId: app.vibeflow.desktop
 productName: VibeFlow
 directories:
   output: release
@@ -6,6 +6,7 @@ directories:
 files:
   - dist/**/*
   - node_modules/**/*
+  - package.json
 npmRebuild: true
 nativeRebuilder: sequential
 asarUnpack:
@@ -15,8 +16,14 @@ win:
     - target: nsis
       arch:
         - x64
+  icon: build/icon.ico
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
+publish:
+  provider: github
+  owner: u2giants
+  repo: vibeflow
+  releaseType: release

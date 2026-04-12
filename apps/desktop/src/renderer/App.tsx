@@ -12,6 +12,7 @@ import ProjectScreen from './screens/ProjectScreen';
 import ModesScreen from './screens/ModesScreen';
 import TopBar from './components/TopBar';
 import BottomBar from './components/BottomBar';
+import UpdateBanner from './components/UpdateBanner';
 
 type Screen = 'projects' | 'modes' | 'project';
 
@@ -86,6 +87,7 @@ export default function App() {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
         <TopBar email={email} />
+        <UpdateBanner />
         <ModesScreen onBack={() => activeProject ? setScreen('project') : setScreen('projects')} />
         <BottomBar currentMode={currentMode} openRouterConnected={openRouterConnected} />
       </div>
@@ -95,6 +97,7 @@ export default function App() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
       <TopBar email={email} />
+      <UpdateBanner />
       <ProjectListScreen
         onSignOut={handleSignedOut}
         onOpenModes={() => setScreen('modes')}
