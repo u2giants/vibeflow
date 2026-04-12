@@ -1,6 +1,6 @@
 /** IPC message types for Electron main ↔ renderer communication. */
 
-import type { Project, SyncStatus, Account } from './entities';
+import type { Project, SyncStatus, Account, Mode, OpenRouterModel } from './entities';
 
 // ── Auth IPC ──────────────────────────────────────────────────────
 
@@ -41,6 +41,33 @@ export interface BuildMetadataChannel {
   get: () => Promise<BuildMetadataResult>;
 }
 
+// ── Modes IPC ─────────────────────────────────────────────────────
+
+export interface UpdateModeSoulArgs {
+  modeId: string;
+  soul: string;
+}
+
+export interface UpdateModeModelArgs {
+  modeId: string;
+  modelId: string;
+}
+
+export interface ModesChannel {
+  list: () => Promise<Mode[]>;
+  updateSoul: (args: UpdateModeSoulArgs) => Promise<{ success: boolean }>;
+  updateModel: (args: UpdateModeModelArgs) => Promise<{ success: boolean }>;
+}
+
+// ── OpenRouter IPC ────────────────────────────────────────────────
+
+export interface OpenRouterChannel {
+  setApiKey: (key: string) => Promise<{ success: boolean }>;
+  getApiKey: () => Promise<{ hasKey: boolean }>;
+  listModels: () => Promise<OpenRouterModel[]>;
+  testConnection: () => Promise<{ success: boolean; error?: string }>;
+}
+
 // ── Full window API ──────────────────────────────────────────────
 
 export interface VibeFlowAPI {
@@ -50,4 +77,6 @@ export interface VibeFlowAPI {
   syncStatus: {
     subscribe: (callback: (status: SyncStatus) => void) => () => void;
   };
+  modes: ModesChannel;
+  openrouter: OpenRouterChannel;
 }

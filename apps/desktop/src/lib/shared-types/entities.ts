@@ -57,3 +57,34 @@ export enum SyncStatus {
   Syncing = 'syncing',
   Error = 'error',
 }
+
+// ── Mode System ─────────────────────────────────────────────────────
+
+export type ApprovalPolicy = 'auto' | 'second-model' | 'human';
+
+export interface Mode {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  icon: string;
+  color: string;
+  soul: string;
+  modelId: string;
+  fallbackModelId: string | null;
+  temperature: number;
+  approvalPolicy: ApprovalPolicy;
+  isBuiltIn: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OpenRouterModel {
+  id: string;
+  name: string;
+  description: string;
+  contextLength: number;
+  inputPricePerMillion: number;
+  outputPricePerMillion: number;
+  supportsTools: boolean;
+}

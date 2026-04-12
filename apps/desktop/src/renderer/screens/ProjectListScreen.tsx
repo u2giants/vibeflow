@@ -7,9 +7,10 @@ import type { Project } from '../../lib/shared-types';
 
 interface ProjectListScreenProps {
   onSignOut: () => void;
+  onOpenModes: () => void;
 }
 
-export default function ProjectListScreen({ onSignOut }: ProjectListScreenProps) {
+export default function ProjectListScreen({ onSignOut, onOpenModes }: ProjectListScreenProps) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [showNewProject, setShowNewProject] = useState(false);
   const [newName, setNewName] = useState('');
@@ -79,6 +80,19 @@ export default function ProjectListScreen({ onSignOut }: ProjectListScreenProps)
             }}
           >
             New Project
+          </button>
+          <button
+            onClick={onOpenModes}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: '#6f42c1',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 4,
+              cursor: 'pointer',
+            }}
+          >
+            ⚙️ Modes
           </button>
           <button
             onClick={handleSignOut}

@@ -27,6 +27,17 @@ const api: VibeFlowAPI = {
       return () => {};
     },
   },
+  modes: {
+    list: () => ipcRenderer.invoke('modes:list'),
+    updateSoul: (args) => ipcRenderer.invoke('modes:updateSoul', args),
+    updateModel: (args) => ipcRenderer.invoke('modes:updateModel', args),
+  },
+  openrouter: {
+    setApiKey: (key: string) => ipcRenderer.invoke('openrouter:setApiKey', key),
+    getApiKey: () => ipcRenderer.invoke('openrouter:getApiKey'),
+    listModels: () => ipcRenderer.invoke('openrouter:listModels'),
+    testConnection: () => ipcRenderer.invoke('openrouter:testConnection'),
+  },
 };
 
 contextBridge.exposeInMainWorld('vibeflow', api);

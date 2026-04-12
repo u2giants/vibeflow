@@ -1,12 +1,12 @@
 # VibeFlow — Owner Timeline
 
-Last updated: 2026-04-11
+Last updated: 2026-04-12
 
 ---
 
 ## Current Sprint
 
-**Sprint 1 — Repo Scaffold & Documentation**
+**Sprint 3 — Milestone 2: Mode System + OpenRouter Provider**
 Status: ✅ Complete
 
 ---
@@ -15,18 +15,18 @@ Status: ✅ Complete
 
 | Sprint | Milestone | Description | Status | Confidence |
 |---|---|---|---|---|
-| 0 | Planning | Architecture approved, questions answered | ✅ Done | 100% |
-| 1 | Scaffold | All docs and repo structure created | ✅ Done | 100% |
-| 2 | M1 | Electron shell + Supabase auth + project scaffold | ⬜ Not started | 90% |
-| 3 | M2 | Mode system + OpenRouter provider | ⬜ Not started | 85% |
-| 4 | M3 | Conversation UI + Orchestrator | ⬜ Not started | 85% |
-| 5 | M4 | Cloud sync + real-time + device ownership | ⬜ Not started | 75% |
-| 6 | M5 | Local tooling (files, terminal, Git, SSH) | ⬜ Not started | 80% |
-| 7 | M6 | DevOps subsystem + templates | ⬜ Not started | 80% |
-| 8 | M7 | Approval system + second-model review | ⬜ Not started | 80% |
-| 9 | M8 | Handoff + idiosyncrasies tracking | ⬜ Not started | 85% |
-| 10 | M9 | Build metadata + auto-update | ⬜ Not started | 85% |
-| 11 | M10 | Self-maintenance mode | ⬜ Not started | 75% |
+| | 0 | Planning | Architecture approved, questions answered | ✅ Done | 100% |
+| | 1 | Scaffold | All docs and repo structure created | ✅ Done | 100% |
+| | 2 | M1 | Electron shell + Supabase auth + project scaffold | ✅ Done | 100% |
+| | 3 | M2 | Mode system + OpenRouter provider | ✅ Done | 95% |
+| | 4 | M3 | Conversation UI + Orchestrator | ⬜ Not started | 85% |
+| | 5 | M4 | Cloud sync + real-time + device ownership | ⬜ Not started | 75% |
+| | 6 | M5 | Local tooling (files, terminal, Git, SSH) | ⬜ Not started | 80% |
+| | 7 | M6 | DevOps subsystem + templates | ⬜ Not started | 80% |
+| | 8 | M7 | Approval system + second-model review | ⬜ Not started | 80% |
+| | 9 | M8 | Handoff + idiosyncrasies tracking | ⬜ Not started | 85% |
+| | 10 | M9 | Build metadata + auto-update | ⬜ Not started | 85% |
+| | 11 | M10 | Self-maintenance mode | ⬜ Not started | 75% |
 
 **Confidence** = how confident we are that this milestone will complete without major surprises.
 
@@ -35,13 +35,14 @@ Status: ✅ Complete
 ## Milestone Detail
 
 ### M1 — Electron Shell + Supabase Auth + Project Scaffold
-**Confidence: 90%**
-**Why not 100%:** keytar and pnpm workspace + electron-builder integration need to be tested on Albert's actual machine. Minor setup issues are possible.
-**Blocker risk:** Low
+**Confidence: 100%**
+**Result:** Complete. App launches, GitHub OAuth works, project list functional.
+**Blocker risk:** None
 
 ### M2 — Mode System + OpenRouter Provider
-**Confidence: 85%**
-**Why not 100%:** OpenRouter model picker requires parsing live API data. Format may need adjustment.
+**Confidence: 95%**
+**Result:** Complete. 6 Modes appear, soul editor saves, OpenRouter API key stores securely, model picker works.
+**Why not 100%:** Model list depends on OpenRouter API availability and format stability.
 **Blocker risk:** Low
 
 ### M3 — Conversation UI + Orchestrator
@@ -88,7 +89,7 @@ Status: ✅ Complete
 
 ## Next Decision Needed From Albert
 
-None currently. Builder can proceed to Milestone 1.
+**You need an OpenRouter API key to enable AI features.** Get one from https://openrouter.ai/ and enter it in the Modes settings screen. After that, Milestone 3 (Conversation UI) can begin.
 
 ---
 

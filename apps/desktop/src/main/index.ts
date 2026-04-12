@@ -15,14 +15,21 @@ dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
 import { app, BrowserWindow, ipcMain, shell, type IpcMainInvokeEvent } from 'electron';
 import * as http from 'http';
 import * as url from 'url';
+import keytar from 'keytar';
 import { LocalDb } from '../lib/storage';
 import { BUILD_METADATA } from '../lib/build-metadata';
+import { DEFAULT_MODES } from '../lib/modes/default-modes';
 import type {
   AuthSignInResult,
   CreateProjectArgs,
+  UpdateModeSoulArgs,
+  UpdateModeModelArgs,
 } from '../lib/shared-types';
 import { SyncStatus } from '../lib/shared-types';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+
+const KEYTAR_SERVICE = 'vibeflow';
+const KEYTAR_OPENROUTER_KEY = 'openrouter-api-key';
 
 let mainWindow: BrowserWindow | null = null;
 let localDb: LocalDb | null = null;
@@ -247,10 +254,86 @@ app.whenReady().then(async () => {
     localDb = new LocalDb(dbPath);
     await localDb.init();
     console.log('[main] Local SQLite DB initialized at', dbPath);
+    localDb.seedDefaultModes(DEFAULT_MODES);
+    console.log('[main] Default modes seeded');
   } catch (err) {
     console.error('[main] SQLite DB init failed (non-fatal):', err);
     localDb = null;
   }
+
+  // ── Modes IPC Handlers ────────────────────────────────────────────
+
+  ipcMain.handle('modes:list', async () => {
+    if (!localDb) return [];
+    return localDb.listModes();
+  });
+
+  ipcMain.handle(
+    'modes:updateSoul',
+    async (_event: IpcMainInvokeEvent, args: UpdateModeSoulArgs) => {
+      if (!localDb) throw new Error('DB not initialized');
+      localDb.updateModeSoul(args.modeId, args.soul);
+      return { success: true };
+    }
+  );
+
+  ipcMain.handle(
+    'modes:updateModel',
+    async (_event: IpcMainInvokeEvent, args: UpdateModeModelArgs) => {
+      if (!localDb) throw new Error('DB not initialized');
+      localDb.updateModeModel(args.modeId, args.modelId);
+      return { success: true };
+    }
+  );
+
+  // ── OpenRouter IPC Handlers ───────────────────────────────────────
+
+  ipcMain.handle(
+    'openrouter:setApiKey',
+    async (_event: IpcMainInvokeEvent, apiKey: string) => {
+      await keytar.setPassword(KEYTAR_SERVICE, KEYTAR_OPENROUTER_KEY, apiKey);
+      return { success: true };
+    }
+  );
+
+  ipcMain.handle('openrouter:getApiKey', async () => {
+    const apiKey = await keytar.getPassword(KEYTAR_SERVICE, KEYTAR_OPENROUTER_KEY);
+    return { hasKey: !!apiKey };
+  });
+
+  ipcMain.handle('openrouter:listModels', async () => {
+    const apiKey = await keytar.getPassword(KEYTAR_SERVICE, KEYTAR_OPENROUTER_KEY);
+    if (!apiKey) throw new Error('OpenRouter API key not set');
+    const response = await fetch('https://openrouter.ai/api/v1/models', {
+      headers: { 'Authorization': `Bearer ${apiKey}` },
+    });
+    if (!response.ok) {
+      throw new Error(`OpenRouter API error: ${response.status} ${response.statusText}`);
+    }
+    const data = await response.json() as { data: any[] };
+    return data.data.map((m: any) => ({
+      id: m.id,
+      name: m.name,
+      description: m.description ?? '',
+      contextLength: m.context_length,
+      inputPricePerMillion: parseFloat(m.pricing?.prompt ?? '0') * 1_000_000,
+      outputPricePerMillion: parseFloat(m.pricing?.completion ?? '0') * 1_000_000,
+      supportsTools: m.supported_parameters?.includes('tools') ?? false,
+    }));
+  });
+
+  ipcMain.handle('openrouter:testConnection', async () => {
+    const apiKey = await keytar.getPassword(KEYTAR_SERVICE, KEYTAR_OPENROUTER_KEY);
+    if (!apiKey) return { success: false, error: 'No API key set' };
+    try {
+      const response = await fetch('https://openrouter.ai/api/v1/models', {
+        headers: { 'Authorization': `Bearer ${apiKey}` },
+      });
+      return { success: response.ok };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  });
 
   createWindow();
 

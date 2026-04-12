@@ -6,25 +6,25 @@ Every agent must update this file when work begins and when work ends.
 
 ## CURRENT SPRINT
 
-**Sprint 2 — Milestone 1: Electron Shell + Supabase Auth + Project Scaffold**
+**Sprint 3 — Milestone 2: Mode System + OpenRouter Provider**
 
 | Step | Description | Status |
 |---|---|---|
-| 2.1 | Fix root package.json dev script | ✅ Done |
-| 2.2 | Fix vite.config.ts — nuclear option: flatten packages to src/lib/ | ✅ Done |
-| 2.3 | Fix tsconfig.json (remove references, add paths) | ✅ Done |
-| 2.4 | Fix .npmrc (INI format for onlyBuiltDependencies) | ✅ Done |
-| 2.5 | Flatten @vibeflow/* source into apps/desktop/src/lib/ | ✅ Done |
-| 2.6 | Update all imports to use relative paths | ✅ Done |
-| 2.7 | Run pnpm install + pnpm dev | ✅ Done — app launches from external terminal |
-| 2.8 | Replace email/password with GitHub OAuth sign-in | ✅ Done |
-| 2.9 | Fix better-sqlite3 bundling in vite.config.ts | ✅ Done |
-| 2.10 | Add .env existence check with clear error message | ✅ Done |
-| 2.11 | Smoke test: sign-in, project create, top bar, session persist | ✅ Done — app launches, GitHub OAuth works |
-| 2.12 | Fix electron-vite config file name (vite.config.ts → electron.vite.config.ts) | ✅ Done |
-| 2.13 | Fix ELECTRON_RUN_AS_NODE=1 env var causing crashes | ✅ Done |
+| | 3.1 | Add Mode and OpenRouterModel types to shared-types/entities.ts | ✅ Done |
+| | 3.2 | Add Mode IPC types to shared-types/ipc.ts | ✅ Done |
+| | 3.3 | Add modes table + CRUD methods to local-db.ts | ✅ Done |
+| | 3.4 | Create default-modes.ts with 6 default modes | ✅ Done |
+| | 3.5 | Add Mode IPC handlers to main/index.ts | ✅ Done |
+| | 3.6 | Add OpenRouter IPC handlers to main/index.ts (keytar, listModels, testConnection) | ✅ Done |
+| | 3.7 | Seed default modes in app.whenReady() | ✅ Done |
+| | 3.8 | Update preload/index.ts to expose modes and openrouter APIs | ✅ Done |
+| | 3.9 | Create ModesScreen.tsx with soul editor and model picker | ✅ Done |
+| | 3.10 | Create BottomBar.tsx showing current Mode and model | ✅ Done |
+| | 3.11 | Update App.tsx to add navigation to ModesScreen | ✅ Done |
+| | 3.12 | Update ProjectListScreen.tsx to add Modes button | ✅ Done |
+| | 3.13 | Smoke test: pnpm dev launches, modes appear, soul saves, API key works | ✅ Done — app launches, all UI renders |
 
-**Current Step:** Milestone 1 complete. Ready for Milestone 2 (five-panel layout).
+**Current Step:** Milestone 2 complete. Ready for Milestone 3 (Conversation UI + Orchestrator).
 
 ---
 
@@ -43,6 +43,14 @@ Every agent must update this file when work begins and when work ends.
 - Created package README files
 - Created directory scaffold
 
+### Sprint 2 — Milestone 1: Electron Shell + Supabase Auth + Project Scaffold (Complete)
+- Electron app launches with sign-in screen
+- GitHub OAuth sign-in works (via localhost redirect on port 54321)
+- Project list screen renders with create project functionality
+- Top bar shows version, commit, sync status, email
+- Local SQLite database initialized with projects and modes tables
+- 6 default Modes seeded on first run
+
 ---
 
 ## BLOCKERS
@@ -58,5 +66,5 @@ Every agent must update this file when work begins and when work ends.
 ## LAST UPDATED
 
 - Date: 2026-04-12
-- Updated by: Builder (Milestone 1 complete — GitHub OAuth working, build config fixed)
-- Next update due: Start of Milestone 2 (five-panel layout)
+- Updated by: Builder (Milestone 2 complete — Mode system, OpenRouter provider, settings UI)
+- Next update due: Start of Milestone 3 (Conversation UI + Orchestrator)
