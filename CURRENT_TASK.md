@@ -162,6 +162,17 @@ Every agent must update this file when work begins and when work ends.
 
 ---
 
+### Sprint 10 — Bug Fix: Runaway Streaming Loop (Listener Stacking) (Complete)
+- Root cause: `onStreamToken`, `onStreamDone`, `onStreamError` in `apps/desktop/src/preload/index.ts` used `ipcRenderer.on()` which accumulates listeners
+- When `ConversationScreen.tsx` re-renders or switches conversations, new listeners stack up, causing each token to be appended N times (producing `7a7a7a7a...` repeating tokens)
+- Fix: added `ipcRenderer.removeAllListeners()` before `ipcRenderer.on()` in all three `onStream*` functions
+- This ensures there is never more than one listener per channel at a time
+- File changed: `apps/desktop/src/preload/index.ts` (lines 52–65 only)
+
+**Current Step:** Bug fix complete. Ready for review.
+
+---
+
 ## BLOCKERS
 
 **Resolved:** Windows EPERM file lock on `node_modules/electron-vite` — use `pnpm install --ignore-scripts` then manually run `node node_modules/electron/install.js`.
@@ -177,5 +188,5 @@ Every agent must update this file when work begins and when work ends.
 ## LAST UPDATED
 
 - Date: 2026-04-12
-- Updated by: Builder (Milestone 8 implementation complete — Handoff System + Idiosyncrasies Tracking)
-- Next update due: After Milestone 9 implementation
+- Updated by: Builder (Bug fix: runaway streaming loop — listener stacking in preload/index.ts)
+- Next update due: After next task

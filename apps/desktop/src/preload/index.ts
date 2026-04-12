@@ -50,12 +50,15 @@ const api: VibeFlowAPI = {
     getMessages: (conversationId: string) => ipcRenderer.invoke('conversations:getMessages', conversationId),
     sendMessage: (args: SendMessageArgs) => ipcRenderer.invoke('conversations:sendMessage', args),
     onStreamToken: (callback: (data: StreamTokenData) => void) => {
+      ipcRenderer.removeAllListeners('conversations:streamToken');
       ipcRenderer.on('conversations:streamToken', (_event, data) => callback(data));
     },
     onStreamDone: (callback: (data: StreamDoneData) => void) => {
+      ipcRenderer.removeAllListeners('conversations:streamDone');
       ipcRenderer.on('conversations:streamDone', (_event, data) => callback(data));
     },
     onStreamError: (callback: (data: StreamErrorData) => void) => {
+      ipcRenderer.removeAllListeners('conversations:streamError');
       ipcRenderer.on('conversations:streamError', (_event, data) => callback(data));
     },
     removeStreamListeners: () => {
