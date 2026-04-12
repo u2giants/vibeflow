@@ -4,7 +4,7 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
-import type { VibeFlowAPI, CreateConversationArgs, SendMessageArgs, StreamTokenData, StreamDoneData, StreamErrorData, TerminalRunArgs, GitCommitArgs, GitPushArgs, SshHost, ProjectDevOpsConfig, ActionRequest, HumanDecisionArgs } from '../lib/shared-types';
+import type { VibeFlowAPI, CreateConversationArgs, SendMessageArgs, StreamTokenData, StreamDoneData, StreamErrorData, TerminalRunArgs, GitCommitArgs, GitPushArgs, SshHost, ProjectDevOpsConfig, ActionRequest, HumanDecisionArgs, GenerateHandoffArgs } from '../lib/shared-types';
 import { SyncStatus } from '../lib/shared-types';
 
 const api: VibeFlowAPI = {
@@ -131,6 +131,10 @@ const api: VibeFlowAPI = {
     removePendingApprovalListener: () => {
       ipcRenderer.removeAllListeners('approval:pendingApproval');
     },
+  },
+  handoff: {
+    generate: (args: GenerateHandoffArgs) => ipcRenderer.invoke('handoff:generate', args),
+    getIdiosyncrasies: () => ipcRenderer.invoke('handoff:getIdiosyncrasies'),
   },
 };
 

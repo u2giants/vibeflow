@@ -1,6 +1,6 @@
 # VibeFlow — Idiosyncrasies
 
-Last updated: 2026-04-12 (Sprint 2 — Milestone 1 OAuth fix + build config fixes)
+Last updated: 2026-04-12 (Sprint 9 — Milestone 8 Handoff System)
 
 ---
 
@@ -70,6 +70,14 @@ If you see something in the codebase that looks odd and it is NOT in this file, 
 - **What breaks if cleaned up:** If this env var is set, the app will always crash on startup. It must be unset for Electron to work.
 - **Permanent or temporary:** Permanent fix — ensure this env var is never set.
 - **How to safely remove later:** Run `set ELECTRON_RUN_AS_NODE=` in cmd.exe or `Remove-Item Env:ELECTRON_RUN_AS_NODE` in PowerShell. Check with `echo %ELECTRON_RUN_AS_NODE%` (cmd) or `$env:ELECTRON_RUN_AS_NODE` (PowerShell) — it should be empty.
+
+### Handoff system reads docs/idiosyncrasies.md from relative path
+- **What looks odd:** In `apps/desktop/src/main/index.ts`, the handoff IPC handler reads `docs/idiosyncrasies.md` using a relative path `../../../../docs/idiosyncrasies.md` from the compiled `out/main/index.js` location.
+- **Where it is:** `apps/desktop/src/main/index.ts` — `handoff:generate` and `handoff:getIdiosyncrasies` IPC handlers
+- **Why it was done:** The handoff system needs to include current idiosyncrasies in the generated handoff document so a new AI session knows about intentional weirdness. Reading from the source repo path ensures the latest content is included.
+- **What breaks if cleaned up:** If you change the relative path, the handoff generator will fail to read idiosyncrasies.md and the handoff document will be incomplete. If the file doesn't exist, it falls back to an error message.
+- **Permanent or temporary:** Permanent — this is how the handoff system works.
+- **How to safely remove later:** N/A — this is the intended design.
 
 ---
 

@@ -347,6 +347,36 @@ export interface ApprovalApi {
   removePendingApprovalListener: () => void;
 }
 
+// ── Handoff IPC ───────────────────────────────────────────────────
+
+export type HandoffChannel =
+  | 'handoff:generate'
+  | 'handoff:list'
+  | 'handoff:getIdiosyncrasies';
+
+export interface GenerateHandoffArgs {
+  conversationId: string;
+  projectId: string;
+  projectName: string;
+  currentGoal: string;
+  nextStep: string;
+  warnings: string[];
+  pendingBugs: string[];
+}
+
+export interface HandoffResult {
+  handoffDoc: string;
+  handoffPrompt: string;
+  filename: string;
+  storageUrl: string | null;
+  error: string | null;
+}
+
+export interface HandoffApi {
+  generate: (args: GenerateHandoffArgs) => Promise<HandoffResult>;
+  getIdiosyncrasies: () => Promise<string>;
+}
+
 // ── Full window API ──────────────────────────────────────────────
 
 export interface VibeFlowAPI {
@@ -363,4 +393,5 @@ export interface VibeFlowAPI {
   tooling: ToolingChannel;
   devops: DevOpsApi;
   approval: ApprovalApi;
+  handoff: HandoffApi;
 }

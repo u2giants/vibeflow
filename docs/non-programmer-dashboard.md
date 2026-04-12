@@ -1,13 +1,13 @@
 # VibeFlow — Owner Dashboard
 
-Last updated: 2026-04-12
+Last updated: 2026-04-12 (Milestone 8 complete)
 
 ---
 
 ## Current Sprint
 
-**Sprint 7 — Milestone 6: DevOps Subsystem + Templates**
-Status: ✅ Complete — DevOps templates, GitHub Actions monitoring, Coolify deploy, and health checks
+**Sprint 9 — Milestone 8: Handoff System + Idiosyncrasies Tracking**
+Status: ✅ Complete — Handoff button, document generation, copy-to-clipboard, cloud storage
 
 ---
 
@@ -22,6 +22,8 @@ Status: ✅ Complete — DevOps templates, GitHub Actions monitoring, Coolify de
 - Milestone 4: Cloud Sync + Real-time + Device Ownership
 - **Milestone 5: Local Tooling (Files, Terminal, Git, SSH)** — File reading/writing, terminal commands, git status, SSH management
 - **Milestone 6: DevOps Subsystem + Templates** — DevOps templates, GitHub Actions monitoring, Coolify deploy, health checks
+- **Milestone 7: Approval System + Second-Model Review** — Three-tier approval system, second-model review, approval cards
+- **Milestone 8: Handoff System + Idiosyncrasies Tracking** — One-click handoff to new AI sessions
 
 **What is a "Mode"?**
 A Mode is like a different AI personality with a specific job. Think of it like having 6 different specialists on your team:
@@ -38,7 +40,7 @@ Each Mode has its own "soul" (detailed instructions) that you can edit, and you 
 OpenRouter is the service that provides the AI models (like Claude, Gemini, etc.). You need an API key from OpenRouter to use AI features. The key is stored securely in your Windows Credential Manager — never in plain text.
 
 **Next step:**
-- Milestone 7: AI tool calling — the AI can actually use these tools to read/write files, run commands, and manage git
+- Milestone 9: (TBD — awaiting Orchestrator direction)
 
 ---
 
@@ -78,6 +80,12 @@ OpenRouter is the service that provides the AI models (like Claude, Gemini, etc.
 - **NEW:** A "Deploy Now" button triggers a Coolify deploy
 - **NEW:** A health check runs against any URL and shows ✅ Healthy, ⚠️ Unhealthy, or 🔴 Unreachable with response time
 - **NEW:** Deploy run history shows timestamp, status, triggered by, and commit SHA
+- **NEW:** A "📋 Handoff" button appears in the conversation panel header (top-right)
+- **NEW:** Clicking Handoff opens a form asking: "What are you trying to do?" and "What should the next AI session do?"
+- **NEW:** Submitting generates a complete handoff document with: current goal, architecture summary, known oddities, next step
+- **NEW:** A copyable handoff prompt appears — ready to paste into a new AI session
+- **NEW:** "Copy to Clipboard" button works with one click
+- **NEW:** Handoff documents are saved to Supabase Storage (cloud) when available
 
 ---
 

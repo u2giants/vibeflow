@@ -1,0 +1,33 @@
+-- Milestone 8: Handoff System + Idiosyncrasies Tracking
+-- Supabase Storage bucket for handoff documents
+--
+-- NOTE: Storage buckets cannot be created via SQL migration.
+-- The bucket must be created via the Supabase Dashboard or Management API.
+--
+-- Instructions for the Orchestrator:
+-- 1. Go to Supabase Dashboard → Storage
+-- 2. Create a new bucket named: handoffs
+-- 3. Set it to private (not public)
+-- 4. Add the following RLS policies:
+--
+-- Policy 1: Users can only upload to their own folder
+-- CREATE POLICY "Users can upload own handoffs"
+-- ON storage.objects FOR INSERT
+-- WITH CHECK (bucket_id = 'handoffs' AND (storage.foldername(name))[1] = auth.uid()::text);
+--
+-- Policy 2: Users can only read their own handoffs
+-- CREATE POLICY "Users can read own handoffs"
+-- ON storage.objects FOR SELECT
+-- USING (bucket_id = 'handoffs' AND (storage.foldername(name))[1] = auth.uid()::text);
+--
+-- Policy 3: Users can update their own handoffs
+-- CREATE POLICY "Users can update own handoffs"
+-- ON storage.objects FOR UPDATE
+-- USING (bucket_id = 'handoffs' AND (storage.foldername(name))[1] = auth.uid()::text);
+--
+-- Policy 4: Users can delete their own handoffs
+-- CREATE POLICY "Users can delete own handoffs"
+-- ON storage.objects FOR DELETE
+-- USING (bucket_id = 'handoffs' AND (storage.foldername(name))[1] = auth.uid()::text);
+--
+-- Path structure: {userId}/{projectId}/handoff-<timestamp>.md

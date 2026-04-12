@@ -1,8 +1,9 @@
 /** ConversationScreen — 5-panel layout: execution stream, chat, editor/diff, terminal/git. */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { Message, ConversationThread, Mode, StreamTokenData, RunState, GitStatus, TerminalCommandResult, ActionRequest, ApprovalResult } from '../../lib/shared-types';
+import type { Message, ConversationThread, Mode, StreamTokenData, RunState, GitStatus, TerminalCommandResult, ActionRequest, ApprovalResult, HandoffResult } from '../../lib/shared-types';
 import ApprovalCard from '../components/ApprovalCard';
+import HandoffDialog from '../components/HandoffDialog';
 
 interface ConversationScreenProps {
   conversation: ConversationThread;
@@ -58,6 +59,13 @@ export default function ConversationScreen({ conversation, currentMode, onNewCon
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
   // Approval state
   const [pendingApproval, setPendingApproval] = useState<ActionRequest | null>(null);
+  // Handoff state
+  const [showHandoffForm, setShowHandoffForm] = useState(false);
+  const [handoffGoal, setHandoffGoal] = useState('');
+  const [handoffNextStep, setHandoffNextStep] = useState('');
+  const [handoffWarnings, setHandoffWarnings] = useState('');
+  const [handoffResult, setHandoffResult] = useState<HandoffResult | null>(null);
+  const [handoffGenerating, setHandoffGenerating] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const leaseCheckTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const terminalEndRef = useRef<HTMLDivElement>(null);
@@ -224,6 +232,28 @@ export default function ConversationScreen({ conversation, currentMode, onNewCon
     setPendingApproval(null);
   };
 
+  const handleHandoffSubmit = async () => {
+    if (!handoffGoal.trim()) return;
+    setHandoffGenerating(true);
+    try {
+      const result = await window.vibeflow.handoff.generate({
+        conversationId: conversation.id,
+        projectId: conversation.projectId,
+        projectName: conversation.title,
+        currentGoal: handoffGoal,
+        nextStep: handoffNextStep || 'Continue from where we left off',
+        warnings: handoffWarnings ? [handoffWarnings] : [],
+        pendingBugs: [],
+      });
+      setHandoffResult(result);
+      setShowHandoffForm(false);
+    } catch (err) {
+      console.error('Handoff generation failed:', err);
+    } finally {
+      setHandoffGenerating(false);
+    }
+  };
+
   const handleSend = useCallback(async () => {
     if (!input.trim() || streaming) return;
 
@@ -339,20 +369,36 @@ export default function ConversationScreen({ conversation, currentMode, onNewCon
               {runStateLabel}
             </span>
           </div>
-          <button
-            onClick={onNewConversation}
-            style={{
-              padding: '4px 12px',
-              backgroundColor: '#238636',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 4,
-              cursor: 'pointer',
-              fontSize: 12,
-            }}
-          >
-            + New Conversation
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={() => setShowHandoffForm(true)}
+              style={{
+                padding: '4px 12px',
+                backgroundColor: '#6e40c9',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 4,
+                cursor: 'pointer',
+                fontSize: 12,
+              }}
+            >
+              📋 Handoff
+            </button>
+            <button
+              onClick={onNewConversation}
+              style={{
+                padding: '4px 12px',
+                backgroundColor: '#238636',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 4,
+                cursor: 'pointer',
+                fontSize: 12,
+              }}
+            >
+              + New Conversation
+            </button>
+          </div>
         </div>
 
         {/* Ownership Banner */}
@@ -711,6 +757,136 @@ export default function ConversationScreen({ conversation, currentMode, onNewCon
           onApprove={handleApprove}
           onReject={handleReject}
           onAskMore={handleAskMore}
+        />
+      )}
+
+      {/* Handoff Form */}
+      {showHandoffForm && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.7)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+        }}>
+          <div style={{
+            backgroundColor: '#161b22',
+            border: '1px solid #30363d',
+            borderRadius: 12,
+            width: '60%',
+            maxWidth: 500,
+            padding: 24,
+          }}>
+            <h3 style={{ margin: '0 0 16px', color: '#c9d1d9' }}>📋 Generate Handoff</h3>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: 'block', color: '#8b949e', fontSize: 13, marginBottom: 4 }}>
+                What are you trying to do right now?
+              </label>
+              <textarea
+                value={handoffGoal}
+                onChange={(e) => setHandoffGoal(e.target.value)}
+                placeholder="e.g. Implementing the handoff system for Milestone 8"
+                style={{
+                  width: '100%',
+                  minHeight: 60,
+                  padding: 8,
+                  backgroundColor: '#0d1117',
+                  color: '#c9d1d9',
+                  border: '1px solid #30363d',
+                  borderRadius: 6,
+                  fontSize: 13,
+                  resize: 'vertical',
+                  outline: 'none',
+                }}
+              />
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: 'block', color: '#8b949e', fontSize: 13, marginBottom: 4 }}>
+                What should the next AI session do?
+              </label>
+              <textarea
+                value={handoffNextStep}
+                onChange={(e) => setHandoffNextStep(e.target.value)}
+                placeholder="e.g. Test the handoff button and fix any bugs"
+                style={{
+                  width: '100%',
+                  minHeight: 60,
+                  padding: 8,
+                  backgroundColor: '#0d1117',
+                  color: '#c9d1d9',
+                  border: '1px solid #30363d',
+                  borderRadius: 6,
+                  fontSize: 13,
+                  resize: 'vertical',
+                  outline: 'none',
+                }}
+              />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', color: '#8b949e', fontSize: 13, marginBottom: 4 }}>
+                Any warnings? (optional)
+              </label>
+              <textarea
+                value={handoffWarnings}
+                onChange={(e) => setHandoffWarnings(e.target.value)}
+                placeholder="e.g. Don't touch the approval engine without reviewing first"
+                style={{
+                  width: '100%',
+                  minHeight: 40,
+                  padding: 8,
+                  backgroundColor: '#0d1117',
+                  color: '#c9d1d9',
+                  border: '1px solid #30363d',
+                  borderRadius: 6,
+                  fontSize: 13,
+                  resize: 'vertical',
+                  outline: 'none',
+                }}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setShowHandoffForm(false)}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: '#30363d',
+                  color: '#c9d1d9',
+                  border: 'none',
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  fontSize: 13,
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleHandoffSubmit}
+                disabled={handoffGenerating || !handoffGoal.trim()}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: '#6e40c9',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 6,
+                  cursor: handoffGenerating || !handoffGoal.trim() ? 'not-allowed' : 'pointer',
+                  fontSize: 13,
+                  fontWeight: 600,
+                }}
+              >
+                {handoffGenerating ? 'Generating...' : 'Generate Handoff'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Handoff Result Dialog */}
+      {handoffResult && (
+        <HandoffDialog
+          result={handoffResult}
+          onClose={() => setHandoffResult(null)}
         />
       )}
     </div>

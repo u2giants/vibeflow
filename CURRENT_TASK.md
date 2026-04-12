@@ -142,6 +142,26 @@ Every agent must update this file when work begins and when work ends.
 
 ---
 
+### Sprint 9 — Milestone 8: Handoff System + Idiosyncrasies Tracking (Complete)
+- Handoff button (📋) added to conversation panel header (top-right, purple button)
+- Handoff form: asks for current goal, next step, and optional warnings
+- Handoff generator: pure functions that generate handoff document and prompt
+  - `handoff-generator.ts`: `generateHandoffDoc()` and `generateHandoffPrompt()` — no side effects
+- Handoff storage: saves documents to Supabase Storage bucket (`handoffs`)
+  - `handoff-storage.ts`: `HandoffStorage` class with `saveHandoffDoc()` and `listHandoffs()`
+- HandoffDialog: modal dialog showing generated prompt with copy-to-clipboard
+  - Copy button with visual feedback ("✅ Copied!")
+  - Expandable full handoff document viewer
+  - Storage status indicator (✅ Saved to cloud / ⚠️ Storage error)
+- IPC handlers: `handoff:generate` and `handoff:getIdiosyncrasies` in main process
+- Preload exposes `handoff.generate()` and `handoff.getIdiosyncrasies()` to renderer
+- Supabase migration notes in `docs/supabase-migration-m8.sql` (bucket creation instructions)
+- Idiosyncrasies tracking: new entry for handoff system reading docs from relative path
+
+**Current Step:** Milestone 8 complete. Ready for Milestone 9.
+
+---
+
 ## BLOCKERS
 
 **Resolved:** Windows EPERM file lock on `node_modules/electron-vite` — use `pnpm install --ignore-scripts` then manually run `node node_modules/electron/install.js`.
@@ -157,5 +177,5 @@ Every agent must update this file when work begins and when work ends.
 ## LAST UPDATED
 
 - Date: 2026-04-12
-- Updated by: Builder (Milestone 7 implementation complete — Approval System + Second-Model Review)
-- Next update due: After Milestone 8 implementation
+- Updated by: Builder (Milestone 8 implementation complete — Handoff System + Idiosyncrasies Tracking)
+- Next update due: After Milestone 9 implementation
