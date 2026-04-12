@@ -6,8 +6,8 @@ Last updated: 2026-04-12
 
 ## Current Sprint
 
-**Sprint 3 — Milestone 2: Mode System + OpenRouter Provider**
-Status: ✅ Complete — Modes settings screen works, OpenRouter API key storage works, model picker works
+**Sprint 3 — Milestone 3: Conversation UI + Orchestrator Mode**
+Status: ✅ Complete — You can now open a project, send messages to the AI, and see responses stream back in real time
 
 ---
 
@@ -18,6 +18,7 @@ Status: ✅ Complete — Modes settings screen works, OpenRouter API key storage
 - Sprint 1: All documentation files and repo structure created
 - Milestone 1: Electron app launches, GitHub OAuth sign-in works, project list screen works
 - Milestone 2: Mode system with 6 default Modes, OpenRouter API key management, model picker, bottom status bar
+- **Milestone 3: Conversation UI + Orchestrator Mode** — 5-panel layout, chat with AI, streaming responses, conversation history
 
 **What is a "Mode"?**
 A Mode is like a different AI personality with a specific job. Think of it like having 6 different specialists on your team:
@@ -34,7 +35,7 @@ Each Mode has its own "soul" (detailed instructions) that you can edit, and you 
 OpenRouter is the service that provides the AI models (like Claude, Gemini, etc.). You need an API key from OpenRouter to use AI features. The key is stored securely in your Windows Credential Manager — never in plain text.
 
 **Next step:**
-- Milestone 3: Build the conversation UI so you can actually talk to the Orchestrator
+- Milestone 4: Add tool calling so the AI can actually read and write files
 
 ---
 
@@ -44,26 +45,32 @@ OpenRouter is the service that provides the AI models (like Claude, Gemini, etc.
 - "Sign in with GitHub" button opens GitHub OAuth in your browser
 - After authorizing, the app signs you in and shows the project list
 - Your email appears in the top bar after sign-in
-- **NEW:** "⚙️ Modes" button opens the Modes settings screen
-- **NEW:** 6 default Modes appear with their names, icons, and descriptions
-- **NEW:** You can edit any Mode's "soul" (instructions) and save it — it persists after restart
-- **NEW:** You can enter your OpenRouter API key securely (stored in Windows Credential Manager)
-- **NEW:** After entering the API key, a list of available AI models loads with pricing
-- **NEW:** You can assign different models to different Modes
-- **NEW:** A bottom status bar shows the current Mode and assigned model
+- "⚙️ Modes" button opens the Modes settings screen
+- 6 default Modes appear with their names, icons, and descriptions
+- You can edit any Mode's "soul" (instructions) and save it — it persists after restart
+- You can enter your OpenRouter API key securely (stored in Windows Credential Manager)
+- After entering the API key, a list of available AI models loads with pricing
+- You can assign different models to different Modes
+- A bottom status bar shows the current Mode and assigned model
+- **NEW:** Clicking a project opens the main workspace with a 5-panel layout
+- **NEW:** The workspace has: a conversation list sidebar, a chat area, an execution stream (left), and an editor placeholder (right)
+- **NEW:** You can type a message and send it to the Orchestrator AI
+- **NEW:** The AI response streams back token by token (you see it appear in real time)
+- **NEW:** Conversation history is saved and shows previous messages
+- **NEW:** You can create multiple conversations within the same project
+- **NEW:** A "← Back to Projects" button returns to the project list
 
 ---
 
 ## What Was Tested Today
 
 - App launches successfully with `pnpm dev`
-- Sign-in screen renders with GitHub OAuth button
-- Top bar component exists and shows build metadata
-- Modes settings screen renders with 6 default Modes
-- Soul editor saves and persists in local SQLite
-- OpenRouter API key entry stores securely in Windows Credential Manager
-- Model picker shows available OpenRouter models with pricing
-- Bottom status bar shows current Mode and model name
+- TypeScript compilation passes with zero errors
+- Clicking a project opens the ProjectScreen with the 5-panel layout
+- Sending a message triggers the Orchestrator and streams the response
+- Conversation history persists in local SQLite
+- New conversations can be created within a project
+- Back button returns to the project list
 
 ---
 

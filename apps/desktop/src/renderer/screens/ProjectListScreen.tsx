@@ -8,9 +8,10 @@ import type { Project } from '../../lib/shared-types';
 interface ProjectListScreenProps {
   onSignOut: () => void;
   onOpenModes: () => void;
+  onOpenProject: (project: Project) => void;
 }
 
-export default function ProjectListScreen({ onSignOut, onOpenModes }: ProjectListScreenProps) {
+export default function ProjectListScreen({ onSignOut, onOpenModes, onOpenProject }: ProjectListScreenProps) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [showNewProject, setShowNewProject] = useState(false);
   const [newName, setNewName] = useState('');
@@ -193,11 +194,13 @@ export default function ProjectListScreen({ onSignOut, onOpenModes }: ProjectLis
           {projects.map((project) => (
             <div
               key={project.id}
+              onClick={() => onOpenProject(project)}
               style={{
                 padding: 16,
                 backgroundColor: '#fff',
                 border: '1px solid #dee2e6',
                 borderRadius: 8,
+                cursor: 'pointer',
               }}
             >
               <h3 style={{ margin: '0 0 4px' }}>{project.name}</h3>

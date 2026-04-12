@@ -24,9 +24,13 @@ import type {
   CreateProjectArgs,
   UpdateModeSoulArgs,
   UpdateModeModelArgs,
+  CreateConversationArgs,
+  SendMessageArgs,
+  Message,
 } from '../lib/shared-types';
 import { SyncStatus } from '../lib/shared-types';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { runOrchestrator } from '../lib/orchestrator/orchestrator';
 
 const KEYTAR_SERVICE = 'vibeflow';
 const KEYTAR_OPENROUTER_KEY = 'openrouter-api-key';
@@ -333,6 +337,87 @@ app.whenReady().then(async () => {
     } catch (err) {
       return { success: false, error: String(err) };
     }
+  });
+
+  // ── Conversation IPC Handlers ───────────────────────────────────────
+
+  ipcMain.handle('conversations:list', async (_event, projectId: string) => {
+    if (!localDb) return [];
+    return localDb.listConversations(projectId);
+  });
+
+  ipcMain.handle('conversations:create', async (_event, args: CreateConversationArgs) => {
+    if (!localDb) throw new Error('DB not initialized');
+    const conv = {
+      id: crypto.randomUUID(),
+      projectId: args.projectId,
+      title: args.title,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    localDb.createConversation(conv);
+    return conv;
+  });
+
+  ipcMain.handle('conversations:getMessages', async (_event, conversationId: string) => {
+    if (!localDb) return [];
+    return localDb.listMessages(conversationId);
+  });
+
+  ipcMain.handle('conversations:sendMessage', async (event, args: SendMessageArgs) => {
+    if (!localDb) throw new Error('DB not initialized');
+
+    // Save user message
+    const userMsg: Message = {
+      id: crypto.randomUUID(),
+      conversationId: args.conversationId,
+      role: 'user',
+      content: args.content,
+      modeId: null,
+      modelId: null,
+      createdAt: new Date().toISOString(),
+    };
+    localDb.insertMessage(userMsg);
+
+    // Get conversation history
+    const history = localDb.listMessages(args.conversationId);
+
+    // Get Orchestrator mode
+    const orchestratorMode = localDb.listModes().find(m => m.slug === 'orchestrator');
+    if (!orchestratorMode) throw new Error('Orchestrator mode not found');
+
+    // Get API key
+    const apiKey = await keytar.getPassword(KEYTAR_SERVICE, KEYTAR_OPENROUTER_KEY);
+    if (!apiKey) throw new Error('OpenRouter API key not set');
+
+    // Stream response
+    let fullContent = '';
+    await runOrchestrator(history, orchestratorMode, apiKey, {
+      onToken: (token) => {
+        event.sender.send('conversations:streamToken', { conversationId: args.conversationId, token });
+      },
+      onDone: (content) => {
+        fullContent = content;
+      },
+      onError: (error) => {
+        event.sender.send('conversations:streamError', { conversationId: args.conversationId, error });
+      },
+    });
+
+    // Save assistant message
+    const assistantMsg: Message = {
+      id: crypto.randomUUID(),
+      conversationId: args.conversationId,
+      role: 'assistant',
+      content: fullContent,
+      modeId: orchestratorMode.id,
+      modelId: orchestratorMode.modelId,
+      createdAt: new Date().toISOString(),
+    };
+    localDb.insertMessage(assistantMsg);
+
+    event.sender.send('conversations:streamDone', { conversationId: args.conversationId });
+    return assistantMsg;
   });
 
   createWindow();

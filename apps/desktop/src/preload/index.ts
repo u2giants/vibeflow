@@ -4,7 +4,7 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
-import type { VibeFlowAPI } from '../lib/shared-types';
+import type { VibeFlowAPI, CreateConversationArgs, SendMessageArgs, StreamTokenData, StreamDoneData, StreamErrorData } from '../lib/shared-types';
 import { SyncStatus } from '../lib/shared-types';
 
 const api: VibeFlowAPI = {
@@ -37,6 +37,26 @@ const api: VibeFlowAPI = {
     getApiKey: () => ipcRenderer.invoke('openrouter:getApiKey'),
     listModels: () => ipcRenderer.invoke('openrouter:listModels'),
     testConnection: () => ipcRenderer.invoke('openrouter:testConnection'),
+  },
+  conversations: {
+    list: (projectId: string) => ipcRenderer.invoke('conversations:list', projectId),
+    create: (args: CreateConversationArgs) => ipcRenderer.invoke('conversations:create', args),
+    getMessages: (conversationId: string) => ipcRenderer.invoke('conversations:getMessages', conversationId),
+    sendMessage: (args: SendMessageArgs) => ipcRenderer.invoke('conversations:sendMessage', args),
+    onStreamToken: (callback: (data: StreamTokenData) => void) => {
+      ipcRenderer.on('conversations:streamToken', (_event, data) => callback(data));
+    },
+    onStreamDone: (callback: (data: StreamDoneData) => void) => {
+      ipcRenderer.on('conversations:streamDone', (_event, data) => callback(data));
+    },
+    onStreamError: (callback: (data: StreamErrorData) => void) => {
+      ipcRenderer.on('conversations:streamError', (_event, data) => callback(data));
+    },
+    removeStreamListeners: () => {
+      ipcRenderer.removeAllListeners('conversations:streamToken');
+      ipcRenderer.removeAllListeners('conversations:streamDone');
+      ipcRenderer.removeAllListeners('conversations:streamError');
+    },
   },
 };
 

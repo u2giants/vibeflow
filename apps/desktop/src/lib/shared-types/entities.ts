@@ -36,8 +36,19 @@ export interface ConversationThread {
 
 export interface Message {
   id: string;
-  threadId: string;
+  conversationId: string;
   role: 'user' | 'assistant' | 'system';
+  content: string;
+  modeId: string | null;
+  modelId: string | null;
+  createdAt: string;
+}
+
+export interface ExecutionEvent {
+  id: string;
+  conversationId: string;
+  type: 'mode-start' | 'mode-end' | 'tool-call' | 'tool-result' | 'thinking' | 'info';
+  modeId: string | null;
   content: string;
   createdAt: string;
 }

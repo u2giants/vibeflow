@@ -3,7 +3,7 @@
 import Database from 'better-sqlite3';
 import * as path from 'path';
 import * as fs from 'fs';
-import type { Mode, ApprovalPolicy } from '../shared-types';
+import type { Mode, ApprovalPolicy, ConversationThread, Message } from '../shared-types';
 
 // Minimal Project type (mirrors shared-types)
 interface Project {
@@ -66,6 +66,24 @@ export class LocalDb {
         is_built_in INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS conversations (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS messages (
+        id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        mode_id TEXT,
+        model_id TEXT,
+        created_at TEXT NOT NULL
       );
     `);
   }
@@ -196,6 +214,44 @@ export class LocalDb {
     insertMany(modes);
   }
 
+  // ── Conversation CRUD ─────────────────────────────────────────────
+
+  listConversations(projectId: string): ConversationThread[] {
+    if (!this.db) return [];
+    const stmt = this.db.prepare(
+      'SELECT * FROM conversations WHERE project_id = ? ORDER BY updated_at DESC'
+    );
+    const rows = stmt.all(projectId) as Array<Record<string, unknown>>;
+    return rows.map(rowToConversation);
+  }
+
+  createConversation(conv: ConversationThread): void {
+    if (!this.db) return;
+    const stmt = this.db.prepare(
+      `INSERT INTO conversations (id, project_id, title, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)`
+    );
+    stmt.run(conv.id, conv.projectId, conv.title, conv.createdAt, conv.updatedAt);
+  }
+
+  listMessages(conversationId: string): Message[] {
+    if (!this.db) return [];
+    const stmt = this.db.prepare(
+      'SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC'
+    );
+    const rows = stmt.all(conversationId) as Array<Record<string, unknown>>;
+    return rows.map(rowToMessage);
+  }
+
+  insertMessage(msg: Message): void {
+    if (!this.db) return;
+    const stmt = this.db.prepare(
+      `INSERT INTO messages (id, conversation_id, role, content, mode_id, model_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    );
+    stmt.run(msg.id, msg.conversationId, msg.role, msg.content, msg.modeId, msg.modelId, msg.createdAt);
+  }
+
   close(): void {
     if (this.db) {
       this.db.close();
@@ -233,5 +289,27 @@ function rowToMode(row: Record<string, unknown>): Mode {
     isBuiltIn: (row.is_built_in as number) === 1,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
+  };
+}
+
+function rowToConversation(row: Record<string, unknown>): ConversationThread {
+  return {
+    id: row.id as string,
+    projectId: row.project_id as string,
+    title: row.title as string,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+  };
+}
+
+function rowToMessage(row: Record<string, unknown>): Message {
+  return {
+    id: row.id as string,
+    conversationId: row.conversation_id as string,
+    role: row.role as 'user' | 'assistant' | 'system',
+    content: row.content as string,
+    modeId: (row.mode_id as string) ?? null,
+    modelId: (row.model_id as string) ?? null,
+    createdAt: row.created_at as string,
   };
 }

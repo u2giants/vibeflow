@@ -1,18 +1,19 @@
 /**
  * Root React component.
  * Shows SignInScreen if not authenticated, ProjectListScreen if authenticated.
- * Supports navigation to ModesScreen.
+ * Supports navigation to ModesScreen and ProjectScreen.
  */
 
 import { useState, useEffect } from 'react';
-import type { Mode } from '../lib/shared-types';
+import type { Mode, Project } from '../lib/shared-types';
 import SignInScreen from './screens/SignInScreen';
 import ProjectListScreen from './screens/ProjectListScreen';
+import ProjectScreen from './screens/ProjectScreen';
 import ModesScreen from './screens/ModesScreen';
 import TopBar from './components/TopBar';
 import BottomBar from './components/BottomBar';
 
-type Screen = 'projects' | 'modes';
+type Screen = 'projects' | 'modes' | 'project';
 
 export default function App() {
   const [email, setEmail] = useState<string | null>(null);
@@ -20,6 +21,7 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>('projects');
   const [currentMode, setCurrentMode] = useState<Mode | null>(null);
   const [openRouterConnected, setOpenRouterConnected] = useState(false);
+  const [activeProject, setActiveProject] = useState<Project | null>(null);
 
   useEffect(() => {
     // Check for existing session on mount
@@ -50,6 +52,16 @@ export default function App() {
     setEmail(null);
   };
 
+  const handleOpenProject = (project: Project) => {
+    setActiveProject(project);
+    setScreen('project');
+  };
+
+  const handleBackToProjects = () => {
+    setActiveProject(null);
+    setScreen('projects');
+  };
+
   if (loading) {
     return <div style={{ padding: 20 }}>Loading...</div>;
   }
@@ -58,11 +70,23 @@ export default function App() {
     return <SignInScreen onSignedIn={handleSignedIn} />;
   }
 
+  if (screen === 'project' && activeProject) {
+    return (
+      <ProjectScreen
+        project={activeProject}
+        email={email}
+        currentMode={currentMode}
+        onBack={handleBackToProjects}
+        onOpenModes={() => setScreen('modes')}
+      />
+    );
+  }
+
   if (screen === 'modes') {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
         <TopBar email={email} />
-        <ModesScreen onBack={() => setScreen('projects')} />
+        <ModesScreen onBack={() => activeProject ? setScreen('project') : setScreen('projects')} />
         <BottomBar currentMode={currentMode} openRouterConnected={openRouterConnected} />
       </div>
     );
@@ -74,6 +98,7 @@ export default function App() {
       <ProjectListScreen
         onSignOut={handleSignedOut}
         onOpenModes={() => setScreen('modes')}
+        onOpenProject={handleOpenProject}
       />
       <BottomBar currentMode={currentMode} openRouterConnected={openRouterConnected} />
     </div>

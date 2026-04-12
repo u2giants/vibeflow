@@ -1,6 +1,6 @@
 /** IPC message types for Electron main ↔ renderer communication. */
 
-import type { Project, SyncStatus, Account, Mode, OpenRouterModel } from './entities';
+import type { Project, SyncStatus, Account, Mode, OpenRouterModel, ConversationThread, Message } from './entities';
 
 // ── Auth IPC ──────────────────────────────────────────────────────
 
@@ -68,6 +68,44 @@ export interface OpenRouterChannel {
   testConnection: () => Promise<{ success: boolean; error?: string }>;
 }
 
+// ── Conversation IPC ────────────────────────────────────────────────
+
+export interface CreateConversationArgs {
+  projectId: string;
+  title: string;
+}
+
+export interface SendMessageArgs {
+  conversationId: string;
+  content: string;
+  modeId: string;
+}
+
+export interface StreamTokenData {
+  conversationId: string;
+  token: string;
+}
+
+export interface StreamDoneData {
+  conversationId: string;
+}
+
+export interface StreamErrorData {
+  conversationId: string;
+  error: string;
+}
+
+export interface ConversationsChannel {
+  list: (projectId: string) => Promise<ConversationThread[]>;
+  create: (args: CreateConversationArgs) => Promise<ConversationThread>;
+  getMessages: (conversationId: string) => Promise<Message[]>;
+  sendMessage: (args: SendMessageArgs) => Promise<Message>;
+  onStreamToken: (callback: (data: StreamTokenData) => void) => void;
+  onStreamDone: (callback: (data: StreamDoneData) => void) => void;
+  onStreamError: (callback: (data: StreamErrorData) => void) => void;
+  removeStreamListeners: () => void;
+}
+
 // ── Full window API ──────────────────────────────────────────────
 
 export interface VibeFlowAPI {
@@ -79,4 +117,5 @@ export interface VibeFlowAPI {
   };
   modes: ModesChannel;
   openrouter: OpenRouterChannel;
+  conversations: ConversationsChannel;
 }

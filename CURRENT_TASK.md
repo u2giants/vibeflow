@@ -51,6 +51,22 @@ Every agent must update this file when work begins and when work ends.
 - Local SQLite database initialized with projects and modes tables
 - 6 default Modes seeded on first run
 
+### Sprint 3 — Milestone 2: Mode System + OpenRouter Provider (Complete)
+- Mode system with 6 default Modes (Orchestrator, Architect, Coder, Debugger, DevOps, Reviewer)
+- Mode soul editor — edit and persist Mode instructions in local SQLite
+- OpenRouter API key management — stored securely in Windows Credential Manager
+- Model picker with pricing — assign different AI models to different Modes
+- Bottom status bar shows current Mode and assigned model
+
+### Sprint 4 — Milestone 3: Conversation UI + Orchestrator Mode (Complete)
+- 5-panel layout: top bar, left execution stream, center chat, right editor placeholder, bottom bar
+- ProjectScreen with conversation list sidebar
+- ConversationScreen with message list, streaming input, and execution events
+- Orchestrator calls OpenRouter with streaming — tokens appear in real time
+- Conversation history persists in local SQLite after app restart
+- Multiple conversations per project supported
+- "← Back to Projects" button returns to project list
+
 ---
 
 ## BLOCKERS
@@ -66,5 +82,5 @@ Every agent must update this file when work begins and when work ends.
 ## LAST UPDATED
 
 - Date: 2026-04-12
-- Updated by: Builder (Milestone 2 complete — Mode system, OpenRouter provider, settings UI)
-- Next update due: Start of Milestone 3 (Conversation UI + Orchestrator)
+- Updated by: Builder (Milestone 3 complete — Conversation UI, Orchestrator streaming, 5-panel layout)
+- Next update due: Start of Milestone 4 (Tool Calling + File Operations)
