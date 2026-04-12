@@ -284,6 +284,69 @@ export interface ToolingChannel {
   };
 }
 
+// ── Approval IPC ──────────────────────────────────────────────────
+
+export type ApprovalChannel =
+  | 'approval:requestAction'
+  | 'approval:humanDecision'
+  | 'approval:getQueue'
+  | 'approval:getLog'
+  | 'approval:pendingApproval';  // main → renderer event
+
+export interface HumanDecisionArgs {
+  actionId: string;
+  decision: 'approved' | 'rejected';
+  note: string | null;
+}
+
+export type ApprovalTier = 1 | 2 | 3;
+export type ActionType =
+  | 'file:read'
+  | 'file:write'
+  | 'file:delete'
+  | 'terminal:run'
+  | 'git:commit'
+  | 'git:push-main'
+  | 'git:push-branch'
+  | 'deploy:trigger'
+  | 'deploy:restart'
+  | 'deploy:stop'
+  | 'ssh:connect';
+
+export interface ActionRequest {
+  id: string;
+  description: string;
+  reason: string;
+  affectedResources: string[];
+  rollbackDifficulty: 'easy' | 'difficult' | 'impossible';
+  requestingModeId: string;
+  requestingModelId: string;
+  conversationId: string;
+  actionType: ActionType;
+  payload: unknown;
+  createdAt: string;
+}
+
+export type ApprovalDecision = 'approved' | 'rejected' | 'escalated';
+
+export interface ApprovalResult {
+  actionId: string;
+  decision: ApprovalDecision;
+  tier: ApprovalTier;
+  reviewerModel: string | null;
+  reviewerReason: string | null;
+  decidedAt: string;
+}
+
+export interface ApprovalApi {
+  requestAction: (action: ActionRequest) => Promise<ApprovalResult>;
+  humanDecision: (args: HumanDecisionArgs) => Promise<void>;
+  getQueue: () => Promise<ActionRequest[]>;
+  getLog: () => Promise<any[]>;
+  onPendingApproval: (callback: (data: { type: string; action: ActionRequest; tier?: number; result?: ApprovalResult }) => void) => void;
+  removePendingApprovalListener: () => void;
+}
+
 // ── Full window API ──────────────────────────────────────────────
 
 export interface VibeFlowAPI {
@@ -299,4 +362,5 @@ export interface VibeFlowAPI {
   sync: SyncChannel;
   tooling: ToolingChannel;
   devops: DevOpsApi;
+  approval: ApprovalApi;
 }

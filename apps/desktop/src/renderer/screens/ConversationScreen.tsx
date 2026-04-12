@@ -1,7 +1,8 @@
 /** ConversationScreen — 5-panel layout: execution stream, chat, editor/diff, terminal/git. */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { Message, ConversationThread, Mode, StreamTokenData, RunState, GitStatus, TerminalCommandResult } from '../../lib/shared-types';
+import type { Message, ConversationThread, Mode, StreamTokenData, RunState, GitStatus, TerminalCommandResult, ActionRequest, ApprovalResult } from '../../lib/shared-types';
+import ApprovalCard from '../components/ApprovalCard';
 
 interface ConversationScreenProps {
   conversation: ConversationThread;
@@ -55,6 +56,8 @@ export default function ConversationScreen({ conversation, currentMode, onNewCon
   const [bottomTab, setBottomTab] = useState<'terminal' | 'git'>('terminal');
   const [terminalOutput, setTerminalOutput] = useState<Array<{ commandId: string; text: string; stream: string }>>([]);
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
+  // Approval state
+  const [pendingApproval, setPendingApproval] = useState<ActionRequest | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const leaseCheckTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const terminalEndRef = useRef<HTMLDivElement>(null);
@@ -173,6 +176,53 @@ export default function ConversationScreen({ conversation, currentMode, onNewCon
       }
     };
   }, [conversation.id, conversation, onConversationUpdated]);
+
+  // Approval event listeners
+  useEffect(() => {
+    const handlePendingApproval = (data: { type: string; action: ActionRequest; tier?: number; result?: ApprovalResult }) => {
+      if (data.type === 'human-required') {
+        setPendingApproval(data.action);
+        setExecutionEvents(prev => [...prev, `⏳ Waiting for human approval: ${data.action.description}`]);
+      }
+      if (data.type === 'auto-approved' && data.result) {
+        const result = data.result;
+        setExecutionEvents(prev => [...prev, `✅ Auto-approved (Tier ${result.tier}): ${data.action.description}`]);
+      }
+    };
+
+    window.vibeflow.approval.onPendingApproval(handlePendingApproval);
+
+    return () => {
+      window.vibeflow.approval.removePendingApprovalListener();
+    };
+  }, []);
+
+  const handleApprove = async () => {
+    if (!pendingApproval) return;
+    await window.vibeflow.approval.humanDecision({
+      actionId: pendingApproval.id,
+      decision: 'approved',
+      note: null,
+    });
+    setExecutionEvents(prev => [...prev, `✅ Approved: ${pendingApproval.description}`]);
+    setPendingApproval(null);
+  };
+
+  const handleReject = async () => {
+    if (!pendingApproval) return;
+    await window.vibeflow.approval.humanDecision({
+      actionId: pendingApproval.id,
+      decision: 'rejected',
+      note: 'Rejected by user',
+    });
+    setExecutionEvents(prev => [...prev, `❌ Rejected: ${pendingApproval.description}`]);
+    setPendingApproval(null);
+  };
+
+  const handleAskMore = () => {
+    // For now, just dismiss — future milestone will add chat integration
+    setPendingApproval(null);
+  };
 
   const handleSend = useCallback(async () => {
     if (!input.trim() || streaming) return;
@@ -653,6 +703,16 @@ export default function ConversationScreen({ conversation, currentMode, onNewCon
           51%, 100% { opacity: 0; }
         }
       `}</style>
+
+      {/* Approval Card Overlay */}
+      {pendingApproval && (
+        <ApprovalCard
+          action={pendingApproval}
+          onApprove={handleApprove}
+          onReject={handleReject}
+          onAskMore={handleAskMore}
+        />
+      )}
     </div>
   );
 }

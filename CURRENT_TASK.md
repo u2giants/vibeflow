@@ -112,7 +112,33 @@ Every agent must update this file when work begins and when work ends.
 - All API calls run in Electron main process via IPC — no keys in renderer
 - DevOps button added to ProjectScreen sidebar
 
-**Current Step:** Milestone 6 complete. Ready for Milestone 7 (AI Tool Calling).
+**Current Step:** Milestone 6 complete. Ready for Milestone 7 (Approval System + Second-Model Review).
+
+---
+
+### Sprint 8 — Milestone 7: Approval System + Second-Model Review (Complete)
+- Three-tier approval system: Tier 1 (auto-allow), Tier 2 (second-model review), Tier 3 (human approval)
+- Approval engine: classifies actions into tiers based on ActionType
+  - Tier 1 (auto): file:read, terminal:run
+  - Tier 2 (second-model review): file:write, git:commit, git:push-branch, ssh:connect
+  - Tier 3 (human): file:delete, git:push-main, deploy:trigger, deploy:restart, deploy:stop
+- Second-model review: uses google/gemini-flash-1.5 via OpenRouter to review Tier 2 actions
+  - Returns approve/escalate_to_human/reject with plain-English reason
+  - If approved: action proceeds, logged as "second-model approved"
+  - If rejected: requesting Mode is told why
+  - If escalated: human sees approval card
+- Approval card modal: shows plain-English description, why, affected resources, rollback difficulty, requesting Mode and model
+  - Three buttons: Approve, Reject, Ask for more info
+- Approval queue indicator in BottomBar: shows pending count and recent approvals
+  - Green checkmarks for Tier 1 auto-approvals
+  - Blue checkmarks for Tier 2 second-model approvals
+  - Yellow badge for pending human approvals
+- Approval logger: in-memory log tracking all approval decisions with full provenance
+- IPC handlers: approval:requestAction, approval:humanDecision, approval:getQueue, approval:getLog
+- ConversationScreen: subscribes to approval:pendingApproval events, shows ApprovalCard overlay
+- Execution stream shows approval events (auto-approved, waiting for human approval, approved, rejected)
+
+**Current Step:** Milestone 7 complete. Ready for review.
 
 ---
 
@@ -131,5 +157,5 @@ Every agent must update this file when work begins and when work ends.
 ## LAST UPDATED
 
 - Date: 2026-04-12
-- Updated by: Builder (Milestone 6 implementation complete — DevOps Subsystem + Templates)
-- Next update due: After Milestone 7 (AI Tool Calling) implementation
+- Updated by: Builder (Milestone 7 implementation complete — Approval System + Second-Model Review)
+- Next update due: After Milestone 8 implementation

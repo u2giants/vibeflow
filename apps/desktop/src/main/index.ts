@@ -12,7 +12,7 @@ import * as path from 'path';
 // In packaged: use app.getAppPath() instead (handled below after app is ready)
 dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
 
-import { app, BrowserWindow, ipcMain, shell, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, IpcMainInvokeEvent } from 'electron';
 import * as http from 'http';
 import * as url from 'url';
 import * as os from 'os';
@@ -46,7 +46,11 @@ import type {
   GitPushArgs,
   SshHost,
   ProjectDevOpsConfig,
+  ActionRequest,
+  HumanDecisionArgs,
 } from '../lib/shared-types';
+import { classifyAction, runSecondModelReview, type ApprovalResult, type ApprovalTier } from '../lib/approval/approval-engine';
+import { logApprovalDecision, getRecentApprovals } from '../lib/approval/approval-logger';
 
 const KEYTAR_SERVICE = 'vibeflow';
 const KEYTAR_OPENROUTER_KEY = 'openrouter-api-key';
@@ -663,6 +667,110 @@ app.whenReady().then(async () => {
   ipcMain.handle('devops:listDeployRuns', (_event, projectId: string) => {
     return localDb?.listDeployRuns(projectId) ?? [];
   });
+
+  // ── Approval IPC Handlers ──────────────────────────────────────────
+
+  // Pending human approvals queue
+  const pendingHumanApprovals = new Map<string, {
+    action: ActionRequest;
+    resolve: (result: ApprovalResult) => void;
+  }>();
+
+  ipcMain.handle('approval:requestAction', async (event, action: ActionRequest): Promise<ApprovalResult> => {
+    const tier = classifyAction(action.actionType);
+
+    if (tier === 1) {
+      // Auto-allow
+      const result: ApprovalResult = {
+        actionId: action.id,
+        decision: 'approved',
+        tier: 1,
+        reviewerModel: null,
+        reviewerReason: 'Auto-approved (safe action)',
+        decidedAt: new Date().toISOString(),
+      };
+      logApprovalDecision(action, result);
+      return result;
+    }
+
+    if (tier === 2) {
+      // Second-model review
+      const apiKey = await keytar.getPassword(KEYTAR_SERVICE, KEYTAR_OPENROUTER_KEY);
+      if (!apiKey) {
+        // No API key — escalate to human
+        return requestHumanApproval(event, action, 2);
+      }
+
+      const review = await runSecondModelReview(action, apiKey);
+
+      if (review.decision === 'approve') {
+        const result: ApprovalResult = {
+          actionId: action.id,
+          decision: 'approved',
+          tier: 2,
+          reviewerModel: 'google/gemini-flash-1.5',
+          reviewerReason: review.reason,
+          decidedAt: new Date().toISOString(),
+        };
+        logApprovalDecision(action, result);
+        // Notify renderer of the auto-approval for execution stream
+        event.sender.send('approval:pendingApproval', { type: 'auto-approved', action, result });
+        return result;
+      }
+
+      if (review.decision === 'reject') {
+        const result: ApprovalResult = {
+          actionId: action.id,
+          decision: 'rejected',
+          tier: 2,
+          reviewerModel: 'google/gemini-flash-1.5',
+          reviewerReason: review.reason,
+          decidedAt: new Date().toISOString(),
+        };
+        logApprovalDecision(action, result);
+        return result;
+      }
+
+      // escalate_to_human
+      return requestHumanApproval(event, action, 2);
+    }
+
+    // Tier 3 — human approval required
+    return requestHumanApproval(event, action, 3);
+  });
+
+  function requestHumanApproval(event: IpcMainInvokeEvent, action: ActionRequest, tier: ApprovalTier): Promise<ApprovalResult> {
+    return new Promise((resolve) => {
+      pendingHumanApprovals.set(action.id, { action, resolve });
+      // Send to renderer to show approval card
+      event.sender.send('approval:pendingApproval', { type: 'human-required', action, tier });
+    });
+  }
+
+  ipcMain.handle('approval:humanDecision', async (_event, args: HumanDecisionArgs): Promise<void> => {
+    const pending = pendingHumanApprovals.get(args.actionId);
+    if (!pending) return;
+
+    pendingHumanApprovals.delete(args.actionId);
+
+    const result: ApprovalResult = {
+      actionId: args.actionId,
+      decision: args.decision,
+      tier: 3,
+      reviewerModel: null,
+      reviewerReason: args.note,
+      decidedAt: new Date().toISOString(),
+    };
+
+    logApprovalDecision(pending.action, result);
+    pending.resolve(result);
+  });
+
+  ipcMain.handle('approval:getQueue', () => {
+    return Array.from(pendingHumanApprovals.values()).map(p => p.action);
+  });
+
+  ipcMain.handle('approval:getLog', () => getRecentApprovals(20));
 
   createWindow();
 

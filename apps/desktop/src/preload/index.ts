@@ -4,7 +4,7 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
-import type { VibeFlowAPI, CreateConversationArgs, SendMessageArgs, StreamTokenData, StreamDoneData, StreamErrorData, TerminalRunArgs, GitCommitArgs, GitPushArgs, SshHost, ProjectDevOpsConfig } from '../lib/shared-types';
+import type { VibeFlowAPI, CreateConversationArgs, SendMessageArgs, StreamTokenData, StreamDoneData, StreamErrorData, TerminalRunArgs, GitCommitArgs, GitPushArgs, SshHost, ProjectDevOpsConfig, ActionRequest, HumanDecisionArgs } from '../lib/shared-types';
 import { SyncStatus } from '../lib/shared-types';
 
 const api: VibeFlowAPI = {
@@ -119,6 +119,18 @@ const api: VibeFlowAPI = {
     stop: (appId: string, baseUrl: string) => ipcRenderer.invoke('devops:stop', appId, baseUrl),
     healthCheck: (url: string) => ipcRenderer.invoke('devops:healthCheck', url),
     listDeployRuns: (projectId: string) => ipcRenderer.invoke('devops:listDeployRuns', projectId),
+  },
+  approval: {
+    requestAction: (action: ActionRequest) => ipcRenderer.invoke('approval:requestAction', action),
+    humanDecision: (args: HumanDecisionArgs) => ipcRenderer.invoke('approval:humanDecision', args),
+    getQueue: () => ipcRenderer.invoke('approval:getQueue'),
+    getLog: () => ipcRenderer.invoke('approval:getLog'),
+    onPendingApproval: (callback: (data: { type: string; action: ActionRequest; tier?: number; result?: any }) => void) => {
+      ipcRenderer.on('approval:pendingApproval', (_event, data) => callback(data));
+    },
+    removePendingApprovalListener: () => {
+      ipcRenderer.removeAllListeners('approval:pendingApproval');
+    },
   },
 };
 
