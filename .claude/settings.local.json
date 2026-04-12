@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm why:*)",
+      "Bash(pnpm why:*)",
+      "Bash(pnpm outdated:*)",
+      "Bash(npm --version)",
+      "Bash(pnpm --version)",
+      "Bash(curl -s \"https://raw.githubusercontent.com/WiseLibs/better-sqlite3/master/package.json\")",
+      "Bash(python -c \"import sys,json; p=json.load\\(sys.stdin\\); print\\('version:', p.get\\('version'\\)\\); print\\('engines:', p.get\\('engines'\\)\\)\")",
+      "Bash(curl -s \"https://api.github.com/repos/WiseLibs/better-sqlite3/releases/latest\")",
+      "Bash(python -c \"import sys,json; r=json.load\\(sys.stdin\\); print\\('latest release:', r.get\\('tag_name'\\)\\); assets=[a['name'] for a in r.get\\('assets',[]\\)]; [print\\(a\\) for a in assets if 'node' in a.lower\\(\\) or 'napi' in a.lower\\(\\)]\")"
+    ]
+  }
+}

@@ -134,3 +134,31 @@ pnpm workspaces are fast, well-supported, and work well with TypeScript monorepo
 - Requires pnpm (not npm or yarn)
 - Package linking is handled by pnpm workspaces
 - Builder must use pnpm for all package management
+
+---
+
+## Decision 8 — exFAT Workaround: Vite resolveId Plugin + TS Paths Instead of workspace:* Symlinks
+
+**Date:** 2026-04-11 (updated 2026-04-11)
+**Decision:** On the current dev machine, the D: drive is exFAT which does not support symlinks. pnpm `workspace:*` dependencies fail with `EISDIR`. We use a **Vite plugin with `resolveId` hook** and TypeScript `paths` to resolve `@vibeflow/*` imports to source files without symlinks.
+**Decided by:** Architect
+
+**Alternatives considered:**
+1. Move repo to an NTFS drive — not practical right now
+2. Use npm workspaces — also fails with symlinks on exFAT
+3. Flatten all code into `apps/desktop` — works but loses monorepo structure
+4. Vite `resolve.alias` — **FAILED**: electron-vite's SSR mode resolves bare specifiers through Node before aliases
+5. **Vite plugin with `resolveId` hook + TS paths** ← CHOSEN
+
+**Why this was chosen:**
+`resolve.alias` does not work for electron-vite's main/preload builds because electron-vite sets `config.build.ssr = true` and `config.ssr.noExternal = true`. In SSR mode, Vite resolves bare specifiers (like `@vibeflow/storage`) through Node's module resolution before applying aliases. A Vite plugin's `resolveId` hook with `enforce: 'pre'` runs at the earliest stage of resolution, before any node_modules lookup, guaranteeing interception.
+
+Preserves the monorepo package structure. The plugin resolves `@vibeflow/*` at bundle time. TypeScript `paths` resolve them at typecheck time. No symlinks needed. The `.npmrc` file sets `node-linker=hoisted` so pnpm uses flat `node_modules` instead of symlinked `.pnpm` store.
+
+**Consequences:**
+- No `package.json` can declare `workspace:*` dependencies
+- Cross-package imports are resolved by a custom Vite plugin (not Node.js module resolution)
+- `packages/storage` inlines its own `Project` type instead of importing from `@vibeflow/shared-types`
+- When the repo moves to NTFS, we can switch back to standard `workspace:*` deps and remove the plugin
+
+**See also:** `docs/idiosyncrasies.md` entry "No workspace:* on exFAT"

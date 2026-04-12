@@ -1,0 +1,22 @@
+appId: com.vibeflow.app
+productName: VibeFlow
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**/*
+  - node_modules/**/*
+npmRebuild: true
+nativeRebuilder: sequential
+asarUnpack:
+  - "**/*.node"
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true

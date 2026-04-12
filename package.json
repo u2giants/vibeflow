@@ -1,0 +1,23 @@
+{
+  "name": "vibeflow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "VibeFlow — Windows-first Electron AI IDE",
+  "scripts": {
+    "dev": "pnpm --filter @vibeflow/desktop dev",
+    "build": "pnpm --filter @vibeflow/desktop build",
+    "build:metadata": "node scripts/inject-build-metadata.js",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "electron",
+      "esbuild",
+      "keytar"
+    ]
+  }
+}
