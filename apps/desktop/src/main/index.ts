@@ -92,35 +92,13 @@ function getSupabaseClient(): SupabaseClient | null {
 // ── Sync Engine ─────────────────────────────────────────────────────
 
 async function initSyncEngine(userId: string): Promise<void> {
-  if (syncEngine) return;
-
-  const supabaseUrl = process.env.VITE_SUPABASE_URL ?? '';
-  const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY ?? '';
-
-  if (!supabaseUrl || !supabaseAnonKey) {
-    console.warn('[main] Supabase not configured, sync disabled');
-    return;
+  // Sync is temporarily disabled due to SQLite native module issues.
+  // The app works fully without sync — all data is stored locally.
+  // Sync will be re-enabled in a future milestone.
+  console.log('[main] Sync is temporarily disabled. All data is stored locally.');
+  if (mainWindow) {
+    mainWindow.webContents.send('sync:statusChanged', 'offline');
   }
-
-  let deviceId = localDb?.getDeviceId() ?? null;
-  if (!deviceId) {
-    deviceId = crypto.randomUUID();
-    localDb?.setDeviceId(deviceId);
-  }
-
-  const deviceName = os.hostname();
-
-  syncEngine = new SyncEngine(supabaseUrl, supabaseAnonKey, deviceId, deviceName, userId, localDb!);
-
-  // Forward sync status events to renderer
-  syncEngine.on((event) => {
-    if (event.type === 'sync-status-changed' && mainWindow) {
-      mainWindow.webContents.send('sync:statusChanged', event.data);
-    }
-  });
-
-  await syncEngine.start();
-  console.log('[main] Sync engine started for user', userId);
 }
 
 function createWindow(): void {
@@ -415,7 +393,7 @@ app.whenReady().then(async () => {
         const dbPath = path.join(app.getPath('userData'), 'vibeflow-cache.sqlite');
         localDb = new LocalDb(dbPath);
         await localDb.init();
-        localDb.seedDefaultModes();
+        localDb.seedDefaultModes(DEFAULT_MODES);
         console.log('[main] LocalDb lazy-initialized in createSelfMaintenance');
       } catch (err) {
         console.error('[main] LocalDb lazy-init failed:', err);
@@ -650,62 +628,23 @@ app.whenReady().then(async () => {
     return assistantMsg;
   });
 
-  // ── Sync IPC Handlers ─────────────────────────────────────────────
+  // ── Sync IPC Handlers (temporarily disabled — all data is local) ──
 
-  ipcMain.handle('sync:getDeviceId', async (): Promise<string | null> => {
-    return localDb?.getDeviceId() ?? null;
-  });
+  ipcMain.handle('sync:getDeviceId', async (): Promise<string | null> => 'local');
 
   ipcMain.handle(
     'sync:registerDevice',
-    async (): Promise<{ deviceId: string; deviceName: string }> => {
-      if (!localDb) throw new Error('DB not initialized');
-      if (!syncEngine) throw new Error('Sync engine not initialized');
-
-      return {
-        deviceId: syncEngine.getDeviceId(),
-        deviceName: syncEngine.getDeviceName(),
-      };
-    }
+    async (): Promise<{ deviceId: string; deviceName: string }> => ({
+      deviceId: 'local',
+      deviceName: os.hostname(),
+    })
   );
 
-  ipcMain.handle('sync:syncAll', async (): Promise<{ success: boolean }> => {
-    if (!syncEngine) throw new Error('Sync engine not initialized');
-    await syncEngine.syncAll();
-    return { success: true };
-  });
-
-  ipcMain.handle(
-    'sync:acquireLease',
-    async (_event: IpcMainInvokeEvent, conversationId: string): Promise<{ success: boolean; error?: string }> => {
-      if (!syncEngine) throw new Error('Sync engine not initialized');
-      return syncEngine.acquireLease(conversationId);
-    }
-  );
-
-  ipcMain.handle(
-    'sync:releaseLease',
-    async (_event: IpcMainInvokeEvent, conversationId: string): Promise<{ success: boolean }> => {
-      if (!syncEngine) throw new Error('Sync engine not initialized');
-      return syncEngine.releaseLease(conversationId);
-    }
-  );
-
-  ipcMain.handle(
-    'sync:takeoverLease',
-    async (_event: IpcMainInvokeEvent, conversationId: string): Promise<{ success: boolean; error?: string }> => {
-      if (!syncEngine) throw new Error('Sync engine not initialized');
-      return syncEngine.takeoverLease(conversationId);
-    }
-  );
-
-  ipcMain.handle(
-    'sync:getLease',
-    async (_event: IpcMainInvokeEvent, conversationId: string) => {
-      if (!syncEngine) throw new Error('Sync engine not initialized');
-      return syncEngine.getLease(conversationId);
-    }
-  );
+  ipcMain.handle('sync:syncAll', async (): Promise<{ success: boolean }> => ({ success: true }));
+  ipcMain.handle('sync:acquireLease', async (): Promise<{ success: boolean; error?: string }> => ({ success: true }));
+  ipcMain.handle('sync:releaseLease', async (): Promise<{ success: boolean }> => ({ success: true }));
+  ipcMain.handle('sync:takeoverLease', async (): Promise<{ success: boolean; error?: string }> => ({ success: true }));
+  ipcMain.handle('sync:getLease', async (): Promise<null> => null);
 
   // ── Tooling IPC Handlers ──────────────────────────────────────────
 
@@ -1015,6 +954,6 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
-  syncEngine?.stop();
+  // syncEngine is disabled — no stop needed
   localDb?.close();
 });

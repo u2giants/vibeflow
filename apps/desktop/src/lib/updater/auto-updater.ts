@@ -20,7 +20,7 @@ export function initAutoUpdater(mainWindow: BrowserWindow): void {
     console.log('[updater] Update available:', info.version);
     mainWindow.webContents.send('updater:update-available', {
       version: info.version,
-      releaseDate: info.releaseDate?.toISOString() ?? '',
+      releaseDate: info.releaseDate ?? '',
     });
   });
 

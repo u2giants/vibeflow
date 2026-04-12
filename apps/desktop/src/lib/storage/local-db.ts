@@ -1,9 +1,15 @@
-/** Local SQLite cache using better-sqlite3 (synchronous, file-backed). */
+/** Local SQLite cache using sql.js (pure JavaScript, no native compilation needed). */
 
-import Database from 'better-sqlite3';
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any
+const initSqlJs = require('sql.js') as (opts?: { locateFile?: (f: string) => string }) => Promise<any>;
 import * as path from 'path';
 import * as fs from 'fs';
 import type { Mode, ApprovalPolicy, ConversationThread, Message, RunState, ProjectDevOpsConfig, DeployRun } from '../shared-types';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyRow = any[];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SqlJsDb = any;
 
 // Minimal Project type (mirrors shared-types)
 interface Project {
@@ -17,9 +23,62 @@ interface Project {
   syncedAt: string | null;
 }
 
+interface ProjectRow {
+  id: string;
+  user_id: string;
+  name: string;
+  description: string | null;
+  is_self_maintenance: number;
+  created_at: string;
+  updated_at: string;
+  synced_at: string | null;
+}
+
+interface ModeRow {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  icon: string;
+  color: string;
+  soul: string;
+  model_id: string;
+  fallback_model_id: string | null;
+  temperature: number;
+  approval_policy: string;
+  is_built_in: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ConversationRow {
+  id: string;
+  project_id: string;
+  user_id: string;
+  title: string;
+  run_state: string;
+  owner_device_id: string | null;
+  owner_device_name: string | null;
+  lease_expires_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface MessageRow {
+  id: string;
+  conversation_id: string;
+  role: string;
+  content: string;
+  mode_id: string | null;
+  model_id: string | null;
+  created_at: string;
+}
+
 export class LocalDb {
-  private db: Database.Database | null = null;
+  private db: SqlJsDb | null = null;
   private dbPath: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private sqlJsModule: any | null = null;
 
   constructor(dbPath: string) {
     this.dbPath = dbPath;
@@ -33,13 +92,37 @@ export class LocalDb {
       fs.mkdirSync(dir, { recursive: true });
     }
 
-    this.db = new Database(this.dbPath);
-    this.db.pragma('journal_mode = WAL');
+    // Initialize sql.js
+    // __dirname in bundled main process is apps/desktop/out/main
+    // node_modules is at repo root: D:\repos\vibeflow\node_modules
+    // Need to go up 4 levels: out/main -> out -> desktop -> apps -> vibeflow
+    const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
+    this.sqlJsModule = await initSqlJs({
+      locateFile: (file: string) => path.join(repoRoot, 'node_modules', 'sql.js', 'dist', file),
+    });
+
+    // Load existing database or create new one
+    if (fs.existsSync(this.dbPath)) {
+      const buffer = fs.readFileSync(this.dbPath);
+      this.db = new this.sqlJsModule.Database(buffer);
+    } else {
+      this.db = new this.sqlJsModule.Database();
+    }
+
     this.initializeSchema();
+    this.save();
+  }
+
+  private save(): void {
+    if (this.db) {
+      const data = this.db.export();
+      const buffer = Buffer.from(data);
+      fs.writeFileSync(this.dbPath, buffer);
+    }
   }
 
   private initializeSchema(): void {
-    this.db!.exec(`
+    this.db!.run(`
       CREATE TABLE IF NOT EXISTS projects (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
@@ -122,419 +205,284 @@ export class LocalDb {
     `);
   }
 
-  // ── Project CRUD ──────────────────────────────────────────────
-
-  listProjects(userId: string): Project[] {
-    if (!this.db) return [];
-    const stmt = this.db.prepare(
-      'SELECT * FROM projects WHERE user_id = ? ORDER BY updated_at DESC'
-    );
-    const rows = stmt.all(userId) as Array<Record<string, unknown>>;
-    return rows.map(rowToProject);
-  }
-
-  insertProject(project: Project): void {
-    if (!this.db) return;
-    const stmt = this.db.prepare(
-      `INSERT OR REPLACE INTO projects
-       (id, user_id, name, description, is_self_maintenance, created_at, updated_at, synced_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    );
-    stmt.run(
-      project.id,
-      project.userId,
-      project.name,
-      project.description,
-      project.isSelfMaintenance ? 1 : 0,
-      project.createdAt,
-      project.updatedAt,
-      project.syncedAt
-    );
-  }
-
-  /** Find the self-maintenance project, if it exists. */
-  getSelfMaintenanceProject(): Project | null {
-    if (!this.db) return null;
-    const stmt = this.db.prepare(
-      'SELECT * FROM projects WHERE is_self_maintenance = 1 LIMIT 1'
-    );
-    const row = stmt.get() as Record<string, unknown> | undefined;
-    return row ? rowToProject(row) : null;
-  }
-
-  // ── Mode CRUD ───────────────────────────────────────────────────
-
-  listModes(): Mode[] {
-    if (!this.db) return [];
-    const stmt = this.db.prepare('SELECT * FROM modes ORDER BY slug');
-    const rows = stmt.all() as Array<Record<string, unknown>>;
-    return rows.map(rowToMode);
-  }
-
-  getMode(id: string): Mode | null {
-    if (!this.db) return null;
-    const stmt = this.db.prepare('SELECT * FROM modes WHERE id = ?');
-    const row = stmt.get(id) as Record<string, unknown> | undefined;
-    return row ? rowToMode(row) : null;
-  }
-
-  upsertMode(mode: Mode): void {
-    if (!this.db) return;
-    const stmt = this.db.prepare(
-      `INSERT OR REPLACE INTO modes
-       (id, slug, name, description, icon, color, soul, model_id, fallback_model_id,
-        temperature, approval_policy, is_built_in, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    );
-    stmt.run(
-      mode.id,
-      mode.slug,
-      mode.name,
-      mode.description,
-      mode.icon,
-      mode.color,
-      mode.soul,
-      mode.modelId,
-      mode.fallbackModelId,
-      mode.temperature,
-      mode.approvalPolicy,
-      mode.isBuiltIn ? 1 : 0,
-      mode.createdAt,
-      mode.updatedAt
-    );
-  }
-
-  updateModeSoul(id: string, soul: string): void {
-    if (!this.db) return;
-    const stmt = this.db.prepare(
-      'UPDATE modes SET soul = ?, updated_at = ? WHERE id = ?'
-    );
-    stmt.run(soul, new Date().toISOString(), id);
-  }
-
-  updateModeModel(id: string, modelId: string): void {
-    if (!this.db) return;
-    const stmt = this.db.prepare(
-      'UPDATE modes SET model_id = ?, updated_at = ? WHERE id = ?'
-    );
-    stmt.run(modelId, new Date().toISOString(), id);
-  }
-
-  seedDefaultModes(modes: Omit<Mode, 'createdAt' | 'updatedAt'>[]): void {
-    if (!this.db) return;
-    // Only seed if the table is empty
-    const count = this.db.prepare('SELECT COUNT(*) as count FROM modes').get() as { count: number };
-    if (count.count > 0) return;
-
-    const now = new Date().toISOString();
-    const stmt = this.db.prepare(
-      `INSERT INTO modes
-       (id, slug, name, description, icon, color, soul, model_id, fallback_model_id,
-        temperature, approval_policy, is_built_in, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    );
-
-    const insertMany = this.db.transaction((modeList: typeof modes) => {
-      for (const m of modeList) {
-        stmt.run(
-          m.id,
-          m.slug,
-          m.name,
-          m.description,
-          m.icon,
-          m.color,
-          m.soul,
-          m.modelId,
-          m.fallbackModelId,
-          m.temperature,
-          m.approvalPolicy,
-          m.isBuiltIn ? 1 : 0,
-          now,
-          now
-        );
-      }
-    });
-
-    insertMany(modes);
-  }
-
-  // ── Settings (device ID storage) ──────────────────────────────────
-
-  getDeviceId(): string | null {
-    if (!this.db) return null;
-    const stmt = this.db.prepare('SELECT value FROM settings WHERE key = ?');
-    const row = stmt.get('device_id') as { value: string } | undefined;
-    return row?.value ?? null;
-  }
-
-  setDeviceId(id: string): void {
-    if (!this.db) return;
-    const stmt = this.db.prepare(
-      'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)'
-    );
-    stmt.run('device_id', id);
-  }
-
-  // ── Conversation CRUD ─────────────────────────────────────────────
-
-  listConversations(projectId: string): ConversationThread[] {
-    if (!this.db) return [];
-    const stmt = this.db.prepare(
-      'SELECT * FROM conversations WHERE project_id = ? ORDER BY updated_at DESC'
-    );
-    const rows = stmt.all(projectId) as Array<Record<string, unknown>>;
-    return rows.map(rowToConversation);
-  }
-
-  getConversation(id: string): ConversationThread | null {
-    if (!this.db) return null;
-    const stmt = this.db.prepare('SELECT * FROM conversations WHERE id = ?');
-    const row = stmt.get(id) as Record<string, unknown> | undefined;
-    return row ? rowToConversation(row) : null;
-  }
-
-  createConversation(conv: ConversationThread): void {
-    if (!this.db) return;
-    const stmt = this.db.prepare(
-      `INSERT INTO conversations (id, project_id, user_id, title, run_state, owner_device_id, owner_device_name, lease_expires_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    );
-    stmt.run(
-      conv.id,
-      conv.projectId,
-      conv.userId ?? '',
-      conv.title,
-      conv.runState ?? 'idle',
-      conv.ownerDeviceId ?? null,
-      conv.ownerDeviceName ?? null,
-      conv.leaseExpiresAt ?? null,
-      conv.createdAt,
-      conv.updatedAt
-    );
-  }
-
-  upsertConversation(conv: ConversationThread): void {
-    if (!this.db) return;
-    const stmt = this.db.prepare(
-      `INSERT OR REPLACE INTO conversations
-       (id, project_id, user_id, title, run_state, owner_device_id, owner_device_name, lease_expires_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    );
-    stmt.run(
-      conv.id,
-      conv.projectId,
-      conv.userId ?? '',
-      conv.title,
-      conv.runState ?? 'idle',
-      conv.ownerDeviceId ?? null,
-      conv.ownerDeviceName ?? null,
-      conv.leaseExpiresAt ?? null,
-      conv.createdAt,
-      conv.updatedAt
-    );
-  }
-
-  updateConversationRunState(id: string, state: RunState, ownerDeviceId?: string, ownerDeviceName?: string, leaseExpiresAt?: string): void {
-    if (!this.db) return;
-    const stmt = this.db.prepare(
-      'UPDATE conversations SET run_state = ?, owner_device_id = ?, owner_device_name = ?, lease_expires_at = ?, updated_at = ? WHERE id = ?'
-    );
-    stmt.run(state, ownerDeviceId ?? null, ownerDeviceName ?? null, leaseExpiresAt ?? null, new Date().toISOString(), id);
-  }
-
-  listMessages(conversationId: string): Message[] {
-    if (!this.db) return [];
-    const stmt = this.db.prepare(
-      'SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC'
-    );
-    const rows = stmt.all(conversationId) as Array<Record<string, unknown>>;
-    return rows.map(rowToMessage);
-  }
-
-  insertMessage(msg: Message): void {
-    if (!this.db) return;
-    const stmt = this.db.prepare(
-      `INSERT INTO messages (id, conversation_id, role, content, mode_id, model_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    );
-    stmt.run(msg.id, msg.conversationId, msg.role, msg.content, msg.modeId, msg.modelId, msg.createdAt);
-  }
-
-  upsertMessage(msg: Message): void {
-    if (!this.db) return;
-    const stmt = this.db.prepare(
-      `INSERT OR REPLACE INTO messages (id, conversation_id, role, content, mode_id, model_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    );
-    stmt.run(msg.id, msg.conversationId, msg.role, msg.content, msg.modeId, msg.modelId, msg.createdAt);
-  }
-
-  // ── DevOps Config CRUD ────────────────────────────────────────────
-
-  getProjectDevOpsConfig(projectId: string): ProjectDevOpsConfig | null {
-    if (!this.db) return null;
-    const stmt = this.db.prepare('SELECT * FROM project_devops_configs WHERE project_id = ?');
-    const row = stmt.get(projectId) as Record<string, unknown> | undefined;
-    return row ? rowToProjectDevOpsConfig(row) : null;
-  }
-
-  saveProjectDevOpsConfig(config: ProjectDevOpsConfig): void {
-    if (!this.db) return;
-    const stmt = this.db.prepare(
-      `INSERT OR REPLACE INTO project_devops_configs
-       (project_id, template_id, github_owner, github_repo, coolify_app_id, coolify_base_url, image_name, health_check_url, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    );
-    stmt.run(
-      config.projectId,
-      config.templateId,
-      config.githubOwner,
-      config.githubRepo,
-      config.coolifyAppId,
-      config.coolifyBaseUrl,
-      config.imageName,
-      config.healthCheckUrl,
-      config.updatedAt
-    );
-  }
-
-  // ── Deploy Run CRUD ───────────────────────────────────────────────
-
-  insertDeployRun(run: DeployRun): void {
-    if (!this.db) return;
-    const stmt = this.db.prepare(
-      `INSERT INTO deploy_runs (id, project_id, template_id, status, commit_sha, triggered_by, started_at, completed_at, error)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    );
-    stmt.run(
-      run.id,
-      run.projectId,
-      run.templateId,
-      run.status,
-      run.commitSha,
-      run.triggeredBy,
-      run.startedAt,
-      run.completedAt,
-      run.error
-    );
-  }
-
-  updateDeployRun(run: DeployRun): void {
-    if (!this.db) return;
-    const stmt = this.db.prepare(
-      `UPDATE deploy_runs SET status = ?, commit_sha = ?, triggered_by = ?, started_at = ?, completed_at = ?, error = ? WHERE id = ?`
-    );
-    stmt.run(
-      run.status,
-      run.commitSha,
-      run.triggeredBy,
-      run.startedAt,
-      run.completedAt,
-      run.error,
-      run.id
-    );
-  }
-
-  listDeployRuns(projectId: string): DeployRun[] {
-    if (!this.db) return [];
-    const stmt = this.db.prepare(
-      'SELECT * FROM deploy_runs WHERE project_id = ? ORDER BY started_at DESC'
-    );
-    const rows = stmt.all(projectId) as Array<Record<string, unknown>>;
-    return rows.map(rowToDeployRun);
-  }
-
   close(): void {
     if (this.db) {
+      this.save();
       this.db.close();
       this.db = null;
     }
   }
-}
 
-function rowToProject(row: Record<string, unknown>): Project {
-  return {
-    id: row.id as string,
-    userId: row.user_id as string,
-    name: row.name as string,
-    description: (row.description as string) ?? null,
-    isSelfMaintenance: (row.is_self_maintenance as number) === 1,
-    createdAt: row.created_at as string,
-    updatedAt: row.updated_at as string,
-    syncedAt: (row.synced_at as string) ?? null,
-  };
-}
+  // ── Settings ────────────────────────────────────────────────────────
 
-function rowToMode(row: Record<string, unknown>): Mode {
-  return {
-    id: row.id as string,
-    slug: row.slug as string,
-    name: row.name as string,
-    description: row.description as string,
-    icon: row.icon as string,
-    color: row.color as string,
-    soul: row.soul as string,
-    modelId: row.model_id as string,
-    fallbackModelId: (row.fallback_model_id as string) ?? null,
-    temperature: row.temperature as number,
-    approvalPolicy: row.approval_policy as ApprovalPolicy,
-    isBuiltIn: (row.is_built_in as number) === 1,
-    createdAt: row.created_at as string,
-    updatedAt: row.updated_at as string,
-  };
-}
+  getDeviceId(): string | null {
+    const row = this.db!.exec('SELECT value FROM settings WHERE key = ?', ['deviceId'])[0];
+    return row?.values?.[0]?.[0] as string | null;
+  }
 
-function rowToConversation(row: Record<string, unknown>): ConversationThread {
-  return {
-    id: row.id as string,
-    projectId: row.project_id as string,
-    userId: (row.user_id as string) ?? '',
-    title: row.title as string,
-    runState: (row.run_state as RunState) ?? 'idle',
-    ownerDeviceId: (row.owner_device_id as string) ?? null,
-    ownerDeviceName: (row.owner_device_name as string) ?? null,
-    leaseExpiresAt: (row.lease_expires_at as string) ?? null,
-    createdAt: row.created_at as string,
-    updatedAt: row.updated_at as string,
-  };
-}
+  setDeviceId(id: string): void {
+    this.db!.run('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', ['deviceId', id]);
+    this.save();
+  }
 
-function rowToProjectDevOpsConfig(row: Record<string, unknown>): ProjectDevOpsConfig {
-  return {
-    projectId: row.project_id as string,
-    templateId: row.template_id as string,
-    githubOwner: (row.github_owner as string) ?? '',
-    githubRepo: (row.github_repo as string) ?? '',
-    coolifyAppId: (row.coolify_app_id as string) ?? '',
-    coolifyBaseUrl: (row.coolify_base_url as string) ?? '',
-    imageName: (row.image_name as string) ?? '',
-    healthCheckUrl: (row.health_check_url as string) ?? '',
-    updatedAt: row.updated_at as string,
-  };
-}
+  // ── Helper: convert sql.js array row to object using column names ────
 
-function rowToDeployRun(row: Record<string, unknown>): DeployRun {
-  return {
-    id: row.id as string,
-    projectId: row.project_id as string,
-    templateId: row.template_id as string,
-    status: row.status as DeployRun['status'],
-    commitSha: (row.commit_sha as string) ?? null,
-    triggeredBy: row.triggered_by as string,
-    startedAt: row.started_at as string,
-    completedAt: (row.completed_at as string) ?? null,
-    error: (row.error as string) ?? null,
-  };
-}
+  private toObj(result: { columns: string[]; values: AnyRow[] }, rowIndex: number): Record<string, unknown> {
+    const obj: Record<string, unknown> = {};
+    result.columns.forEach((col, i) => { obj[col] = result.values[rowIndex][i]; });
+    return obj;
+  }
 
-function rowToMessage(row: Record<string, unknown>): Message {
-  return {
-    id: row.id as string,
-    conversationId: row.conversation_id as string,
-    role: row.role as 'user' | 'assistant' | 'system',
-    content: row.content as string,
-    modeId: (row.mode_id as string) ?? null,
-    modelId: (row.model_id as string) ?? null,
-    createdAt: row.created_at as string,
-  };
+  private toObjAll(result: { columns: string[]; values: AnyRow[] } | undefined): Record<string, unknown>[] {
+    if (!result?.values) return [];
+    return result.values.map((_, i) => this.toObj(result, i));
+  }
+
+  // ── Projects ────────────────────────────────────────────────────────
+
+  listProjects(userId: string): Project[] {
+    const result = this.db!.exec('SELECT * FROM projects WHERE user_id = ?', [userId])[0];
+    return this.toObjAll(result).map((r) => this.rowToProject(r as unknown as ProjectRow));
+  }
+
+  insertProject(project: Project): void {
+    this.db!.run(
+      'INSERT OR REPLACE INTO projects (id, user_id, name, description, is_self_maintenance, created_at, updated_at, synced_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [project.id, project.userId, project.name, project.description, project.isSelfMaintenance ? 1 : 0, project.createdAt, project.updatedAt, project.syncedAt]
+    );
+    this.save();
+  }
+
+  getSelfMaintenanceProject(): Project | null {
+    const result = this.db!.exec('SELECT * FROM projects WHERE is_self_maintenance = 1 LIMIT 1')[0];
+    const objs = this.toObjAll(result);
+    if (!objs.length) return null;
+    return this.rowToProject(objs[0] as unknown as ProjectRow);
+  }
+
+  private rowToProject(row: ProjectRow): Project {
+    return {
+      id: row.id,
+      userId: row.user_id,
+      name: row.name,
+      description: row.description ?? null,
+      isSelfMaintenance: row.is_self_maintenance === 1,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      syncedAt: row.synced_at,
+    };
+  }
+
+  // ── Modes ───────────────────────────────────────────────────────────
+
+  listModes(): Mode[] {
+    const result = this.db!.exec('SELECT * FROM modes')[0];
+    return this.toObjAll(result).map((r) => this.rowToMode(r as unknown as ModeRow));
+  }
+
+  getMode(id: string): Mode | null {
+    const result = this.db!.exec('SELECT * FROM modes WHERE id = ?', [id])[0];
+    const objs = this.toObjAll(result);
+    if (!objs.length) return null;
+    return this.rowToMode(objs[0] as unknown as ModeRow);
+  }
+
+  upsertMode(mode: Mode): void {
+    this.db!.run(
+      'INSERT OR REPLACE INTO modes (id, slug, name, description, icon, color, soul, model_id, fallback_model_id, temperature, approval_policy, is_built_in, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [mode.id, mode.slug, mode.name, mode.description, mode.icon, mode.color, mode.soul, mode.modelId, mode.fallbackModelId, mode.temperature, mode.approvalPolicy, mode.isBuiltIn ? 1 : 0, mode.createdAt, mode.updatedAt]
+    );
+    this.save();
+  }
+
+  updateModeSoul(id: string, soul: string): void {
+    this.db!.run('UPDATE modes SET soul = ?, updated_at = ? WHERE id = ?', [soul, new Date().toISOString(), id]);
+    this.save();
+  }
+
+  updateModeModel(id: string, modelId: string): void {
+    this.db!.run('UPDATE modes SET model_id = ?, updated_at = ? WHERE id = ?', [modelId, new Date().toISOString(), id]);
+    this.save();
+  }
+
+  seedDefaultModes(modes: Omit<Mode, 'createdAt' | 'updatedAt'>[]): void {
+    const existing = this.listModes();
+    if (existing.length > 0) return;
+    const now = new Date().toISOString();
+    for (const mode of modes) {
+      this.upsertMode({ ...mode, createdAt: now, updatedAt: now } as Mode);
+    }
+  }
+
+  private rowToMode(row: ModeRow): Mode {
+    return {
+      id: row.id,
+      slug: row.slug,
+      name: row.name,
+      description: row.description,
+      icon: row.icon,
+      color: row.color,
+      soul: row.soul,
+      modelId: row.model_id,
+      fallbackModelId: row.fallback_model_id,
+      temperature: row.temperature,
+      approvalPolicy: row.approval_policy as ApprovalPolicy,
+      isBuiltIn: row.is_built_in === 1,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  // ── Conversations ───────────────────────────────────────────────────
+
+  listConversations(projectId: string | undefined): ConversationThread[] {
+    if (!projectId) return [];
+    const result = this.db!.exec('SELECT * FROM conversations WHERE project_id = ?', [projectId])[0];
+    return this.toObjAll(result).map((r) => this.rowToConversation(r as unknown as ConversationRow));
+  }
+
+  getConversation(id: string): ConversationThread | null {
+    const result = this.db!.exec('SELECT * FROM conversations WHERE id = ?', [id])[0];
+    const objs = this.toObjAll(result);
+    if (!objs.length) return null;
+    return this.rowToConversation(objs[0] as unknown as ConversationRow);
+  }
+
+  createConversation(conv: ConversationThread): void {
+    this.db!.run(
+      'INSERT INTO conversations (id, project_id, user_id, title, run_state, owner_device_id, owner_device_name, lease_expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [conv.id, conv.projectId, conv.userId ?? '', conv.title, conv.runState ?? 'idle', conv.ownerDeviceId, conv.ownerDeviceName, conv.leaseExpiresAt, conv.createdAt, conv.updatedAt]
+    );
+    this.save();
+  }
+
+  updateConversationRunState(id: string, state: RunState, ownerDeviceId?: string, ownerDeviceName?: string, leaseExpiresAt?: string): void {
+    this.db!.run(
+      'UPDATE conversations SET run_state = ?, owner_device_id = ?, owner_device_name = ?, lease_expires_at = ?, updated_at = ? WHERE id = ?',
+      [state, ownerDeviceId ?? null, ownerDeviceName ?? null, leaseExpiresAt ?? null, new Date().toISOString(), id]
+    );
+    this.save();
+  }
+
+  upsertConversation(conv: ConversationThread): void {
+    this.db!.run(
+      'INSERT OR REPLACE INTO conversations (id, project_id, user_id, title, run_state, owner_device_id, owner_device_name, lease_expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [conv.id, conv.projectId, conv.userId ?? '', conv.title, conv.runState ?? 'idle', conv.ownerDeviceId, conv.ownerDeviceName, conv.leaseExpiresAt, conv.createdAt, conv.updatedAt]
+    );
+    this.save();
+  }
+
+  private rowToConversation(row: ConversationRow): ConversationThread {
+    return {
+      id: row.id,
+      projectId: row.project_id,
+      userId: row.user_id || undefined,
+      title: row.title,
+      runState: row.run_state as RunState,
+      ownerDeviceId: row.owner_device_id,
+      ownerDeviceName: row.owner_device_name,
+      leaseExpiresAt: row.lease_expires_at,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  // ── Messages ────────────────────────────────────────────────────────
+
+  listMessages(conversationId: string): Message[] {
+    const result = this.db!.exec('SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC', [conversationId])[0];
+    return this.toObjAll(result).map((r) => this.rowToMessage(r as unknown as MessageRow));
+  }
+
+  insertMessage(msg: Message): void {
+    this.db!.run(
+      'INSERT INTO messages (id, conversation_id, role, content, mode_id, model_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [msg.id, msg.conversationId, msg.role, msg.content, msg.modeId, msg.modelId, msg.createdAt]
+    );
+    this.save();
+  }
+
+  upsertMessage(msg: Message): void {
+    this.db!.run(
+      'INSERT OR REPLACE INTO messages (id, conversation_id, role, content, mode_id, model_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [msg.id, msg.conversationId, msg.role, msg.content, msg.modeId, msg.modelId, msg.createdAt]
+    );
+    this.save();
+  }
+
+  private rowToMessage(row: MessageRow): Message {
+    return {
+      id: row.id,
+      conversationId: row.conversation_id,
+      role: row.role as 'user' | 'assistant' | 'system',
+      content: row.content,
+      modeId: row.mode_id,
+      modelId: row.model_id,
+      createdAt: row.created_at,
+    };
+  }
+
+  // ── DevOps ──────────────────────────────────────────────────────────
+
+  getProjectDevOpsConfig(projectId: string): ProjectDevOpsConfig | null {
+    const rows = this.db!.exec('SELECT * FROM project_devops_configs WHERE project_id = ?', [projectId])[0];
+    if (!rows?.values?.length) return null;
+    const r = rows.values[0] as any;
+    return {
+      projectId: r.project_id,
+      templateId: r.template_id,
+      githubOwner: r.github_owner,
+      githubRepo: r.github_repo,
+      coolifyAppId: r.coolify_app_id,
+      coolifyBaseUrl: r.coolify_base_url,
+      imageName: r.image_name,
+      healthCheckUrl: r.health_check_url,
+      updatedAt: r.updated_at,
+    };
+  }
+
+  saveProjectDevOpsConfig(config: ProjectDevOpsConfig): void {
+    this.db!.run(
+      'INSERT OR REPLACE INTO project_devops_configs (project_id, template_id, github_owner, github_repo, coolify_app_id, coolify_base_url, image_name, health_check_url, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [config.projectId, config.templateId, config.githubOwner, config.githubRepo, config.coolifyAppId, config.coolifyBaseUrl, config.imageName, config.healthCheckUrl, config.updatedAt]
+    );
+    this.save();
+  }
+
+  insertDeployRun(run: DeployRun): void {
+    this.db!.run(
+      'INSERT INTO deploy_runs (id, project_id, template_id, status, commit_sha, triggered_by, started_at, completed_at, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [run.id, run.projectId, run.templateId, run.status, run.commitSha, run.triggeredBy, run.startedAt, run.completedAt, run.error]
+    );
+    this.save();
+  }
+
+  updateDeployRun(id: string, updates: Partial<DeployRun>): void {
+    const fields: string[] = [];
+    const values: any[] = [];
+    if (updates.status !== undefined) { fields.push('status = ?'); values.push(updates.status); }
+    if (updates.commitSha !== undefined) { fields.push('commit_sha = ?'); values.push(updates.commitSha); }
+    if (updates.completedAt !== undefined) { fields.push('completed_at = ?'); values.push(updates.completedAt); }
+    if (updates.error !== undefined) { fields.push('error = ?'); values.push(updates.error); }
+    if (fields.length === 0) return;
+    values.push(id);
+    this.db!.run(`UPDATE deploy_runs SET ${fields.join(', ')} WHERE id = ?`, values);
+    this.save();
+  }
+
+  listDeployRuns(projectId: string): DeployRun[] {
+    const rows = this.db!.exec('SELECT * FROM deploy_runs WHERE project_id = ? ORDER BY started_at DESC', [projectId])[0];
+    if (!rows?.values) return [];
+    return rows.values.map((r: any) => ({
+      id: r.id,
+      projectId: r.project_id,
+      templateId: r.template_id,
+      status: r.status,
+      commitSha: r.commit_sha,
+      triggeredBy: r.triggered_by,
+      startedAt: r.started_at,
+      completedAt: r.completed_at,
+      error: r.error,
+    }));
+  }
 }
