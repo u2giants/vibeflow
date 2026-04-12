@@ -42,8 +42,19 @@ export interface ApprovalResult {
   decidedAt: string;
 }
 
+export interface ClassifyActionOptions {
+  isSelfMaintenance?: boolean;
+  filePath?: string;
+}
+
 // Classify an action into a tier
-export function classifyAction(actionType: ActionType): ApprovalTier {
+export function classifyAction(actionType: ActionType, options?: ClassifyActionOptions): ApprovalTier {
+  // Self-maintenance: all file writes/deletes are Tier 3
+  if (options?.isSelfMaintenance &&
+      (actionType === 'file:write' || actionType === 'file:delete')) {
+    return 3;
+  }
+
   const tier1: ActionType[] = ['file:read', 'terminal:run'];
   const tier3: ActionType[] = ['file:delete', 'git:push-main', 'deploy:trigger', 'deploy:restart', 'deploy:stop'];
 

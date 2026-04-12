@@ -394,6 +394,54 @@ app.whenReady().then(async () => {
     }
   );
 
+  ipcMain.handle('projects:getSelfMaintenance', async (): Promise<unknown | null> => {
+    if (!localDb) return null;
+    return localDb.getSelfMaintenanceProject();
+  });
+
+  ipcMain.handle('projects:getVibeFlowRepoPath', async (): Promise<string> => {
+    // In dev mode: __dirname is apps/desktop/out/main, repo root is 4 levels up
+    // In packaged mode: use app.getAppPath()
+    if (app.isPackaged) {
+      return app.getAppPath();
+    }
+    return path.resolve(__dirname, '../../../..');
+  });
+
+  ipcMain.handle('projects:createSelfMaintenance', async (): Promise<unknown> => {
+    // Lazy-initialize DB if it failed during startup (e.g. better-sqlite3 native module issue)
+    if (!localDb) {
+      try {
+        const dbPath = path.join(app.getPath('userData'), 'vibeflow-cache.sqlite');
+        localDb = new LocalDb(dbPath);
+        await localDb.init();
+        localDb.seedDefaultModes();
+        console.log('[main] LocalDb lazy-initialized in createSelfMaintenance');
+      } catch (err) {
+        console.error('[main] LocalDb lazy-init failed:', err);
+        throw new Error('Local DB could not be initialized. Please restart the app.');
+      }
+    }
+
+    // Check if already exists
+    const existing = localDb.getSelfMaintenanceProject();
+    if (existing) return existing;
+
+    const project = {
+      id: crypto.randomUUID(),
+      userId: '',
+      name: 'VibeFlow (Self-Maintenance)',
+      description: 'Work on the VibeFlow IDE itself',
+      isSelfMaintenance: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      syncedAt: null,
+    };
+
+    localDb.insertProject(project);
+    return project;
+  });
+
   ipcMain.handle('buildMetadata:get', async () => BUILD_METADATA);
 
   // ── Updater IPC (only in packaged builds) ─────────────────────────
@@ -799,6 +847,8 @@ app.whenReady().then(async () => {
         warnings: args.warnings,
         idiosyncrasies,
         timestamp,
+        isSelfMaintenance: args.isSelfMaintenance ?? false,
+        vibeFlowRepoPath: args.isSelfMaintenance ? path.resolve(__dirname, '../../../..') : undefined,
       };
 
       const handoffDoc = generateHandoffDoc(ctx);
@@ -844,7 +894,12 @@ app.whenReady().then(async () => {
   }>();
 
   ipcMain.handle('approval:requestAction', async (event, action: ActionRequest): Promise<ApprovalResult> => {
-    const tier = classifyAction(action.actionType);
+    // Check if this conversation belongs to a self-maintenance project
+    const conv = localDb?.getConversation(action.conversationId);
+    const project = conv ? localDb?.listProjects('').find(p => p.id === conv.projectId) : null;
+    const isSelfMaintenance = project?.isSelfMaintenance ?? false;
+
+    const tier = classifyAction(action.actionType, { isSelfMaintenance });
 
     if (tier === 1) {
       // Auto-allow

@@ -16,6 +16,9 @@ const api: VibeFlowAPI = {
   projects: {
     list: () => ipcRenderer.invoke('projects:list'),
     create: (args) => ipcRenderer.invoke('projects:create', args),
+    getSelfMaintenance: () => ipcRenderer.invoke('projects:getSelfMaintenance'),
+    createSelfMaintenance: () => ipcRenderer.invoke('projects:createSelfMaintenance'),
+    getVibeFlowRepoPath: () => ipcRenderer.invoke('projects:getVibeFlowRepoPath'),
   },
   buildMetadata: {
     get: () => ipcRenderer.invoke('buildMetadata:get'),

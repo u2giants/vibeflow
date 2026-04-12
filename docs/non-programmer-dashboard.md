@@ -1,13 +1,13 @@
 # VibeFlow — Owner Dashboard
 
-Last updated: 2026-04-12 (Milestone 9 complete)
+Last updated: 2026-04-12 (MVP Complete — All 10 Milestones Done)
 
 ---
 
 ## Current Sprint
 
-**Sprint 10 — Milestone 9: Build Metadata + Auto-Update**
-Status: ✅ Complete — Real version numbers in top bar, auto-update from GitHub Releases
+**Sprint 11 — Milestone 10: Self-Maintenance Mode**
+Status: ✅ Complete — VibeFlow can now work on itself
 
 ---
 
@@ -25,6 +25,7 @@ Status: ✅ Complete — Real version numbers in top bar, auto-update from GitHu
 - **Milestone 7: Approval System + Second-Model Review** — Three-tier approval system, second-model review, approval cards
 - **Milestone 8: Handoff System + Idiosyncrasies Tracking** — One-click handoff to new AI sessions
 - **Milestone 9: Build Metadata + Auto-Update** — Real version numbers, commit SHA, and auto-update from GitHub Releases
+- **Milestone 10: Self-Maintenance Mode** — VibeFlow can open and work on its own source code with extra safety guards
 
 **What is a "Mode"?**
 A Mode is like a different AI personality with a specific job. Think of it like having 6 different specialists on your team:
@@ -41,7 +42,7 @@ Each Mode has its own "soul" (detailed instructions) that you can edit, and you 
 OpenRouter is the service that provides the AI models (like Claude, Gemini, etc.). You need an API key from OpenRouter to use AI features. The key is stored securely in your Windows Credential Manager — never in plain text.
 
 **Next step:**
-- Milestone 10: (TBD — awaiting Orchestrator direction)
+- MVP is complete! All 10 milestones are done. Future work will be driven by user feedback and feature requests.
 
 ---
 
@@ -87,6 +88,11 @@ OpenRouter is the service that provides the AI models (like Claude, Gemini, etc.
 - **NEW:** A copyable handoff prompt appears — ready to paste into a new AI session
 - **NEW:** "Copy to Clipboard" button works with one click
 - **NEW:** Handoff documents are saved to Supabase Storage (cloud) when available
+- **NEW:** A "🔧 Work on VibeFlow itself →" button appears at the bottom of the project list
+- **NEW:** Clicking it opens a special self-maintenance project with a yellow warning banner
+- **NEW:** The conversation header shows "🔧 Self-Maintenance" when working on VibeFlow
+- **NEW:** All file changes to VibeFlow source files require your human approval (Tier 3)
+- **NEW:** Handoff documents for self-maintenance are labeled "🔧 VibeFlow Self-Maintenance Handoff"
 
 ---
 

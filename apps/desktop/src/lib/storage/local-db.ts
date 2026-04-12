@@ -152,6 +152,16 @@ export class LocalDb {
     );
   }
 
+  /** Find the self-maintenance project, if it exists. */
+  getSelfMaintenanceProject(): Project | null {
+    if (!this.db) return null;
+    const stmt = this.db.prepare(
+      'SELECT * FROM projects WHERE is_self_maintenance = 1 LIMIT 1'
+    );
+    const row = stmt.get() as Record<string, unknown> | undefined;
+    return row ? rowToProject(row) : null;
+  }
+
   // ── Mode CRUD ───────────────────────────────────────────────────
 
   listModes(): Mode[] {
@@ -274,6 +284,13 @@ export class LocalDb {
     );
     const rows = stmt.all(projectId) as Array<Record<string, unknown>>;
     return rows.map(rowToConversation);
+  }
+
+  getConversation(id: string): ConversationThread | null {
+    if (!this.db) return null;
+    const stmt = this.db.prepare('SELECT * FROM conversations WHERE id = ?');
+    const row = stmt.get(id) as Record<string, unknown> | undefined;
+    return row ? rowToConversation(row) : null;
   }
 
   createConversation(conv: ConversationThread): void {

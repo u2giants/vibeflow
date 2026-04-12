@@ -2,7 +2,7 @@
  * Project list screen — shows projects and allows creating new ones.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { Project } from '../../lib/shared-types';
 
 interface ProjectListScreenProps {
@@ -18,18 +18,18 @@ export default function ProjectListScreen({ onSignOut, onOpenModes, onOpenProjec
   const [newDescription, setNewDescription] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const loadProjects = async () => {
+  const loadProjects = useCallback(async () => {
     try {
       const list = await window.vibeflow.projects.list();
       setProjects(list as Project[]);
     } catch (err) {
       console.error('Failed to load projects:', err);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadProjects();
-  }, []);
+  }, [loadProjects]);
 
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,6 +56,23 @@ export default function ProjectListScreen({ onSignOut, onOpenModes, onOpenProjec
     await window.vibeflow.auth.signOut();
     onSignOut();
   };
+
+  const handleOpenSelfMaintenance = useCallback(async () => {
+    try {
+      // Check if self-maintenance project already exists
+      const existing = await window.vibeflow.projects.getSelfMaintenance();
+      if (existing) {
+        onOpenProject(existing as Project);
+        return;
+      }
+
+      // Create new self-maintenance project
+      const project = await window.vibeflow.projects.createSelfMaintenance();
+      onOpenProject(project as Project);
+    } catch (err) {
+      console.error('Failed to open self-maintenance project:', err);
+    }
+  }, [onOpenProject]);
 
   return (
     <div style={{ flex: 1, padding: 24, overflow: 'auto' }}>
@@ -197,13 +214,15 @@ export default function ProjectListScreen({ onSignOut, onOpenModes, onOpenProjec
               onClick={() => onOpenProject(project)}
               style={{
                 padding: 16,
-                backgroundColor: '#fff',
-                border: '1px solid #dee2e6',
+                backgroundColor: project.isSelfMaintenance ? '#fff8e1' : '#fff',
+                border: project.isSelfMaintenance ? '2px solid #ffc107' : '1px solid #dee2e6',
                 borderRadius: 8,
                 cursor: 'pointer',
               }}
             >
-              <h3 style={{ margin: '0 0 4px' }}>{project.name}</h3>
+              <h3 style={{ margin: '0 0 4px' }}>
+                {project.isSelfMaintenance ? '🔧 ' : ''}{project.name}
+              </h3>
               {project.description && (
                 <p style={{ margin: 0, color: '#666', fontSize: 14 }}>
                   {project.description}
@@ -213,6 +232,26 @@ export default function ProjectListScreen({ onSignOut, onOpenModes, onOpenProjec
           ))}
         </div>
       )}
+
+      {/* Self-maintenance button */}
+      <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid #dee2e6' }}>
+        <button
+          onClick={handleOpenSelfMaintenance}
+          style={{
+            width: '100%',
+            padding: '12px 16px',
+            backgroundColor: '#fff8e1',
+            color: '#856404',
+            border: '2px dashed #ffc107',
+            borderRadius: 8,
+            cursor: 'pointer',
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        >
+          🔧 Work on VibeFlow itself →
+        </button>
+      </div>
     </div>
   );
 }

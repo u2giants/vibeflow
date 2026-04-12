@@ -17,6 +17,8 @@ export interface HandoffContext {
   warnings: string[];
   idiosyncrasies: string;
   timestamp: string;
+  isSelfMaintenance?: boolean;
+  vibeFlowRepoPath?: string;
 }
 
 export interface HandoffArtifacts {
@@ -30,7 +32,11 @@ export function generateHandoffDoc(ctx: HandoffContext): string {
     year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
   });
 
-  return `# Handoff — ${ctx.projectName} — ${date}
+  const title = ctx.isSelfMaintenance
+    ? `# 🔧 VibeFlow Self-Maintenance Handoff — ${date}`
+    : `# Handoff — ${ctx.projectName} — ${date}`;
+
+  return `${title}
 
 ## What We Are Trying to Do Right Now
 ${ctx.currentGoal}
@@ -91,12 +97,21 @@ ${ctx.warnings.map(w => `- ${w}`).join('\n') || '- None'}
 }
 
 export function generateHandoffPrompt(ctx: HandoffContext): string {
+  const selfMaintenanceWarning = ctx.isSelfMaintenance
+    ? `
+## ⚠️ SELF-MAINTENANCE MODE
+You are working on the VibeFlow IDE itself. Be careful — mistakes can break the IDE.
+VibeFlow repo path: ${ctx.vibeFlowRepoPath ?? 'unknown'}
+All file changes to VibeFlow source files require human approval (Tier 3).
+`
+    : '';
+
   return `# VibeFlow Handoff Prompt
 
 You are continuing work on the VibeFlow project. Read these files FIRST before doing anything:
 
 1. /AGENTS.md
-2. /PROJECT_SOUL.md  
+2. /PROJECT_SOUL.md
 3. /CURRENT_TASK.md
 4. /docs/idiosyncrasies.md (IMPORTANT — read this before touching any code)
 5. /docs/architecture.md
@@ -108,8 +123,7 @@ ${ctx.currentGoal}
 ${ctx.nextStep}
 
 ## Critical Warnings
-${ctx.warnings.map(w => `- ${w}`).join('\n') || '- None'}
-
+${ctx.warnings.map(w => `- ${w}`).join('\n') || '- None'}${selfMaintenanceWarning}
 ## Key Facts
 - This is a Windows-first Electron desktop app
 - Use electron.vite.config.ts (NOT vite.config.ts)

@@ -10,6 +10,7 @@ interface ConversationScreenProps {
   currentMode: Mode | null;
   onNewConversation: () => void;
   onConversationUpdated?: (conv: ConversationThread) => void;
+  isSelfMaintenance?: boolean;
 }
 
 const RUN_STATE_LABELS: Record<RunState, string> = {
@@ -40,7 +41,7 @@ const RUN_STATE_COLORS: Record<RunState, string> = {
   recoverable: '#ffc107',
 };
 
-export default function ConversationScreen({ conversation, currentMode, onNewConversation, onConversationUpdated }: ConversationScreenProps) {
+export default function ConversationScreen({ conversation, currentMode, onNewConversation, onConversationUpdated, isSelfMaintenance }: ConversationScreenProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
@@ -244,6 +245,7 @@ export default function ConversationScreen({ conversation, currentMode, onNewCon
         nextStep: handoffNextStep || 'Continue from where we left off',
         warnings: handoffWarnings ? [handoffWarnings] : [],
         pendingBugs: [],
+        isSelfMaintenance,
       });
       setHandoffResult(result);
       setShowHandoffForm(false);
@@ -327,6 +329,19 @@ export default function ConversationScreen({ conversation, currentMode, onNewCon
         <h4 style={{ margin: '0 0 12px', color: '#8b949e', fontSize: 12, textTransform: 'uppercase' }}>
           Execution Stream
         </h4>
+        {isSelfMaintenance && (
+          <div style={{
+            padding: '6px 8px',
+            marginBottom: 8,
+            backgroundColor: '#3d2e00',
+            borderRadius: 4,
+            color: '#ffc107',
+            fontSize: 11,
+            fontWeight: 500,
+          }}>
+            ⚠️ Changes to VibeFlow source files require your approval
+          </div>
+        )}
         {executionEvents.map((event, i) => (
           <div key={i} style={{
             padding: '4px 8px',
@@ -355,7 +370,23 @@ export default function ConversationScreen({ conversation, currentMode, onNewCon
           alignItems: 'center',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <h3 style={{ margin: 0, fontSize: 16, color: '#c9d1d9' }}>{conversation.title}</h3>
+            <h3 style={{ margin: 0, fontSize: 16, color: '#c9d1d9' }}>
+              {isSelfMaintenance ? '🔧 Self-Maintenance' : conversation.title}
+            </h3>
+            {isSelfMaintenance && (
+              <span
+                style={{
+                  padding: '2px 8px',
+                  borderRadius: 12,
+                  backgroundColor: '#ffc10722',
+                  color: '#ffc107',
+                  fontSize: 11,
+                  fontWeight: 600,
+                }}
+              >
+                🔧 Self-Maintenance
+              </span>
+            )}
             <span
               style={{
                 padding: '2px 8px',

@@ -197,6 +197,24 @@ Every agent must update this file when work begins and when work ends.
 
 ---
 
+### Sprint 13 — Milestone 10: Self-Maintenance Mode (Complete)
+- `getSelfMaintenanceProject()` added to `apps/desktop/src/lib/storage/local-db.ts`
+- `getConversation()` added to `apps/desktop/src/lib/storage/local-db.ts`
+- IPC handlers added to `apps/desktop/src/main/index.ts`: `projects:getSelfMaintenance`, `projects:createSelfMaintenance`, `projects:getVibeFlowRepoPath`
+- `apps/desktop/src/preload/index.ts` updated to expose new project methods
+- `apps/desktop/src/lib/shared-types/ipc.ts` updated with new `ProjectsChannel` methods and `isSelfMaintenance` on `GenerateHandoffArgs`
+- `apps/desktop/src/renderer/screens/ProjectListScreen.tsx` — "🔧 Work on VibeFlow itself →" button added at bottom
+- `apps/desktop/src/renderer/screens/ProjectScreen.tsx` — yellow self-maintenance banner + 🔧 prefix on project name
+- `apps/desktop/src/renderer/screens/ConversationScreen.tsx` — "🔧 Self-Maintenance" badge in header + warning in execution stream
+- `apps/desktop/src/lib/approval/approval-engine.ts` — `classifyAction()` now accepts options with `isSelfMaintenance` flag, forces Tier 3 for file writes/deletes
+- `apps/desktop/src/lib/handoff/handoff-generator.ts` — `HandoffContext` now has `isSelfMaintenance` and `vibeFlowRepoPath` fields; handoff doc/prompt labeled for self-maintenance
+- `apps/desktop/src/main/index.ts` — approval handler checks if project is self-maintenance and passes flag to `classifyAction()`
+- `apps/desktop/src/main/index.ts` — handoff handler passes `isSelfMaintenance` and `vibeFlowRepoPath` to context
+
+**Current Step:** Milestone 10 complete. ALL MILESTONES DONE. MVP is complete.
+
+---
+
 ### Sprint 11 — Bug Fix: Runaway Streaming Loop (Listener Stacking) (Complete)
 - Root cause: `onStreamToken`, `onStreamDone`, `onStreamError` in `apps/desktop/src/preload/index.ts` used `ipcRenderer.on()` which accumulates listeners
 - When `ConversationScreen.tsx` re-renders or switches conversations, new listeners stack up, causing each token to be appended N times (producing `7a7a7a7a...` repeating tokens)
@@ -237,5 +255,5 @@ Every agent must update this file when work begins and when work ends.
 ## LAST UPDATED
 
 - Date: 2026-04-12
-- Updated by: Builder (Milestone 9: Build Metadata + Auto-Update)
+- Updated by: Builder (Milestone 10: Self-Maintenance Mode — ALL MILESTONES COMPLETE)
 - Next update due: After next task

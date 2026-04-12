@@ -49,6 +49,20 @@ export default function ProjectScreen({ project, email, currentMode, onBack, onO
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
       <TopBar email={email} />
 
+      {/* Self-maintenance banner */}
+      {project.isSelfMaintenance && (
+        <div style={{
+          padding: '8px 16px',
+          backgroundColor: '#fff3cd',
+          color: '#856404',
+          borderBottom: '1px solid #ffc107',
+          fontSize: 13,
+          fontWeight: 500,
+        }}>
+          🔧 Self-Maintenance Mode — You are working on VibeFlow itself. All file changes require your approval.
+        </div>
+      )}
+
       {/* Main content area */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {/* Conversation sidebar */}
@@ -78,7 +92,7 @@ export default function ProjectScreen({ project, email, currentMode, onBack, onO
               ← Back to Projects
             </button>
             <div style={{ fontSize: 14, color: '#c9d1d9', fontWeight: 600 }}>
-              {project.name}
+              {project.isSelfMaintenance ? '🔧 ' : ''}{project.name}
             </div>
             <button
               onClick={() => setShowSsh(true)}
@@ -169,6 +183,7 @@ export default function ProjectScreen({ project, email, currentMode, onBack, onO
               conversation={activeConversation}
               currentMode={currentMode}
               onNewConversation={handleNewConversation}
+              isSelfMaintenance={project.isSelfMaintenance}
             />
           ) : (
             <div style={{

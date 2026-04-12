@@ -26,6 +26,9 @@ export interface CreateProjectArgs {
 export interface ProjectsChannel {
   list: () => Promise<Project[]>;
   create: (args: CreateProjectArgs) => Promise<Project>;
+  getSelfMaintenance: () => Promise<Project | null>;
+  createSelfMaintenance: () => Promise<Project>;
+  getVibeFlowRepoPath: () => Promise<string>;
 }
 
 // ── Build Metadata IPC ────────────────────────────────────────────
@@ -362,6 +365,7 @@ export interface GenerateHandoffArgs {
   nextStep: string;
   warnings: string[];
   pendingBugs: string[];
+  isSelfMaintenance?: boolean;
 }
 
 export interface HandoffResult {
