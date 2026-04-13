@@ -6,7 +6,6 @@ directories:
   buildResources: build
 files:
   - out/**/*
-  - dist/**/*
   - node_modules/**/*
   - package.json
 npmRebuild: true
