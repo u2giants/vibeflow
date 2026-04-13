@@ -5,6 +5,7 @@ directories:
   output: release
   buildResources: build
 files:
+  - out/**/*
   - dist/**/*
   - node_modules/**/*
   - package.json
