@@ -468,6 +468,7 @@ app.whenReady().then(async () => {
         localDb = new LocalDb(dbPath);
         await localDb.init();
         localDb.seedDefaultModes(DEFAULT_MODES);
+        localDb.migrateDefaultModelId('anthropic/claude-sonnet-4-5', 'anthropic/claude-sonnet-4-6');
         console.log('[main] LocalDb lazy-initialized in createSelfMaintenance');
       } catch (err) {
         console.error('[main] LocalDb lazy-init failed:', err);
@@ -522,6 +523,7 @@ app.whenReady().then(async () => {
     await localDb.init();
     console.log('[main] Local SQLite DB initialized at', dbPath);
     localDb.seedDefaultModes(DEFAULT_MODES);
+    localDb.migrateDefaultModelId('anthropic/claude-sonnet-4-5', 'anthropic/claude-sonnet-4-6');
     console.log('[main] Default modes seeded');
     localDb.seedDevOpsTemplates(BUILT_IN_TEMPLATES);
     console.log('[main] DevOps templates seeded');

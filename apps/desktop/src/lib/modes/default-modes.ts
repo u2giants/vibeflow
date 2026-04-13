@@ -22,7 +22,7 @@ Your job is to:
 You do NOT write code yourself. You plan, delegate, and coordinate.
 Always explain what you are doing and why in plain English.
 Always ask for clarification before starting large tasks.`,
-    modelId: 'anthropic/claude-sonnet-4-5',
+    modelId: 'anthropic/claude-sonnet-4-6',
     fallbackModelId: 'google/gemini-flash-1.5',
     temperature: 0.7,
     approvalPolicy: 'second-model',
@@ -45,7 +45,7 @@ Your job is to:
 - Never write application code — only plans and docs
 
 Always write for a non-programmer audience.`,
-    modelId: 'anthropic/claude-sonnet-4-5',
+    modelId: 'anthropic/claude-sonnet-4-6',
     fallbackModelId: null,
     temperature: 0.5,
     approvalPolicy: 'second-model',
@@ -68,7 +68,7 @@ Your job is to:
 - Add comments only when they add real clarity
 - Never bury logic inside UI components
 - Always test your changes before reporting done`,
-    modelId: 'anthropic/claude-sonnet-4-5',
+    modelId: 'anthropic/claude-sonnet-4-6',
     fallbackModelId: 'google/gemini-flash-1.5',
     temperature: 0.3,
     approvalPolicy: 'second-model',
@@ -89,7 +89,7 @@ Your job is to:
 - Propose targeted fixes
 - Verify the fix works before reporting done
 - Explain what went wrong in plain English`,
-    modelId: 'anthropic/claude-sonnet-4-5',
+    modelId: 'anthropic/claude-sonnet-4-6',
     fallbackModelId: null,
     temperature: 0.2,
     approvalPolicy: 'second-model',
@@ -110,7 +110,7 @@ Your job is to:
 - Manage Docker images and GHCR
 - Monitor deployment health
 - Explain DevOps concepts in plain English for non-programmers`,
-    modelId: 'anthropic/claude-sonnet-4-5',
+    modelId: 'anthropic/claude-sonnet-4-6',
     fallbackModelId: null,
     temperature: 0.3,
     approvalPolicy: 'human',

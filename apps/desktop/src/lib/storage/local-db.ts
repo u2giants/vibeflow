@@ -359,6 +359,14 @@ export class LocalDb {
     }
   }
 
+  migrateDefaultModelId(oldId: string, newId: string): void {
+    this.db!.run(
+      'UPDATE modes SET model_id = ?, updated_at = ? WHERE model_id = ? AND is_built_in = 1',
+      [newId, new Date().toISOString(), oldId]
+    );
+    this.save();
+  }
+
   private rowToMode(row: ModeRow): Mode {
     return {
       id: row.id,

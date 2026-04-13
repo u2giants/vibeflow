@@ -1,8 +1,186 @@
 /** Modes settings screen — list, edit souls, assign models, manage API key. */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Mode, OpenRouterModel } from '../../lib/shared-types';
 import { C, R } from '../theme';
+
+function ModelDropdown({
+  models,
+  value,
+  loading,
+  onChange,
+}: {
+  models: OpenRouterModel[];
+  value: string;
+  loading: boolean;
+  onChange: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const selected = models.find((m) => m.id === value);
+  const displayName = selected ? selected.name : value;
+
+  const fmtPrice = (n: number) =>
+    n === 0 ? 'free' : n < 0.01 ? `$${n.toFixed(4)}` : `$${n.toFixed(2)}`;
+
+  return (
+    <div ref={ref} style={{ position: 'relative', flex: 1 }}>
+      {/* Trigger */}
+      <div
+        onClick={() => !loading && setOpen((v) => !v)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '8px 10px',
+          backgroundColor: C.bg5,
+          border: `1px solid ${C.border2}`,
+          borderRadius: R.md,
+          cursor: loading ? 'not-allowed' : 'pointer',
+          fontSize: 13,
+          color: C.text1,
+          userSelect: 'none',
+        }}
+      >
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+          {loading ? 'Loading models…' : displayName}
+        </span>
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ flexShrink: 0, marginLeft: 6, opacity: 0.5 }}>
+          <path d={open ? 'M2 8l4-4 4 4' : 'M2 4l4 4 4-4'} stroke={C.text2} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </div>
+
+      {/* Dropdown list */}
+      {open && (
+        <div style={{
+          position: 'absolute',
+          top: '100%',
+          left: 0,
+          right: 0,
+          zIndex: 100,
+          marginTop: 4,
+          backgroundColor: C.bg3,
+          border: `1px solid ${C.border2}`,
+          borderRadius: R.lg,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+          maxHeight: 320,
+          overflowY: 'auto',
+        }}>
+          {/* Header row */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            padding: '6px 12px',
+            borderBottom: `1px solid ${C.border}`,
+            fontSize: 10,
+            color: C.text3,
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: '0.06em',
+            position: 'sticky',
+            top: 0,
+            backgroundColor: C.bg3,
+          }}>
+            <span>Model</span>
+            <span>Input / Output per 1M tokens</span>
+          </div>
+
+          {/* Current value if not in list */}
+          {models.length > 0 && !models.some((m) => m.id === value) && (
+            <ModelOption
+              name={value}
+              subtitle="(current — not in refreshed list)"
+              priceIn={null}
+              priceOut={null}
+              selected={true}
+              onClick={() => { onChange(value); setOpen(false); }}
+            />
+          )}
+
+          {models.length === 0 && (
+            <div style={{ padding: '12px', fontSize: 13, color: C.text3, textAlign: 'center' }}>
+              Enter an API key to see available models
+            </div>
+          )}
+
+          {models.map((m) => (
+            <ModelOption
+              key={m.id}
+              name={m.name}
+              subtitle={m.id}
+              priceIn={fmtPrice(m.inputPricePerMillion)}
+              priceOut={fmtPrice(m.outputPricePerMillion)}
+              selected={m.id === value}
+              onClick={() => { onChange(m.id); setOpen(false); }}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ModelOption({
+  name,
+  subtitle,
+  priceIn,
+  priceOut,
+  selected,
+  onClick,
+}: {
+  name: string;
+  subtitle?: string;
+  priceIn: string | null;
+  priceOut: string | null;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  const [hov, setHov] = useState(false);
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '8px 12px',
+        cursor: 'pointer',
+        backgroundColor: selected ? C.bg4 : hov ? C.bg4 : 'transparent',
+        borderLeft: selected ? `2px solid ${C.accent}` : '2px solid transparent',
+        gap: 12,
+      }}
+    >
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ fontSize: 13, color: selected ? C.text1 : C.text2, fontWeight: selected ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {name}
+        </div>
+        {subtitle && (
+          <div style={{ fontSize: 11, color: C.text3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {subtitle}
+          </div>
+        )}
+      </div>
+      {priceIn !== null && priceOut !== null && (
+        <div style={{ textAlign: 'right', flexShrink: 0, fontSize: 12 }}>
+          <div style={{ color: C.text2 }}>{priceIn}</div>
+          <div style={{ color: C.text3 }}>{priceOut}</div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface ModesScreenProps {
   onBack: () => void;
@@ -305,28 +483,13 @@ export default function ModesScreen({ onBack, onApiKeyChanged }: ModesScreenProp
               {/* Model picker */}
               <div style={{ marginBottom: 20 }}>
                 <label style={labelStyle}>Assigned Model</label>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <select
+                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                  <ModelDropdown
+                    models={models}
                     value={selectedMode.modelId}
-                    onChange={(e) => handleSaveModel(e.target.value)}
-                    style={{ ...selectStyle, flex: 1 }}
-                  >
-                    {models.length === 0 && !modelsLoading && (
-                      <option value={selectedMode.modelId}>
-                        {selectedMode.modelId} (enter API key to see all models)
-                      </option>
-                    )}
-                    {models.length > 0 && !models.some((m) => m.id === selectedMode.modelId) && (
-                      <option value={selectedMode.modelId}>
-                        {selectedMode.modelId} (current, not in refreshed list)
-                      </option>
-                    )}
-                    {models.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name} — ${m.inputPricePerMillion.toFixed(2)}/M in, ${m.outputPricePerMillion.toFixed(2)}/M out
-                      </option>
-                    ))}
-                  </select>
+                    loading={modelsLoading}
+                    onChange={handleSaveModel}
+                  />
                   <button
                     onClick={loadModels}
                     disabled={modelsLoading}
@@ -342,6 +505,7 @@ export default function ModesScreen({ onBack, onApiKeyChanged }: ModesScreenProp
                       whiteSpace: 'nowrap',
                       fontSize: 13,
                       transition: 'background 0.15s',
+                      flexShrink: 0,
                     }}
                   >
                     {modelsLoading ? 'Refreshing...' : 'Refresh'}
