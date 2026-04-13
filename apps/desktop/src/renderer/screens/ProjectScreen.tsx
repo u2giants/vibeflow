@@ -5,6 +5,7 @@ import type { Project, ConversationThread, Mode } from '../../lib/shared-types';
 import ConversationScreen from './ConversationScreen';
 import SshScreen from './SshScreen';
 import DevOpsScreen from './DevOpsScreen';
+import McpScreen from './McpScreen';
 import TopBar from '../components/TopBar';
 import BottomBar from '../components/BottomBar';
 
@@ -22,6 +23,7 @@ export default function ProjectScreen({ project, email, currentMode, onBack, onO
   const [openRouterConnected, setOpenRouterConnected] = useState(false);
   const [showSsh, setShowSsh] = useState(false);
   const [showDevOps, setShowDevOps] = useState(false);
+  const [showMcp, setShowMcp] = useState(false);
 
   useEffect(() => {
     window.vibeflow.openrouter.getApiKey().then((r) => setOpenRouterConnected(r.hasKey));
@@ -126,6 +128,22 @@ export default function ProjectScreen({ project, email, currentMode, onBack, onO
             >
               ⚙️ DevOps
             </button>
+            <button
+              onClick={() => setShowMcp(true)}
+              style={{
+                marginTop: 4,
+                padding: '4px 8px',
+                backgroundColor: '#1a2332',
+                color: '#58a6ff',
+                border: '1px solid #30363d',
+                borderRadius: 4,
+                cursor: 'pointer',
+                fontSize: 12,
+                width: '100%',
+              }}
+            >
+              🔌 MCP
+            </button>
           </div>
 
           {/* Conversation list */}
@@ -176,8 +194,10 @@ export default function ProjectScreen({ project, email, currentMode, onBack, onO
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {showDevOps ? (
             <DevOpsScreen projectId={project.id} onBack={() => setShowDevOps(false)} />
+          ) : showMcp ? (
+            <McpScreen projectId={project.id} onBack={() => setShowMcp(false)} />
           ) : showSsh ? (
-            <SshScreen onBack={() => setShowSsh(false)} />
+            <SshScreen onBack={() => setShowSsh(false)} projectId={project.id} />
           ) : activeConversation ? (
             <ConversationScreen
               conversation={activeConversation}

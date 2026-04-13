@@ -8,7 +8,7 @@
  */
 
 import { createClient, type SupabaseClient, type RealtimeChannel } from '@supabase/supabase-js';
-import type { SyncStatus, ConversationThread, Message, Project, RunState } from '../shared-types';
+import type { SyncStatus, ConversationThread, Message, Project, RunState, Mode, ApprovalPolicy } from '../shared-types';
 import type { LocalDb } from '../storage/local-db';
 
 export type SyncEventType =
@@ -90,16 +90,10 @@ export class SyncEngine {
 
   async syncAll(): Promise<void> {
     this.setStatus('syncing');
-
-    // Sync projects
     await this.syncProjects();
-
-    // Sync conversations
     await this.syncConversations();
-
-    // Sync messages
     await this.syncMessages();
-
+    await this.syncModes();
     this.setStatus('synced');
   }
 
@@ -251,6 +245,49 @@ export class SyncEngine {
     });
     if (error) {
       console.error('[sync] Failed to push message:', error.message);
+    }
+  }
+
+  async pushMode(mode: Mode): Promise<void> {
+    const { error } = await this.supabase.from('modes').upsert({
+      id: mode.id,
+      user_id: this.userId,
+      slug: mode.slug,
+      name: mode.name,
+      description: mode.description,
+      icon: mode.icon,
+      color: mode.color,
+      soul: mode.soul,
+      model_id: mode.modelId,
+      fallback_model_id: mode.fallbackModelId,
+      temperature: mode.temperature,
+      approval_policy: mode.approvalPolicy,
+      is_built_in: mode.isBuiltIn,
+      created_at: mode.createdAt,
+      updated_at: mode.updatedAt,
+    });
+    if (error) {
+      console.error('[sync] Failed to push mode:', error.message);
+    }
+  }
+
+  private async syncModes(): Promise<void> {
+    const { data, error } = await this.supabase
+      .from('modes')
+      .select('*')
+      .eq('user_id', this.userId);
+    if (error) { console.error('[sync] Failed to sync modes:', error.message); return; }
+    if (data) {
+      for (const row of data) {
+        const mode: Mode = {
+          id: row.id, slug: row.slug, name: row.name, description: row.description,
+          icon: row.icon, color: row.color, soul: row.soul, modelId: row.model_id,
+          fallbackModelId: row.fallback_model_id ?? null, temperature: row.temperature,
+          approvalPolicy: (row.approval_policy as ApprovalPolicy), isBuiltIn: row.is_built_in,
+          createdAt: row.created_at, updatedAt: row.updated_at,
+        };
+        this.localDb.upsertMode(mode);
+      }
     }
   }
 

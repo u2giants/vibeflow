@@ -4,7 +4,7 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
-import type { VibeFlowAPI, CreateConversationArgs, SendMessageArgs, StreamTokenData, StreamDoneData, StreamErrorData, TerminalRunArgs, GitCommitArgs, GitPushArgs, SshHost, ProjectDevOpsConfig, ActionRequest, HumanDecisionArgs, GenerateHandoffArgs } from '../lib/shared-types';
+import type { VibeFlowAPI, CreateConversationArgs, SendMessageArgs, StreamTokenData, StreamDoneData, StreamErrorData, ExecutionEventData, TerminalRunArgs, GitCommitArgs, GitPushArgs, SshHost, ProjectDevOpsConfig, ActionRequest, HumanDecisionArgs, GenerateHandoffArgs, UpdateModeConfigArgs, CreateSshTargetArgs, CreateMcpConnectionArgs } from '../lib/shared-types';
 import { SyncStatus } from '../lib/shared-types';
 
 const api: VibeFlowAPI = {
@@ -40,6 +40,7 @@ const api: VibeFlowAPI = {
     list: () => ipcRenderer.invoke('modes:list'),
     updateSoul: (args) => ipcRenderer.invoke('modes:updateSoul', args),
     updateModel: (args) => ipcRenderer.invoke('modes:updateModel', args),
+    updateConfig: (args: UpdateModeConfigArgs) => ipcRenderer.invoke('modes:updateConfig', args),
   },
   openrouter: {
     setApiKey: (key: string) => ipcRenderer.invoke('openrouter:setApiKey', key),
@@ -64,10 +65,15 @@ const api: VibeFlowAPI = {
       ipcRenderer.removeAllListeners('conversations:streamError');
       ipcRenderer.on('conversations:streamError', (_event, data) => callback(data));
     },
+    onExecutionEvent: (callback: (data: ExecutionEventData) => void) => {
+      ipcRenderer.removeAllListeners('conversations:executionEvent');
+      ipcRenderer.on('conversations:executionEvent', (_event, data) => callback(data));
+    },
     removeStreamListeners: () => {
       ipcRenderer.removeAllListeners('conversations:streamToken');
       ipcRenderer.removeAllListeners('conversations:streamDone');
       ipcRenderer.removeAllListeners('conversations:streamError');
+      ipcRenderer.removeAllListeners('conversations:executionEvent');
     },
   },
   sync: {
@@ -115,6 +121,9 @@ const api: VibeFlowAPI = {
   },
   devops: {
     listTemplates: () => ipcRenderer.invoke('devops:listTemplates'),
+    createTemplate: (template: any) => ipcRenderer.invoke('devops:createTemplate', template),
+    updateTemplate: (template: any) => ipcRenderer.invoke('devops:updateTemplate', template),
+    deleteTemplate: (id: string) => ipcRenderer.invoke('devops:deleteTemplate', id),
     getProjectConfig: (projectId: string) => ipcRenderer.invoke('devops:getProjectConfig', projectId),
     saveProjectConfig: (config: ProjectDevOpsConfig) => ipcRenderer.invoke('devops:saveProjectConfig', config),
     setGitHubToken: (token: string) => ipcRenderer.invoke('devops:setGitHubToken', token),
@@ -159,6 +168,17 @@ const api: VibeFlowAPI = {
       ipcRenderer.removeAllListeners('updater:download-progress');
       ipcRenderer.removeAllListeners('updater:update-downloaded');
     },
+  },
+  sshTargets: {
+    list: (projectId: string | null) => ipcRenderer.invoke('sshTargets:list', projectId),
+    save: (args: CreateSshTargetArgs) => ipcRenderer.invoke('sshTargets:save', args),
+    delete: (id: string) => ipcRenderer.invoke('sshTargets:delete', id),
+  },
+  mcp: {
+    list: (projectId: string | null) => ipcRenderer.invoke('mcp:list', projectId),
+    create: (args: CreateMcpConnectionArgs) => ipcRenderer.invoke('mcp:create', args),
+    update: (id: string, updates: Partial<CreateMcpConnectionArgs>) => ipcRenderer.invoke('mcp:update', id, updates),
+    delete: (id: string) => ipcRenderer.invoke('mcp:delete', id),
   },
 };
 

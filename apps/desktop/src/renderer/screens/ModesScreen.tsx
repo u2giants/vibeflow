@@ -11,6 +11,9 @@ export default function ModesScreen({ onBack }: ModesScreenProps) {
   const [modes, setModes] = useState<Mode[]>([]);
   const [selectedMode, setSelectedMode] = useState<Mode | null>(null);
   const [soulDraft, setSoulDraft] = useState('');
+  const [temperatureDraft, setTemperatureDraft] = useState(0.7);
+  const [approvalPolicyDraft, setApprovalPolicyDraft] = useState<'auto' | 'second-model' | 'human'>('auto');
+  const [fallbackModelDraft, setFallbackModelDraft] = useState<string>('');
   const [models, setModels] = useState<OpenRouterModel[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsMessage, setModelsMessage] = useState<string | null>(null);
@@ -26,6 +29,9 @@ export default function ModesScreen({ onBack }: ModesScreenProps) {
       if (list.length > 0) {
         setSelectedMode(list[0]);
         setSoulDraft(list[0].soul);
+        setTemperatureDraft(list[0].temperature);
+        setApprovalPolicyDraft(list[0].approvalPolicy);
+        setFallbackModelDraft(list[0].fallbackModelId ?? '');
       }
     });
     window.vibeflow.openrouter.getApiKey().then((r) => setHasApiKey(r.hasKey));
@@ -54,6 +60,9 @@ export default function ModesScreen({ onBack }: ModesScreenProps) {
   const handleSelectMode = (mode: Mode) => {
     setSelectedMode(mode);
     setSoulDraft(mode.soul);
+    setTemperatureDraft(mode.temperature);
+    setApprovalPolicyDraft(mode.approvalPolicy);
+    setFallbackModelDraft(mode.fallbackModelId ?? '');
     setSaveMessage(null);
   };
 
@@ -86,6 +95,28 @@ export default function ModesScreen({ onBack }: ModesScreenProps) {
       )
     );
     setSelectedMode((prev) => (prev ? { ...prev, modelId } : null));
+  };
+
+  const handleSaveConfig = async () => {
+    if (!selectedMode) return;
+    await window.vibeflow.modes.updateConfig({
+      modeId: selectedMode.id,
+      temperature: temperatureDraft,
+      approvalPolicy: approvalPolicyDraft,
+      fallbackModelId: fallbackModelDraft || null,
+    });
+    setModes((prev) =>
+      prev.map((m) =>
+        m.id === selectedMode.id
+          ? { ...m, temperature: temperatureDraft, approvalPolicy: approvalPolicyDraft, fallbackModelId: fallbackModelDraft || null }
+          : m
+      )
+    );
+    setSelectedMode((prev) =>
+      prev ? { ...prev, temperature: temperatureDraft, approvalPolicy: approvalPolicyDraft, fallbackModelId: fallbackModelDraft || null } : null
+    );
+    setSaveMessage('Config saved ✅');
+    setTimeout(() => setSaveMessage(null), 3000);
   };
 
   const handleSaveApiKey = async () => {
@@ -294,6 +325,60 @@ export default function ModesScreen({ onBack }: ModesScreenProps) {
                   {modelsMessage}
                 </p>
               )}
+
+              {/* Advanced config */}
+              <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid #dee2e6' }}>
+                <h4 style={{ margin: '0 0 12px', fontSize: 14 }}>Advanced Config</h4>
+                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 12 }}>
+                  <div style={{ flex: 1, minWidth: 140 }}>
+                    <label style={{ fontSize: 13, fontWeight: 600 }}>
+                      Temperature: {temperatureDraft.toFixed(1)}
+                    </label>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.1}
+                      value={temperatureDraft}
+                      onChange={(e) => setTemperatureDraft(parseFloat(e.target.value))}
+                      style={{ width: '100%', marginTop: 4 }}
+                    />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 160 }}>
+                    <label style={{ fontSize: 13, fontWeight: 600 }}>Approval Policy</label>
+                    <select
+                      value={approvalPolicyDraft}
+                      onChange={(e) => setApprovalPolicyDraft(e.target.value as 'auto' | 'second-model' | 'human')}
+                      style={{ width: '100%', marginTop: 4, padding: '4px 8px', border: '1px solid #ccc', borderRadius: 4, fontSize: 13 }}
+                    >
+                      <option value="auto">Auto (no review)</option>
+                      <option value="second-model">Second Model Review</option>
+                      <option value="human">Human Approval</option>
+                    </select>
+                  </div>
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ fontSize: 13, fontWeight: 600 }}>Fallback Model ID</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. openai/gpt-4o-mini (leave blank for none)"
+                    value={fallbackModelDraft}
+                    onChange={(e) => setFallbackModelDraft(e.target.value)}
+                    style={{ width: '100%', marginTop: 4, padding: '6px 8px', border: '1px solid #ccc', borderRadius: 4, fontSize: 13, boxSizing: 'border-box' }}
+                  />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <button
+                    onClick={handleSaveConfig}
+                    style={{ padding: '6px 16px', backgroundColor: '#17a2b8', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}
+                  >
+                    Save Config
+                  </button>
+                  {saveMessage && (
+                    <span style={{ color: '#28a745', fontSize: 13 }}>{saveMessage}</span>
+                  )}
+                </div>
+              </div>
             </div>
           ) : (
             <p style={{ color: '#666' }}>Select a Mode to edit its settings.</p>

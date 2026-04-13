@@ -1,6 +1,6 @@
 /** IPC message types for Electron main ↔ renderer communication. */
 
-import type { Project, SyncStatus, Account, Mode, OpenRouterModel, ConversationThread, Message, ProjectDevOpsConfig, DeployRun } from './entities';
+import type { Project, SyncStatus, Account, Mode, OpenRouterModel, ConversationThread, Message, ProjectDevOpsConfig, DeployRun, SshTarget, McpConnection } from './entities';
 
 // ── Auth IPC ──────────────────────────────────────────────────────
 
@@ -56,10 +56,18 @@ export interface UpdateModeModelArgs {
   modelId: string;
 }
 
+export interface UpdateModeConfigArgs {
+  modeId: string;
+  temperature?: number;
+  approvalPolicy?: string;
+  fallbackModelId?: string | null;
+}
+
 export interface ModesChannel {
   list: () => Promise<Mode[]>;
   updateSoul: (args: UpdateModeSoulArgs) => Promise<{ success: boolean }>;
   updateModel: (args: UpdateModeModelArgs) => Promise<{ success: boolean }>;
+  updateConfig: (args: UpdateModeConfigArgs) => Promise<{ success: boolean }>;
 }
 
 // ── OpenRouter IPC ────────────────────────────────────────────────
@@ -98,6 +106,12 @@ export interface StreamErrorData {
   error: string;
 }
 
+export interface ExecutionEventData {
+  conversationId: string;
+  text: string;
+  type: 'info' | 'delegation' | 'specialist' | 'error';
+}
+
 export interface ConversationsChannel {
   list: (projectId: string) => Promise<ConversationThread[]>;
   create: (args: CreateConversationArgs) => Promise<ConversationThread>;
@@ -106,6 +120,7 @@ export interface ConversationsChannel {
   onStreamToken: (callback: (data: StreamTokenData) => void) => void;
   onStreamDone: (callback: (data: StreamDoneData) => void) => void;
   onStreamError: (callback: (data: StreamErrorData) => void) => void;
+  onExecutionEvent: (callback: (data: ExecutionEventData) => void) => void;
   removeStreamListeners: () => void;
 }
 
@@ -205,6 +220,9 @@ export interface SshConnectionTestResult {
 
 export type DevOpsChannel =
   | 'devops:listTemplates'
+  | 'devops:createTemplate'
+  | 'devops:updateTemplate'
+  | 'devops:deleteTemplate'
   | 'devops:getProjectConfig'
   | 'devops:saveProjectConfig'
   | 'devops:setGitHubToken'
@@ -245,6 +263,9 @@ export interface HealthCheckResult {
 
 export interface DevOpsApi {
   listTemplates: () => Promise<any[]>;
+  createTemplate: (template: any) => Promise<any>;
+  updateTemplate: (template: any) => Promise<{ success: boolean }>;
+  deleteTemplate: (id: string) => Promise<{ success: boolean }>;
   getProjectConfig: (projectId: string) => Promise<ProjectDevOpsConfig | null>;
   saveProjectConfig: (config: ProjectDevOpsConfig) => Promise<{ success: boolean }>;
   setGitHubToken: (token: string) => Promise<{ success: boolean }>;
@@ -392,6 +413,41 @@ export interface UpdaterChannel {
   removeListeners: () => void;
 }
 
+// ── SSH Targets IPC ────────────────────────────────────────────────
+
+export interface CreateSshTargetArgs {
+  projectId: string | null;
+  name: string;
+  hostname: string;
+  username: string;
+  port: number;
+  identityFile: string | null;
+}
+
+export interface SshTargetsApi {
+  list: (projectId: string | null) => Promise<SshTarget[]>;
+  save: (args: CreateSshTargetArgs) => Promise<SshTarget>;
+  delete: (id: string) => Promise<{ success: boolean }>;
+}
+
+// ── MCP IPC ────────────────────────────────────────────────────────
+
+export interface CreateMcpConnectionArgs {
+  projectId: string | null;
+  name: string;
+  command: string;
+  args: string[];
+  enabled: boolean;
+  scope: 'global' | 'project';
+}
+
+export interface McpApi {
+  list: (projectId: string | null) => Promise<McpConnection[]>;
+  create: (args: CreateMcpConnectionArgs) => Promise<McpConnection>;
+  update: (id: string, updates: Partial<CreateMcpConnectionArgs>) => Promise<{ success: boolean }>;
+  delete: (id: string) => Promise<{ success: boolean }>;
+}
+
 // ── Full window API ──────────────────────────────────────────────
 
 export interface VibeFlowAPI {
@@ -410,4 +466,6 @@ export interface VibeFlowAPI {
   approval: ApprovalApi;
   handoff: HandoffApi;
   updater: UpdaterChannel;
+  sshTargets: SshTargetsApi;
+  mcp: McpApi;
 }

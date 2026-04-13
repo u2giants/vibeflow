@@ -123,9 +123,15 @@ export default function ConversationScreen({ conversation, currentMode, onNewCon
       }
     };
 
+    const handleExecutionEvent = (data: { conversationId: string; text: string; type: string }) => {
+      if (data.conversationId !== conversation.id) return;
+      setExecutionEvents(prev => [...prev, `[${data.type}] ${data.text}`]);
+    };
+
     window.vibeflow.conversations.onStreamToken(handleToken);
     window.vibeflow.conversations.onStreamDone(handleDone);
     window.vibeflow.conversations.onStreamError(handleError);
+    window.vibeflow.conversations.onExecutionEvent(handleExecutionEvent);
 
     return () => {
       window.vibeflow.conversations.removeStreamListeners();

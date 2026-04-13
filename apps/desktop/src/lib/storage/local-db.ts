@@ -4,7 +4,7 @@
 const initSqlJs = require('sql.js') as (opts?: { locateFile?: (f: string) => string }) => Promise<any>;
 import * as path from 'path';
 import * as fs from 'fs';
-import type { Mode, ApprovalPolicy, ConversationThread, Message, RunState, ProjectDevOpsConfig, DeployRun } from '../shared-types';
+import type { Mode, ApprovalPolicy, ConversationThread, Message, RunState, ProjectDevOpsConfig, DeployRun, SshTarget, McpConnection } from '../shared-types';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyRow = any[];
@@ -201,6 +201,49 @@ export class LocalDb {
         started_at TEXT NOT NULL,
         completed_at TEXT,
         error TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS devops_templates (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        branch_strategy TEXT NOT NULL DEFAULT 'push-to-main',
+        build_tool TEXT NOT NULL DEFAULT 'docker',
+        registry TEXT NOT NULL DEFAULT 'ghcr.io',
+        image_name TEXT NOT NULL DEFAULT '',
+        image_tags TEXT NOT NULL DEFAULT '[]',
+        deploy_target_type TEXT NOT NULL DEFAULT 'coolify',
+        trigger_method TEXT NOT NULL DEFAULT 'api-webhook',
+        required_secrets TEXT NOT NULL DEFAULT '[]',
+        plain_english_explanation TEXT NOT NULL DEFAULT '',
+        is_built_in INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS ssh_targets (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL DEFAULT '',
+        project_id TEXT,
+        name TEXT NOT NULL,
+        hostname TEXT NOT NULL,
+        username TEXT NOT NULL DEFAULT '',
+        port INTEGER NOT NULL DEFAULT 22,
+        identity_file TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS mcp_connections (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL DEFAULT '',
+        project_id TEXT,
+        name TEXT NOT NULL,
+        command TEXT NOT NULL,
+        args TEXT NOT NULL DEFAULT '[]',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        scope TEXT NOT NULL DEFAULT 'project',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
       );
     `);
   }
@@ -484,5 +527,127 @@ export class LocalDb {
       completedAt: r.completed_at,
       error: r.error,
     }));
+  }
+
+  // ── DevOps Templates ────────────────────────────────────────────────
+
+  listDevOpsTemplates(): any[] {
+    const result = this.db!.exec('SELECT * FROM devops_templates ORDER BY is_built_in DESC, name ASC')[0];
+    return this.toObjAll(result).map((r: any) => ({
+      id: r.id,
+      name: r.name,
+      description: r.description,
+      branchStrategy: r.branch_strategy,
+      buildTool: r.build_tool,
+      registry: r.registry,
+      imageName: r.image_name,
+      imageTags: JSON.parse(r.image_tags || '[]'),
+      deployTargetType: r.deploy_target_type,
+      triggerMethod: r.trigger_method,
+      requiredSecrets: JSON.parse(r.required_secrets || '[]'),
+      plainEnglishExplanation: r.plain_english_explanation,
+      isBuiltIn: r.is_built_in === 1,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+    }));
+  }
+
+  upsertDevOpsTemplate(t: any): void {
+    const now = new Date().toISOString();
+    this.db!.run(
+      'INSERT OR REPLACE INTO devops_templates (id, name, description, branch_strategy, build_tool, registry, image_name, image_tags, deploy_target_type, trigger_method, required_secrets, plain_english_explanation, is_built_in, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [t.id, t.name, t.description, t.branchStrategy, t.buildTool, t.registry, t.imageName, JSON.stringify(t.imageTags), t.deployTargetType, t.triggerMethod, JSON.stringify(t.requiredSecrets), t.plainEnglishExplanation, t.isBuiltIn ? 1 : 0, t.createdAt || now, now]
+    );
+    this.save();
+  }
+
+  deleteDevOpsTemplate(id: string): void {
+    this.db!.run('DELETE FROM devops_templates WHERE id = ? AND is_built_in = 0', [id]);
+    this.save();
+  }
+
+  seedDevOpsTemplates(templates: any[]): void {
+    const existing = this.listDevOpsTemplates();
+    const existingIds = new Set(existing.map((t: any) => t.id));
+    for (const t of templates) {
+      if (!existingIds.has(t.id)) this.upsertDevOpsTemplate(t);
+    }
+  }
+
+  // ── SSH Targets ─────────────────────────────────────────────────────
+
+  listSshTargets(projectId: string | null): SshTarget[] {
+    const result = projectId
+      ? this.db!.exec('SELECT * FROM ssh_targets WHERE project_id = ? OR project_id IS NULL ORDER BY name ASC', [projectId])[0]
+      : this.db!.exec('SELECT * FROM ssh_targets ORDER BY name ASC')[0];
+    return this.toObjAll(result).map((r: any) => ({
+      id: r.id, userId: r.user_id, projectId: r.project_id ?? null,
+      name: r.name, hostname: r.hostname, username: r.username,
+      port: r.port, identityFile: r.identity_file ?? null, createdAt: r.created_at,
+    }));
+  }
+
+  insertSshTarget(t: SshTarget): void {
+    this.db!.run(
+      'INSERT INTO ssh_targets (id, user_id, project_id, name, hostname, username, port, identity_file, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [t.id, t.userId, t.projectId, t.name, t.hostname, t.username, t.port, t.identityFile, t.createdAt]
+    );
+    this.save();
+  }
+
+  deleteSshTarget(id: string): void {
+    this.db!.run('DELETE FROM ssh_targets WHERE id = ?', [id]);
+    this.save();
+  }
+
+  // ── MCP Connections ─────────────────────────────────────────────────
+
+  listMcpConnections(projectId: string | null): McpConnection[] {
+    const result = projectId
+      ? this.db!.exec('SELECT * FROM mcp_connections WHERE project_id = ? OR scope = ? ORDER BY name ASC', [projectId, 'global'])[0]
+      : this.db!.exec('SELECT * FROM mcp_connections ORDER BY name ASC')[0];
+    return this.toObjAll(result).map((r: any) => ({
+      id: r.id, userId: r.user_id, projectId: r.project_id ?? null,
+      name: r.name, command: r.command, args: JSON.parse(r.args || '[]'),
+      enabled: r.enabled === 1, scope: r.scope as 'global' | 'project',
+      createdAt: r.created_at, updatedAt: r.updated_at,
+    }));
+  }
+
+  insertMcpConnection(m: McpConnection): void {
+    this.db!.run(
+      'INSERT INTO mcp_connections (id, user_id, project_id, name, command, args, enabled, scope, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [m.id, m.userId, m.projectId, m.name, m.command, JSON.stringify(m.args), m.enabled ? 1 : 0, m.scope, m.createdAt, m.updatedAt]
+    );
+    this.save();
+  }
+
+  updateMcpConnection(id: string, updates: Partial<McpConnection>): void {
+    const fields: string[] = [];
+    const values: any[] = [];
+    if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
+    if (updates.command !== undefined) { fields.push('command = ?'); values.push(updates.command); }
+    if (updates.args !== undefined) { fields.push('args = ?'); values.push(JSON.stringify(updates.args)); }
+    if (updates.enabled !== undefined) { fields.push('enabled = ?'); values.push(updates.enabled ? 1 : 0); }
+    if (updates.scope !== undefined) { fields.push('scope = ?'); values.push(updates.scope); }
+    fields.push('updated_at = ?'); values.push(new Date().toISOString());
+    values.push(id);
+    this.db!.run(`UPDATE mcp_connections SET ${fields.join(', ')} WHERE id = ?`, values);
+    this.save();
+  }
+
+  deleteMcpConnection(id: string): void {
+    this.db!.run('DELETE FROM mcp_connections WHERE id = ?', [id]);
+    this.save();
+  }
+
+  // ── Mode config update ──────────────────────────────────────────────
+
+  updateModeConfig(id: string, temperature: number, approvalPolicy: string, fallbackModelId: string | null): void {
+    this.db!.run(
+      'UPDATE modes SET temperature = ?, approval_policy = ?, fallback_model_id = ?, updated_at = ? WHERE id = ?',
+      [temperature, approvalPolicy, fallbackModelId, new Date().toISOString(), id]
+    );
+    this.save();
   }
 }

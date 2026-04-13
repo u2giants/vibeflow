@@ -29,9 +29,12 @@ import type {
   CreateProjectArgs,
   UpdateModeSoulArgs,
   UpdateModeModelArgs,
+  UpdateModeConfigArgs,
   CreateConversationArgs,
   SendMessageArgs,
   Message,
+  CreateSshTargetArgs,
+  CreateMcpConnectionArgs,
 } from '../lib/shared-types';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { runOrchestrator } from '../lib/orchestrator/orchestrator';
@@ -87,6 +90,13 @@ function getSupabaseClient(): SupabaseClient | null {
 
   supabase = createClient(supabaseUrl, anonKey);
   return supabase;
+}
+
+async function getCurrentUserId(): Promise<string> {
+  const client = getSupabaseClient();
+  if (!client) return '';
+  const { data } = await client.auth.getSession();
+  return data.session?.user?.id ?? '';
 }
 
 // ── Sync Engine ─────────────────────────────────────────────────────
@@ -378,7 +388,6 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('projects:list', async (): Promise<unknown[]> => {
     if (!localDb) return [];
-    // TODO: Get userId from session
     return localDb.listProjects('');
   });
 
@@ -387,9 +396,10 @@ app.whenReady().then(async () => {
     async (_event: IpcMainInvokeEvent, args: CreateProjectArgs): Promise<unknown> => {
       if (!localDb) throw new Error('Local DB not initialized');
 
+      const userId = await getCurrentUserId();
       const project = {
         id: crypto.randomUUID(),
-        userId: '', // TODO: Get from session
+        userId,
         name: args.name,
         description: args.description ?? null,
         isSelfMaintenance: false,
@@ -400,7 +410,12 @@ app.whenReady().then(async () => {
 
       localDb.insertProject(project);
 
-      // TODO: Sync to Supabase cloud
+      if (syncEngine) {
+        syncEngine.pushProject(project).catch(err =>
+          console.warn('[main] pushProject failed (non-fatal):', err)
+        );
+      }
+
       return project;
     }
   );
@@ -482,6 +497,8 @@ app.whenReady().then(async () => {
     console.log('[main] Local SQLite DB initialized at', dbPath);
     localDb.seedDefaultModes(DEFAULT_MODES);
     console.log('[main] Default modes seeded');
+    localDb.seedDevOpsTemplates(BUILT_IN_TEMPLATES);
+    console.log('[main] DevOps templates seeded');
   } catch (err) {
     console.error('[main] SQLite DB init failed (non-fatal):', err);
     localDb = null;
@@ -513,6 +530,12 @@ app.whenReady().then(async () => {
     async (_event: IpcMainInvokeEvent, args: UpdateModeSoulArgs) => {
       if (!localDb) throw new Error('DB not initialized');
       localDb.updateModeSoul(args.modeId, args.soul);
+      const updatedMode = localDb.listModes().find(m => m.id === args.modeId);
+      if (syncEngine && updatedMode) {
+        syncEngine.pushMode(updatedMode).catch(err =>
+          console.warn('[main] pushMode failed (non-fatal):', err)
+        );
+      }
       return { success: true };
     }
   );
@@ -522,6 +545,32 @@ app.whenReady().then(async () => {
     async (_event: IpcMainInvokeEvent, args: UpdateModeModelArgs) => {
       if (!localDb) throw new Error('DB not initialized');
       localDb.updateModeModel(args.modeId, args.modelId);
+      const updatedMode = localDb.listModes().find(m => m.id === args.modeId);
+      if (syncEngine && updatedMode) {
+        syncEngine.pushMode(updatedMode).catch(err =>
+          console.warn('[main] pushMode failed (non-fatal):', err)
+        );
+      }
+      return { success: true };
+    }
+  );
+
+  ipcMain.handle(
+    'modes:updateConfig',
+    async (_event: IpcMainInvokeEvent, args: UpdateModeConfigArgs) => {
+      if (!localDb) throw new Error('DB not initialized');
+      const existing = localDb.listModes().find(m => m.id === args.modeId);
+      if (!existing) throw new Error('Mode not found');
+      const temperature = args.temperature ?? existing.temperature;
+      const approvalPolicy = args.approvalPolicy ?? existing.approvalPolicy;
+      const fallbackModelId = args.fallbackModelId !== undefined ? args.fallbackModelId : existing.fallbackModelId;
+      localDb.updateModeConfig(args.modeId, temperature, approvalPolicy, fallbackModelId);
+      const updatedMode = localDb.listModes().find(m => m.id === args.modeId);
+      if (syncEngine && updatedMode) {
+        syncEngine.pushMode(updatedMode).catch(err =>
+          console.warn('[main] pushMode failed (non-fatal):', err)
+        );
+      }
       return { success: true };
     }
   );
@@ -584,10 +633,11 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('conversations:create', async (_event, args: CreateConversationArgs) => {
     if (!localDb) throw new Error('DB not initialized');
+    const userId = await getCurrentUserId();
     const conv = {
       id: crypto.randomUUID(),
       projectId: args.projectId,
-      userId: '', // TODO: Get from session
+      userId,
       title: args.title,
       runState: 'idle' as const,
       ownerDeviceId: null,
@@ -597,6 +647,13 @@ app.whenReady().then(async () => {
       updatedAt: new Date().toISOString(),
     };
     localDb.createConversation(conv);
+
+    if (syncEngine) {
+      syncEngine.pushConversation(conv).catch(err =>
+        console.warn('[main] pushConversation failed (non-fatal):', err)
+      );
+    }
+
     return conv;
   });
 
@@ -620,20 +677,35 @@ app.whenReady().then(async () => {
     };
     localDb.insertMessage(userMsg);
 
+    if (syncEngine) {
+      syncEngine.pushMessage(userMsg).catch(err =>
+        console.warn('[main] pushMessage (user) failed (non-fatal):', err)
+      );
+    }
+
     // Get conversation history
     const history = localDb.listMessages(args.conversationId);
 
-    // Get Orchestrator mode
-    const orchestratorMode = localDb.listModes().find(m => m.slug === 'orchestrator');
-    if (!orchestratorMode) throw new Error('Orchestrator mode not found');
+    // Resolve mode — use modeId from args if provided, otherwise default to orchestrator
+    const allModes = localDb.listModes();
+    const requestedMode = args.modeId
+      ? allModes.find(m => m.id === args.modeId) ?? allModes.find(m => m.slug === 'orchestrator')
+      : allModes.find(m => m.slug === 'orchestrator');
+    if (!requestedMode) throw new Error('No mode found');
 
     // Get API key
     const apiKey = await keytar.getPassword(KEYTAR_SERVICE, KEYTAR_OPENROUTER_KEY);
     if (!apiKey) throw new Error('OpenRouter API key not set');
 
-    // Stream response
+    const sendExecEvent = (text: string, type: 'info' | 'delegation' | 'specialist' | 'error') => {
+      event.sender.send('conversations:executionEvent', { conversationId: args.conversationId, text, type });
+    };
+
+    sendExecEvent(`Running ${requestedMode.name}...`, 'info');
+
+    // Stream orchestrator response
     let fullContent = '';
-    await runOrchestrator(history, orchestratorMode, apiKey, {
+    await runOrchestrator(history, requestedMode, apiKey, {
       onToken: (token) => {
         event.sender.send('conversations:streamToken', { conversationId: args.conversationId, token });
       },
@@ -645,17 +717,92 @@ app.whenReady().then(async () => {
       },
     });
 
-    // Save assistant message
+    // Parse delegation tags: <delegate mode="slug">task description</delegate>
+    const delegationPattern = /<delegate\s+mode="([^"]+)">([\s\S]*?)<\/delegate>/gi;
+    const delegations: Array<{ modeSlug: string; task: string }> = [];
+    let match: RegExpExecArray | null;
+    while ((match = delegationPattern.exec(fullContent)) !== null) {
+      delegations.push({ modeSlug: match[1], task: match[2].trim() });
+    }
+
+    // If delegations found, run each specialist
+    if (delegations.length > 0) {
+      for (const delegation of delegations) {
+        const specialistMode = allModes.find(m => m.slug === delegation.modeSlug);
+        if (!specialistMode) {
+          sendExecEvent(`Unknown mode: ${delegation.modeSlug}`, 'error');
+          continue;
+        }
+
+        sendExecEvent(`Delegating to ${specialistMode.name}: ${delegation.task.slice(0, 80)}${delegation.task.length > 80 ? '...' : ''}`, 'delegation');
+
+        // Build specialist history: include original conversation + orchestrator's delegation
+        const specialistMessages: Message[] = [
+          ...history,
+          {
+            id: crypto.randomUUID(),
+            conversationId: args.conversationId,
+            role: 'assistant',
+            content: `I am delegating this task to you: ${delegation.task}`,
+            modeId: requestedMode.id,
+            modelId: requestedMode.modelId,
+            createdAt: new Date().toISOString(),
+          }
+        ];
+
+        let specialistContent = '';
+        await runOrchestrator(specialistMessages, specialistMode, apiKey, {
+          onToken: (token) => {
+            // Stream specialist tokens too
+            event.sender.send('conversations:streamToken', { conversationId: args.conversationId, token });
+          },
+          onDone: (content) => {
+            specialistContent = content;
+          },
+          onError: (error) => {
+            sendExecEvent(`${specialistMode.name} error: ${error}`, 'error');
+          },
+        });
+
+        if (specialistContent) {
+          sendExecEvent(`${specialistMode.name} completed`, 'specialist');
+          // Save specialist response as assistant message
+          const specialistMsg: Message = {
+            id: crypto.randomUUID(),
+            conversationId: args.conversationId,
+            role: 'assistant',
+            content: `**[${specialistMode.name}]** ${specialistContent}`,
+            modeId: specialistMode.id,
+            modelId: specialistMode.modelId,
+            createdAt: new Date().toISOString(),
+          };
+          localDb.insertMessage(specialistMsg);
+          if (syncEngine) {
+            syncEngine.pushMessage(specialistMsg).catch(err =>
+              console.warn('[main] pushMessage (specialist) failed (non-fatal):', err)
+            );
+          }
+        }
+      }
+    }
+
+    // Save orchestrator/primary assistant message
     const assistantMsg: Message = {
       id: crypto.randomUUID(),
       conversationId: args.conversationId,
       role: 'assistant',
       content: fullContent,
-      modeId: orchestratorMode.id,
-      modelId: orchestratorMode.modelId,
+      modeId: requestedMode.id,
+      modelId: requestedMode.modelId,
       createdAt: new Date().toISOString(),
     };
     localDb.insertMessage(assistantMsg);
+
+    if (syncEngine) {
+      syncEngine.pushMessage(assistantMsg).catch(err =>
+        console.warn('[main] pushMessage (assistant) failed (non-fatal):', err)
+      );
+    }
 
     event.sender.send('conversations:streamDone', { conversationId: args.conversationId });
     return assistantMsg;
@@ -743,9 +890,103 @@ app.whenReady().then(async () => {
   ipcMain.handle('ssh:testConnection', (_event, host: SshHost) =>
     sshService.testConnection(host));
 
+  // ── SSH Targets IPC Handlers ──────────────────────────────────────
+
+  ipcMain.handle('sshTargets:list', async (_event, projectId: string | null) => {
+    if (!localDb) return [];
+    return localDb.listSshTargets(projectId);
+  });
+
+  ipcMain.handle('sshTargets:save', async (_event, args: CreateSshTargetArgs) => {
+    if (!localDb) throw new Error('DB not initialized');
+    const userId = await getCurrentUserId();
+    const target = {
+      id: crypto.randomUUID(),
+      userId,
+      projectId: args.projectId,
+      name: args.name,
+      hostname: args.hostname,
+      username: args.username,
+      port: args.port,
+      identityFile: args.identityFile,
+      createdAt: new Date().toISOString(),
+    };
+    localDb.insertSshTarget(target);
+    return target;
+  });
+
+  ipcMain.handle('sshTargets:delete', async (_event, id: string) => {
+    if (!localDb) throw new Error('DB not initialized');
+    localDb.deleteSshTarget(id);
+    return { success: true };
+  });
+
+  // ── MCP IPC Handlers ──────────────────────────────────────────────
+
+  ipcMain.handle('mcp:list', async (_event, projectId: string | null) => {
+    if (!localDb) return [];
+    return localDb.listMcpConnections(projectId);
+  });
+
+  ipcMain.handle('mcp:create', async (_event, args: CreateMcpConnectionArgs) => {
+    if (!localDb) throw new Error('DB not initialized');
+    const userId = await getCurrentUserId();
+    const conn = {
+      id: crypto.randomUUID(),
+      userId,
+      projectId: args.projectId,
+      name: args.name,
+      command: args.command,
+      args: args.args,
+      enabled: args.enabled,
+      scope: args.scope,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    localDb.insertMcpConnection(conn);
+    return conn;
+  });
+
+  ipcMain.handle('mcp:update', async (_event, id: string, updates: Partial<CreateMcpConnectionArgs>) => {
+    if (!localDb) throw new Error('DB not initialized');
+    localDb.updateMcpConnection(id, updates);
+    return { success: true };
+  });
+
+  ipcMain.handle('mcp:delete', async (_event, id: string) => {
+    if (!localDb) throw new Error('DB not initialized');
+    localDb.deleteMcpConnection(id);
+    return { success: true };
+  });
+
   // ── DevOps IPC Handlers ──────────────────────────────────────────
 
-  ipcMain.handle('devops:listTemplates', () => BUILT_IN_TEMPLATES);
+  ipcMain.handle('devops:listTemplates', () =>
+    localDb ? localDb.listDevOpsTemplates() : BUILT_IN_TEMPLATES
+  );
+
+  ipcMain.handle('devops:createTemplate', (_event, template: any) => {
+    if (!localDb) throw new Error('DB not initialized');
+    const t = {
+      ...template,
+      id: template.id ?? crypto.randomUUID(),
+      isBuiltIn: false,
+    };
+    localDb.upsertDevOpsTemplate(t);
+    return t;
+  });
+
+  ipcMain.handle('devops:updateTemplate', (_event, template: any) => {
+    if (!localDb) throw new Error('DB not initialized');
+    localDb.upsertDevOpsTemplate(template);
+    return { success: true };
+  });
+
+  ipcMain.handle('devops:deleteTemplate', (_event, id: string) => {
+    if (!localDb) throw new Error('DB not initialized');
+    localDb.deleteDevOpsTemplate(id);
+    return { success: true };
+  });
 
   ipcMain.handle('devops:getProjectConfig', (_event, projectId: string) => {
     return localDb?.getProjectDevOpsConfig(projectId) ?? null;
@@ -1010,6 +1251,6 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
-  // syncEngine is disabled — no stop needed
+  syncEngine?.stop();
   localDb?.close();
 });

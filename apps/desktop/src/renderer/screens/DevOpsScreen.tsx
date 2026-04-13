@@ -88,6 +88,22 @@ export default function DevOpsScreen({ projectId, onBack }: DevOpsScreenProps) {
     setConfig(updated);
   };
 
+  const handleDuplicateTemplate = async (t: DevOpsTemplate) => {
+    const copy = {
+      ...t,
+      id: crypto.randomUUID(),
+      name: `${t.name} (copy)`,
+      isBuiltIn: false,
+    };
+    const created = await window.vibeflow.devops.createTemplate(copy);
+    setTemplates(prev => [...prev, created]);
+  };
+
+  const handleDeleteTemplate = async (id: string) => {
+    await window.vibeflow.devops.deleteTemplate(id);
+    setTemplates(prev => prev.filter(t => t.id !== id));
+  };
+
   const handleSaveGitHubToken = async () => {
     if (githubToken.trim()) {
       await window.vibeflow.devops.setGitHubToken(githubToken.trim());
@@ -212,14 +228,35 @@ export default function DevOpsScreen({ projectId, onBack }: DevOpsScreenProps) {
         {templates.map(t => (
           <div
             key={t.id}
-            onClick={() => handleSelectTemplate(t.id)}
-            style={{
-              padding: '8px 10px', marginBottom: 4, borderRadius: 4, cursor: 'pointer', fontSize: 13,
-              color: config.templateId === t.id ? '#fff' : '#8b949e',
-              backgroundColor: config.templateId === t.id ? '#238636' : 'transparent',
-            }}
+            style={{ marginBottom: 4, borderRadius: 4 }}
           >
-            {t.name}
+            <div
+              onClick={() => handleSelectTemplate(t.id)}
+              style={{
+                padding: '8px 10px', cursor: 'pointer', fontSize: 13, borderRadius: 4,
+                color: config.templateId === t.id ? '#fff' : '#8b949e',
+                backgroundColor: config.templateId === t.id ? '#238636' : 'transparent',
+              }}
+            >
+              {t.name}
+              {!t.isBuiltIn && (
+                <span style={{ fontSize: 9, marginLeft: 4, color: '#58a6ff' }}>custom</span>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 4, paddingLeft: 4 }}>
+              <button
+                onClick={() => handleDuplicateTemplate(t)}
+                title="Duplicate"
+                style={{ padding: '2px 6px', fontSize: 10, backgroundColor: 'transparent', color: '#484f58', border: '1px solid #30363d', borderRadius: 3, cursor: 'pointer' }}
+              >⧉</button>
+              {!t.isBuiltIn && (
+                <button
+                  onClick={() => handleDeleteTemplate(t.id)}
+                  title="Delete"
+                  style={{ padding: '2px 6px', fontSize: 10, backgroundColor: 'transparent', color: '#f85149', border: '1px solid #f85149', borderRadius: 3, cursor: 'pointer' }}
+                >✕</button>
+              )}
+            </div>
           </div>
         ))}
       </div>
