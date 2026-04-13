@@ -38,7 +38,7 @@ jobs:
         working-directory: apps/desktop
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
-        run: npx electron-builder
+        run: npx electron-builder --publish never
 
       - name: Publish to "Latest Build" release
         uses: softprops/action-gh-release@v2
