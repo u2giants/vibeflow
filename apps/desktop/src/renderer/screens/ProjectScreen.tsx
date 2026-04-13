@@ -49,9 +49,17 @@ export default function ProjectScreen({ project, email, currentMode, onBack, onO
   const [openRouterConnected, setOpenRouterConnected] = useState(false);
   const [sub, setSub] = useState<SubScreen>(null);
 
-  useEffect(() => {
-    window.vibeflow.openrouter.getApiKey().then(r => setOpenRouterConnected(r.hasKey));
-  }, []);
+  const refreshOpenRouterStatus = async () => {
+    const { hasKey } = await window.vibeflow.openrouter.getApiKey();
+    if (hasKey) {
+      const test = await window.vibeflow.openrouter.testConnection();
+      setOpenRouterConnected(test.success);
+    } else {
+      setOpenRouterConnected(false);
+    }
+  };
+
+  useEffect(() => { refreshOpenRouterStatus(); }, []);
 
   useEffect(() => {
     window.vibeflow.conversations.list(project.id).then(convs => {

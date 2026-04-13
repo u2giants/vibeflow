@@ -6,9 +6,10 @@ import { C, R } from '../theme';
 
 interface ModesScreenProps {
   onBack: () => void;
+  onApiKeyChanged?: () => void;
 }
 
-export default function ModesScreen({ onBack }: ModesScreenProps) {
+export default function ModesScreen({ onBack, onApiKeyChanged }: ModesScreenProps) {
   const [modes, setModes] = useState<Mode[]>([]);
   const [selectedMode, setSelectedMode] = useState<Mode | null>(null);
   const [soulDraft, setSoulDraft] = useState('');
@@ -114,6 +115,7 @@ export default function ModesScreen({ onBack }: ModesScreenProps) {
     setApiKeyInput('');
     setTestResult(null);
     await loadModels();
+    onApiKeyChanged?.();
   };
 
   const handleTestConnection = async () => {

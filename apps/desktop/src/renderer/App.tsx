@@ -42,7 +42,12 @@ export default function App() {
     window.vibeflow.modes.list().then((modes) => {
       if (modes.length > 0) setCurrentMode(modes[0]);
     });
-    window.vibeflow.openrouter.getApiKey().then((r) => setOpenRouterConnected(r.hasKey));
+    window.vibeflow.openrouter.getApiKey().then(async (r) => {
+      if (r.hasKey) {
+        const test = await window.vibeflow.openrouter.testConnection();
+        setOpenRouterConnected(test.success);
+      }
+    });
   }, []);
 
   const handleSignedIn = (userEmail: string) => {
@@ -89,7 +94,15 @@ export default function App() {
         <TopBar email={email} />
         <UpdateBanner />
         <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
-          <ModesScreen onBack={() => activeProject ? setScreen('project') : setScreen('projects')} />
+          <ModesScreen
+            onBack={() => activeProject ? setScreen('project') : setScreen('projects')}
+            onApiKeyChanged={async () => {
+              const test = await window.vibeflow.openrouter.testConnection();
+              setOpenRouterConnected(test.success);
+              const modes = await window.vibeflow.modes.list();
+              if (modes.length > 0) setCurrentMode(modes[0]);
+            }}
+          />
         </div>
         <BottomBar currentMode={currentMode} openRouterConnected={openRouterConnected} />
       </div>

@@ -608,7 +608,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('openrouter:listModels', async () => {
     const apiKey = await keytar.getPassword(KEYTAR_SERVICE, KEYTAR_OPENROUTER_KEY);
     if (!apiKey) throw new Error('OpenRouter API key not set');
-    const response = await fetch('https://openrouter.ai/api/v1/models/user', {
+    const response = await fetch('https://openrouter.ai/api/v1/models', {
       headers: { 'Authorization': `Bearer ${apiKey}` },
     });
     if (!response.ok) {
@@ -630,7 +630,7 @@ app.whenReady().then(async () => {
     const apiKey = await keytar.getPassword(KEYTAR_SERVICE, KEYTAR_OPENROUTER_KEY);
     if (!apiKey) return { success: false, error: 'No API key set' };
     try {
-      const response = await fetch('https://openrouter.ai/api/v1/models/user', {
+      const response = await fetch('https://openrouter.ai/api/v1/models', {
         headers: { 'Authorization': `Bearer ${apiKey}` },
       });
       return { success: response.ok };
