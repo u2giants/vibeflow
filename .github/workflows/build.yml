@@ -36,6 +36,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Inject build metadata
+        env:
+          RELEASE_CHANNEL: stable
+        run: node scripts/inject-build-metadata.js
+
       - name: Build
         working-directory: apps/desktop
         run: pnpm build
