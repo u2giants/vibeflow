@@ -37,9 +37,15 @@ export const BUILD_METADATA = {
 } as const;
 `;
 
-const outputPath = path.join(repoRoot, 'apps/desktop/src/lib/build-metadata/generated.ts');
-fs.writeFileSync(outputPath, generated, 'utf-8');
-console.log('[inject-build-metadata] Written to', outputPath);
+const outputPaths = [
+  path.join(repoRoot, 'apps/desktop/src/lib/build-metadata/generated.ts'),
+  path.join(repoRoot, 'packages/build-metadata/src/generated.ts'),
+];
+
+for (const outputPath of outputPaths) {
+  fs.writeFileSync(outputPath, generated, 'utf-8');
+  console.log('[inject-build-metadata] Written to', outputPath);
+}
 console.log('  version:', version);
 console.log('  commitSha:', commitSha);
 console.log('  commitDate:', commitDate);
