@@ -92,12 +92,46 @@ function getSupabaseClient(): SupabaseClient | null {
 // ── Sync Engine ─────────────────────────────────────────────────────
 
 async function initSyncEngine(userId: string): Promise<void> {
-  // Sync is temporarily disabled due to SQLite native module issues.
-  // The app works fully without sync — all data is stored locally.
-  // Sync will be re-enabled in a future milestone.
-  console.log('[main] Sync is temporarily disabled. All data is stored locally.');
-  if (mainWindow) {
-    mainWindow.webContents.send('sync:statusChanged', 'offline');
+  const supabaseUrl = process.env.VITE_SUPABASE_URL ?? '';
+  const anonKey = process.env.VITE_SUPABASE_ANON_KEY ?? '';
+
+  if (!supabaseUrl || !anonKey) {
+    console.warn('[main] Supabase not configured — sync disabled.');
+    if (mainWindow) mainWindow.webContents.send('sync:statusChanged', 'offline');
+    return;
+  }
+
+  if (!localDb) {
+    console.warn('[main] Local DB not ready — sync disabled.');
+    if (mainWindow) mainWindow.webContents.send('sync:statusChanged', 'offline');
+    return;
+  }
+
+  const deviceId = crypto.randomUUID();
+  const deviceName = os.hostname();
+
+  syncEngine = new SyncEngine(supabaseUrl, anonKey, deviceId, deviceName, userId, localDb);
+
+  syncEngine.on((event) => {
+    if (mainWindow) {
+      if (event.type === 'sync-status-changed') {
+        mainWindow.webContents.send('sync:statusChanged', event.data);
+      } else if (event.type === 'conversation-updated') {
+        mainWindow.webContents.send('sync:conversationUpdated', event.data);
+      } else if (event.type === 'message-added') {
+        mainWindow.webContents.send('sync:messageAdded', event.data);
+      } else if (event.type === 'lease-changed') {
+        mainWindow.webContents.send('sync:leaseChanged', event.data);
+      }
+    }
+  });
+
+  try {
+    await syncEngine.start();
+    console.log('[main] Sync engine started.');
+  } catch (err) {
+    console.error('[main] Sync engine failed to start:', err);
+    if (mainWindow) mainWindow.webContents.send('sync:statusChanged', 'offline');
   }
 }
 
@@ -627,23 +661,46 @@ app.whenReady().then(async () => {
     return assistantMsg;
   });
 
-  // ── Sync IPC Handlers (temporarily disabled — all data is local) ──
+  // ── Sync IPC Handlers ────────────────────────────────────────────
 
-  ipcMain.handle('sync:getDeviceId', async (): Promise<string | null> => 'local');
+  ipcMain.handle('sync:getDeviceId', async (): Promise<string | null> =>
+    syncEngine ? syncEngine.getDeviceId() : null
+  );
 
   ipcMain.handle(
     'sync:registerDevice',
-    async (): Promise<{ deviceId: string; deviceName: string }> => ({
-      deviceId: 'local',
-      deviceName: os.hostname(),
-    })
+    async (): Promise<{ deviceId: string; deviceName: string }> => {
+      if (syncEngine) {
+        await syncEngine.registerDevice();
+        return { deviceId: syncEngine.getDeviceId(), deviceName: os.hostname() };
+      }
+      return { deviceId: 'local', deviceName: os.hostname() };
+    }
   );
 
-  ipcMain.handle('sync:syncAll', async (): Promise<{ success: boolean }> => ({ success: true }));
-  ipcMain.handle('sync:acquireLease', async (): Promise<{ success: boolean; error?: string }> => ({ success: true }));
-  ipcMain.handle('sync:releaseLease', async (): Promise<{ success: boolean }> => ({ success: true }));
-  ipcMain.handle('sync:takeoverLease', async (): Promise<{ success: boolean; error?: string }> => ({ success: true }));
-  ipcMain.handle('sync:getLease', async (): Promise<null> => null);
+  ipcMain.handle('sync:syncAll', async (): Promise<{ success: boolean }> => {
+    if (syncEngine) {
+      await syncEngine.syncAll();
+      return { success: true };
+    }
+    return { success: false };
+  });
+
+  ipcMain.handle('sync:acquireLease', async (_event, conversationId: string) =>
+    syncEngine ? syncEngine.acquireLease(conversationId) : { success: false, error: 'Sync not available' }
+  );
+
+  ipcMain.handle('sync:releaseLease', async (_event, conversationId: string) =>
+    syncEngine ? syncEngine.releaseLease(conversationId) : { success: false }
+  );
+
+  ipcMain.handle('sync:takeoverLease', async (_event, conversationId: string) =>
+    syncEngine ? syncEngine.takeoverLease(conversationId) : { success: false, error: 'Sync not available' }
+  );
+
+  ipcMain.handle('sync:getLease', async (_event, conversationId: string) =>
+    syncEngine ? syncEngine.getLease(conversationId) : null
+  );
 
   // ── Tooling IPC Handlers ──────────────────────────────────────────
 

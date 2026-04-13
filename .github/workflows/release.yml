@@ -10,6 +10,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -33,7 +35,7 @@ jobs:
         run: pnpm --filter @vibeflow/desktop build
       
       - name: Package and publish
-        run: pnpm --filter @vibeflow/desktop package
+        run: pnpm --filter @vibeflow/desktop exec electron-builder --publish always
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
