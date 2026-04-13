@@ -1,0 +1,86 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      draft:
+        description: 'Create as draft release'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
+
+      - name: Install root dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install desktop dependencies
+        working-directory: apps/desktop
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and package
+        working-directory: apps/desktop
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: |
+          pnpm build
+          pnpm package --publish ${{ github.event_name == 'push' && 'always' || 'never' }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vibeflow-windows
+          path: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.yml
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create draft release (manual trigger)
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.draft == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: dev-build-${{ github.run_number }}
+          name: "Dev Build #${{ github.run_number }}"
+          draft: true
+          files: |
+            apps/desktop/release/*.exe
+          body: |
+            Automated dev build from commit ${{ github.sha }}.
+            This is a draft — not a public release.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
