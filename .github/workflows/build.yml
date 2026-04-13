@@ -2,14 +2,8 @@ name: Build & Release
 
 on:
   push:
-    tags:
-      - 'v*'
-  workflow_dispatch:
-    inputs:
-      draft:
-        description: 'Create as draft release'
-        type: boolean
-        default: true
+    branches:
+      - master
 
 permissions:
   contents: write
@@ -32,55 +26,38 @@ jobs:
         with:
           version: 9
 
-      - name: Get pnpm store directory
-        id: pnpm-cache
-        shell: bash
-        run: echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
-
       - name: Cache pnpm store
         uses: actions/cache@v4
         with:
-          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          path: ~/.pnpm-store
           key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: ${{ runner.os }}-pnpm-
 
-      - name: Install root dependencies
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Install desktop dependencies
+      - name: Build
         working-directory: apps/desktop
-        run: pnpm install --frozen-lockfile
+        run: pnpm build
 
-      - name: Build and package
+      - name: Package (.exe)
         working-directory: apps/desktop
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
-        run: |
-          pnpm build
-          pnpm package --publish ${{ github.event_name == 'push' && 'always' || 'never' }}
+        run: pnpm package
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: vibeflow-windows
-          path: |
-            apps/desktop/release/*.exe
-            apps/desktop/release/*.yml
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Create draft release (manual trigger)
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.draft == 'true'
+      - name: Publish to "Latest Build" release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: dev-build-${{ github.run_number }}
-          name: "Dev Build #${{ github.run_number }}"
-          draft: true
-          files: |
-            apps/desktop/release/*.exe
+          tag_name: latest-build
+          name: "Latest Build"
+          prerelease: true
           body: |
-            Automated dev build from commit ${{ github.sha }}.
-            This is a draft — not a public release.
+            Auto-built from the latest code on master.
+            Last updated: ${{ github.event.head_commit.timestamp }}
+            Commit: ${{ github.sha }}
+
+            **Download VibeFlow-Setup.exe below and run it to install.**
+          files: apps/desktop/release/*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
