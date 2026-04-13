@@ -83,9 +83,14 @@ export default function ProjectListScreen({ onSignOut, onOpenModes, onOpenProjec
   const handleSignOut = async () => { await window.vibeflow.auth.signOut(); onSignOut(); };
 
   const openSelfMaintenance = useCallback(async () => {
-    const ex = await window.vibeflow.projects.getSelfMaintenance();
-    if (ex) { onOpenProject(ex as Project); return; }
-    onOpenProject((await window.vibeflow.projects.createSelfMaintenance()) as Project);
+    try {
+      const ex = await window.vibeflow.projects.getSelfMaintenance();
+      if (ex) { onOpenProject(ex as Project); return; }
+      const created = await window.vibeflow.projects.createSelfMaintenance();
+      onOpenProject(created as Project);
+    } catch (err) {
+      alert(`Could not open VibeFlow project: ${String(err)}`);
+    }
   }, [onOpenProject]);
 
   const iStyle: React.CSSProperties = {

@@ -12,6 +12,7 @@ export interface AuthSignInResult {
 
 export interface AuthChannel {
   signInWithGitHub: () => Promise<AuthSignInResult>;
+  signInWithEmail: (email: string, password: string) => Promise<AuthSignInResult>;
   signOut: () => Promise<void>;
   getSession: () => Promise<{ email: string | null }>;
 }

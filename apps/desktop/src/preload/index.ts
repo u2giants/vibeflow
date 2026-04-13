@@ -10,6 +10,7 @@ import { SyncStatus } from '../lib/shared-types';
 const api: VibeFlowAPI = {
   auth: {
     signInWithGitHub: () => ipcRenderer.invoke('auth:signInWithGitHub'),
+    signInWithEmail: (email: string, password: string) => ipcRenderer.invoke('auth:signInWithEmail', email, password),
     signOut: () => ipcRenderer.invoke('auth:signOut'),
     getSession: () => ipcRenderer.invoke('auth:getSession'),
   },

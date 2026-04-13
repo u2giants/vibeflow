@@ -371,6 +371,17 @@ app.whenReady().then(async () => {
     }
   );
 
+  ipcMain.handle(
+    'auth:signInWithEmail',
+    async (_event: IpcMainInvokeEvent, email: string, password: string): Promise<AuthSignInResult> => {
+      const client = getSupabaseClient();
+      if (!client) return { success: false, error: 'Supabase not configured.' };
+      const { data, error } = await client.auth.signInWithPassword({ email, password });
+      if (error) return { success: false, error: error.message };
+      return { success: true, account: { email: data.user?.email ?? email } };
+    }
+  );
+
   ipcMain.handle('auth:signOut', async (): Promise<void> => {
     const client = getSupabaseClient();
     if (client) {
