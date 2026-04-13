@@ -29,7 +29,8 @@ export interface ProjectsChannel {
   create: (args: CreateProjectArgs) => Promise<Project>;
   getSelfMaintenance: () => Promise<Project | null>;
   createSelfMaintenance: () => Promise<Project>;
-  getVibeFlowRepoPath: () => Promise<string>;
+  getVibeFlowRepoPath: () => Promise<string | null>;
+  pickVibeFlowRepoPath: () => Promise<string | null>;
 }
 
 // ── Build Metadata IPC ────────────────────────────────────────────

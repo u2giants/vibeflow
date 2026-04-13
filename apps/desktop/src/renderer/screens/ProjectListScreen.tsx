@@ -84,6 +84,12 @@ export default function ProjectListScreen({ onSignOut, onOpenModes, onOpenProjec
 
   const openSelfMaintenance = useCallback(async () => {
     try {
+      // In packaged builds, check that the repo path has been set
+      const repoPath = await window.vibeflow.projects.getVibeFlowRepoPath();
+      if (!repoPath) {
+        const picked = await window.vibeflow.projects.pickVibeFlowRepoPath();
+        if (!picked) return; // user cancelled
+      }
       const ex = await window.vibeflow.projects.getSelfMaintenance();
       if (ex) { onOpenProject(ex as Project); return; }
       const created = await window.vibeflow.projects.createSelfMaintenance();

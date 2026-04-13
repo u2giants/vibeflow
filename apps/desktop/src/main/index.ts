@@ -19,7 +19,7 @@ dotenv.config({ path: envPath });
 // Electron must be imported via require to work correctly with electron-vite externalization
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const electron = require('electron');
-const { app, BrowserWindow, ipcMain, shell } = electron;
+const { app, BrowserWindow, ipcMain, shell, dialog } = electron;
 type IpcMainInvokeEvent = import('electron').IpcMainInvokeEvent;
 import * as http from 'http';
 import * as url from 'url';
@@ -71,6 +71,7 @@ import { initAutoUpdater, downloadUpdate, installUpdate } from '../lib/updater/a
 const KEYTAR_SERVICE = 'vibeflow';
 const KEYTAR_OPENROUTER_KEY = 'openrouter-api-key';
 const KEYTAR_GITHUB_TOKEN = 'github-token';
+const KEYTAR_VIBEFLOW_REPO_PATH = 'vibeflow-repo-path';
 const KEYTAR_COOLIFY_KEY = 'coolify-api-key';
 
 let mainWindow: InstanceType<typeof BrowserWindow> | null = null;
@@ -440,13 +441,23 @@ app.whenReady().then(async () => {
     return localDb.getSelfMaintenanceProject();
   });
 
-  ipcMain.handle('projects:getVibeFlowRepoPath', async (): Promise<string> => {
-    // In dev mode: __dirname is apps/desktop/out/main, repo root is 4 levels up
-    // In packaged mode: use app.getAppPath()
+  ipcMain.handle('projects:getVibeFlowRepoPath', async (): Promise<string | null> => {
     if (app.isPackaged) {
-      return app.getAppPath();
+      return await keytar.getPassword(KEYTAR_SERVICE, KEYTAR_VIBEFLOW_REPO_PATH) ?? null;
     }
     return path.resolve(__dirname, '../../../..');
+  });
+
+  ipcMain.handle('projects:pickVibeFlowRepoPath', async (): Promise<string | null> => {
+    const result = await dialog.showOpenDialog({
+      title: 'Select VibeFlow source code folder',
+      message: 'Choose the folder where you cloned the VibeFlow repository',
+      properties: ['openDirectory'],
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    const repoPath = result.filePaths[0];
+    await keytar.setPassword(KEYTAR_SERVICE, KEYTAR_VIBEFLOW_REPO_PATH, repoPath);
+    return repoPath;
   });
 
   ipcMain.handle('projects:createSelfMaintenance', async (): Promise<unknown> => {
@@ -608,7 +619,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('openrouter:listModels', async () => {
     const apiKey = await keytar.getPassword(KEYTAR_SERVICE, KEYTAR_OPENROUTER_KEY);
     if (!apiKey) throw new Error('OpenRouter API key not set');
-    const response = await fetch('https://openrouter.ai/api/v1/models', {
+    const response = await fetch('https://openrouter.ai/api/v1/models/user', {
       headers: { 'Authorization': `Bearer ${apiKey}` },
     });
     if (!response.ok) {
@@ -630,7 +641,7 @@ app.whenReady().then(async () => {
     const apiKey = await keytar.getPassword(KEYTAR_SERVICE, KEYTAR_OPENROUTER_KEY);
     if (!apiKey) return { success: false, error: 'No API key set' };
     try {
-      const response = await fetch('https://openrouter.ai/api/v1/models', {
+      const response = await fetch('https://openrouter.ai/api/v1/models/user', {
         headers: { 'Authorization': `Bearer ${apiKey}` },
       });
       return { success: response.ok };

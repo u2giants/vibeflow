@@ -28,4 +28,4 @@ publish:
   provider: github
   owner: u2giants
   repo: vibeflow
-  releaseType: release
+  releaseType: prerelease

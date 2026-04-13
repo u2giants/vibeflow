@@ -81,6 +81,8 @@ jobs:
             Commit: ${{ github.sha }}
 
             **Download VibeFlow-Setup.exe below and run it to install.**
-          files: apps/desktop/release/*.exe
+          files: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/latest.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

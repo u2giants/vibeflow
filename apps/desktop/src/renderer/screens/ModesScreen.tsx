@@ -121,6 +121,10 @@ export default function ModesScreen({ onBack, onApiKeyChanged }: ModesScreenProp
   const handleTestConnection = async () => {
     const result = await window.vibeflow.openrouter.testConnection();
     setTestResult(result.success ? 'Connection OK ✅' : `Failed: ${result.error}`);
+    if (result.success) {
+      await loadModels();
+      onApiKeyChanged?.();
+    }
   };
 
   const labelStyle = {
