@@ -9,8 +9,12 @@
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 // In dev: repo root is 4 levels up from out/main/index.js → apps/desktop/out/main
-// In packaged: use app.getAppPath() instead (handled below after app is ready)
-dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
+// In packaged: __dirname is inside app.asar/out/main, so ../../.env = app.asar/.env
+const isPackaged = __dirname.includes('app.asar');
+const envPath = isPackaged
+  ? path.resolve(__dirname, '../../.env')
+  : path.resolve(__dirname, '../../../../.env');
+dotenv.config({ path: envPath });
 
 // Electron must be imported via require to work correctly with electron-vite externalization
 // eslint-disable-next-line @typescript-eslint/no-var-requires

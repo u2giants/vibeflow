@@ -25,6 +25,15 @@ jobs:
         working-directory: apps/desktop
         run: npm install
 
+      - name: Write .env for packaged build
+        shell: bash
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          echo "VITE_SUPABASE_URL=$VITE_SUPABASE_URL" > apps/desktop/.env
+          echo "VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY" >> apps/desktop/.env
+
       - name: Inject build metadata
         env:
           RELEASE_CHANNEL: stable

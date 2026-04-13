@@ -8,6 +8,7 @@ files:
   - out/**/*
   - node_modules/**/*
   - package.json
+  - .env
 npmRebuild: true
 nativeRebuilder: sequential
 asarUnpack:
