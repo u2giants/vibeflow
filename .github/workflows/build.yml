@@ -21,13 +21,8 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Install dependencies with npm
+        run: npm install
 
       - name: Inject build metadata
         env:
@@ -36,13 +31,13 @@ jobs:
 
       - name: Build
         working-directory: apps/desktop
-        run: pnpm build
+        run: npx electron-vite build
 
       - name: Package (.exe)
         working-directory: apps/desktop
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
-        run: pnpm package
+        run: npx electron-builder
 
       - name: Publish to "Latest Build" release
         uses: softprops/action-gh-release@v2
