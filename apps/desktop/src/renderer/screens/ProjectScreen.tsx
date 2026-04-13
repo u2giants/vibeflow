@@ -46,7 +46,7 @@ export default function ProjectScreen({ project, email, currentMode, onBack, onO
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       <TopBar email={email} />
 
       {/* Self-maintenance banner */}
@@ -64,7 +64,7 @@ export default function ProjectScreen({ project, email, currentMode, onBack, onO
       )}
 
       {/* Main content area */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
         {/* Conversation sidebar */}
         <div style={{
           width: 220,

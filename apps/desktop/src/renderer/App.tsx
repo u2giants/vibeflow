@@ -85,17 +85,19 @@ export default function App() {
 
   if (screen === 'modes') {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
         <TopBar email={email} />
         <UpdateBanner />
-        <ModesScreen onBack={() => activeProject ? setScreen('project') : setScreen('projects')} />
+        <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+          <ModesScreen onBack={() => activeProject ? setScreen('project') : setScreen('projects')} />
+        </div>
         <BottomBar currentMode={currentMode} openRouterConnected={openRouterConnected} />
       </div>
     );
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       <TopBar email={email} />
       <UpdateBanner />
       <ProjectListScreen

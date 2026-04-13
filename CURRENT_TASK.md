@@ -24,6 +24,16 @@ Every agent must update this file when work begins and when work ends.
 | | 3.12 | Update ProjectListScreen.tsx to add Modes button | ✅ Done |
 | | 3.13 | Smoke test: pnpm dev launches, modes appear, soul saves, API key works | ✅ Done — app launches, all UI renders |
 
+**Bug Fix — OpenRouter model list endpoint (2026-04-12):**
+- Changed `openrouter:listModels` and `openrouter:testConnection` from `/api/v1/models` to `/api/v1/models/user`
+- Now returns only user-allowed models (~31) instead of all 349+ models
+- File changed: `apps/desktop/src/main/index.ts` (lines 514, 536)
+
+**Bug Fix — Auto-open DevTools on startup (2026-04-13):**
+- Removed `mainWindow!.webContents.openDevTools()` from the development block in `app.whenReady()`
+- App no longer auto-opens Chromium DevTools on startup
+- File changed: `apps/desktop/src/main/index.ts` (line 117 removed)
+
 **Current Step:** Milestone 2 complete. Ready for Milestone 3 (Conversation UI + Orchestrator).
 
 ---
@@ -237,6 +247,75 @@ Every agent must update this file when work begins and when work ends.
 - Files changed: `apps/desktop/src/main/index.ts` (OAuth handler refactored), `docs/idiosyncrasies.md` (updated OAuth entry with implicit flow detail)
 
 **Current Step:** Bug fix complete. Sign-in tested and working. Ready for review.
+
+---
+
+### Sprint 14 — Bug Fix: OpenRouter Model List Stale / Does Not Refresh (Complete)
+- Added `modelsLoading` and `modelsMessage` state to ModesScreen
+- Improved `loadModels()` to set loading state before fetch, show success message (`Loaded N models ✅`) or error message (`Failed to load models: ...`)
+- Added explicit "Refresh Models" button next to the model picker select box
+- Button shows "Refreshing..." text and is disabled while loading
+- Saving a new API key now calls `await loadModels()` to auto-refresh the list
+- Success/error message displayed below model picker in green/red
+- Current model remains visible as first option if not in refreshed list
+- File changed: `apps/desktop/src/renderer/screens/ModesScreen.tsx`
+
+**Current Step:** Bug fix complete. Ready for review.
+
+---
+
+### Sprint 15 — Bug Fix: Modes Screen Layout — Vertical Blank Space, Bottom Bar Obscured (Complete)
+- Root cause: nested flex children default to `min-height: auto`, preventing them from shrinking and pushing the bottom bar off-screen
+- Fix: added `minHeight: 0` and proper `overflow: 'hidden'` / `overflow: 'auto'` on the right containers
+- Files changed:
+  - `apps/desktop/src/renderer/App.tsx` (line 91): added `minHeight: 0` to the ModesScreen wrapper div
+  - `apps/desktop/src/renderer/screens/ModesScreen.tsx` (lines 108, 137, 175): added `minHeight: 0` to root container, two-column content row, and right details panel
+- Result: Modes screen fills available space correctly, no page-level vertical scrollbar, bottom bar fully visible, right panel scrolls internally
+
+**Current Step:** Bug fix complete. Ready for review.
+
+---
+
+### Sprint 16 — Bug Fix: Modes Screen Layout — Remaining Overflow (Complete)
+- Root cause: left sidebar missing `minWidth` constraint, right panel content not properly constrained in flex column
+- Fix: added `minWidth: 240` to left sidebar to prevent shrinkage issues, changed right panel to `display: 'flex', flexDirection: 'column'` for proper internal scrolling
+- Files changed:
+  - `apps/desktop/src/renderer/screens/ModesScreen.tsx` (line 140): added `minWidth: 240` to left sidebar
+  - `apps/desktop/src/renderer/screens/ModesScreen.tsx` (line 175): added `display: 'flex', flexDirection: 'column'` to right details panel
+- Result: No page-level vertical scrollbar, bottom bar fully visible, both panels scroll internally
+
+**Current Step:** Bug fix complete. Ready for review.
+
+---
+
+### Sprint 17 — Bug Fix: OpenRouter Model List Endpoint + Refresh Confirmation (Complete)
+- Verified `openrouter:listModels` handler uses `https://openrouter.ai/api/v1/models/user` (line 514)
+- Verified `openrouter:testConnection` handler uses `https://openrouter.ai/api/v1/models/user` (line 536)
+- Model refresh button already shows "Refresh Models" / "Refreshing..." state
+- Model count confirmation already displays: `Loaded N models ✅` in green
+- Error messages display in red: `Failed to load models: ...`
+- Files changed: None (already implemented in Sprint 14)
+
+**Current Step:** Bug fix verified. Ready for review.
+
+---
+
+### Sprint 18 — Bug Fix: Modes Screen Layout — Global Page Sizing / Browser Margin (Complete)
+- Root cause: default browser margin on `body` and missing explicit full-height constraints on `html`, `body`, and `#root` caused `100vh` wrappers to overflow, creating a large blank center gap and pushing the bottom bar off-screen
+- Fix: added global CSS reset in `index.html` setting `html, body, #root` to `margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden`
+- Replaced all `height: '100vh'` with `height: '100%'` in outer wrappers across App.tsx, ProjectScreen.tsx, and ModesScreen.tsx
+- Added `overflow: 'hidden'` to App.tsx default branch wrapper and ProjectScreen.tsx outer wrapper
+- Added `minHeight: 0` to ProjectScreen.tsx main content area flex child
+- Files changed:
+  - `apps/desktop/src/renderer/index.html` (lines 7–24): added `<style>` block with html/body/#root reset, body font/background, and box-sizing
+  - `apps/desktop/src/renderer/App.tsx` (line 88): changed `height: '100vh'` to `height: '100%'` in modes branch
+  - `apps/desktop/src/renderer/App.tsx` (line 100): changed `height: '100vh'` to `height: '100%'` and added `overflow: 'hidden'` in default branch
+  - `apps/desktop/src/renderer/screens/ProjectScreen.tsx` (line 49): changed `height: '100vh'` to `height: '100%'` and added `overflow: 'hidden'`
+  - `apps/desktop/src/renderer/screens/ProjectScreen.tsx` (line 67): added `minHeight: 0` to main content area
+  - `apps/desktop/src/renderer/screens/ModesScreen.tsx` (line 108): changed `flex: 1` to `height: '100%'` on root container
+- Result: No page-level vertical scrollbar, bottom bar fully visible, no large blank center gap, left and right panels scroll internally only
+
+**Current Step:** Bug fix complete. Ready for review.
 
 ---
 

@@ -12,6 +12,8 @@ export default function ModesScreen({ onBack }: ModesScreenProps) {
   const [selectedMode, setSelectedMode] = useState<Mode | null>(null);
   const [soulDraft, setSoulDraft] = useState('');
   const [models, setModels] = useState<OpenRouterModel[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelsMessage, setModelsMessage] = useState<string | null>(null);
   const [hasApiKey, setHasApiKey] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [testResult, setTestResult] = useState<string | null>(null);
@@ -29,13 +31,19 @@ export default function ModesScreen({ onBack }: ModesScreenProps) {
     window.vibeflow.openrouter.getApiKey().then((r) => setHasApiKey(r.hasKey));
   }, []);
 
-  // Load models when API key is confirmed
+  // Load models from OpenRouter with loading and error handling
   const loadModels = useCallback(async () => {
+    setModelsLoading(true);
+    setModelsMessage(null);
     try {
       const list = await window.vibeflow.openrouter.listModels();
       setModels(list);
-    } catch {
-      // Models may not load if key is invalid — that's OK
+      setModelsMessage(`Loaded ${list.length} models ✅`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      setModelsMessage(`Failed to load models: ${message}`);
+    } finally {
+      setModelsLoading(false);
     }
   }, []);
 
@@ -86,7 +94,7 @@ export default function ModesScreen({ onBack }: ModesScreenProps) {
     setHasApiKey(true);
     setApiKeyInput('');
     setTestResult(null);
-    loadModels();
+    await loadModels();
   };
 
   const handleTestConnection = async () => {
@@ -97,7 +105,7 @@ export default function ModesScreen({ onBack }: ModesScreenProps) {
   // ── Render ──────────────────────────────────────────────────────
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, overflow: 'hidden' }}>
       {/* Header */}
       <div
         style={{
@@ -126,11 +134,12 @@ export default function ModesScreen({ onBack }: ModesScreenProps) {
         <h2 style={{ margin: 0, fontSize: 18 }}>Modes Settings</h2>
       </div>
 
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
         {/* Left sidebar — mode list */}
         <div
           style={{
             width: 240,
+            minWidth: 240,
             borderRight: '1px solid #ddd',
             overflow: 'auto',
             backgroundColor: '#f8f9fa',
@@ -164,7 +173,7 @@ export default function ModesScreen({ onBack }: ModesScreenProps) {
         </div>
 
         {/* Right panel — mode details */}
-        <div style={{ flex: 1, overflow: 'auto', padding: 20 }}>
+        <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: 20, display: 'flex', flexDirection: 'column' }}>
           {selectedMode ? (
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
@@ -226,31 +235,65 @@ export default function ModesScreen({ onBack }: ModesScreenProps) {
 
               {/* Model picker */}
               <label style={{ fontWeight: 600, fontSize: 14 }}>Assigned Model</label>
-              <select
-                value={selectedMode.modelId}
-                onChange={(e) => handleSaveModel(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: 8,
-                  marginTop: 4,
-                  marginBottom: 4,
-                  border: '1px solid #ccc',
-                  borderRadius: 4,
-                  fontSize: 13,
-                }}
-              >
-                {models.length === 0 && (
-                  <option value={selectedMode.modelId}>
-                    {selectedMode.modelId} (enter API key to see all models)
-                  </option>
-                )}
-                {models.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name} — ${m.inputPricePerMillion.toFixed(2)}/M in, $
-                    {m.outputPricePerMillion.toFixed(2)}/M out
-                  </option>
-                ))}
-              </select>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
+                <select
+                  value={selectedMode.modelId}
+                  onChange={(e) => handleSaveModel(e.target.value)}
+                  style={{
+                    flex: 1,
+                    padding: 8,
+                    border: '1px solid #ccc',
+                    borderRadius: 4,
+                    fontSize: 13,
+                  }}
+                >
+                  {/* Keep current model visible even if not in refreshed list */}
+                  {models.length === 0 && !modelsLoading && (
+                    <option value={selectedMode.modelId}>
+                      {selectedMode.modelId} (enter API key to see all models)
+                    </option>
+                  )}
+                  {models.length > 0 && !models.some((m) => m.id === selectedMode.modelId) && (
+                    <option value={selectedMode.modelId}>
+                      {selectedMode.modelId} (current, not in refreshed list)
+                    </option>
+                  )}
+                  {models.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} — ${m.inputPricePerMillion.toFixed(2)}/M in, $
+                      {m.outputPricePerMillion.toFixed(2)}/M out
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={loadModels}
+                  disabled={modelsLoading}
+                  style={{
+                    padding: '6px 12px',
+                    backgroundColor: modelsLoading ? '#6c757d' : '#007bff',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: 4,
+                    cursor: modelsLoading ? 'not-allowed' : 'pointer',
+                    whiteSpace: 'nowrap',
+                    fontSize: 13,
+                  }}
+                >
+                  {modelsLoading ? 'Refreshing...' : 'Refresh Models'}
+                </button>
+              </div>
+              {modelsMessage && (
+                <p
+                  style={{
+                    fontSize: 13,
+                    marginTop: 4,
+                    marginBottom: 4,
+                    color: modelsMessage.includes('✅') ? '#28a745' : '#dc3545',
+                  }}
+                >
+                  {modelsMessage}
+                </p>
+              )}
             </div>
           ) : (
             <p style={{ color: '#666' }}>Select a Mode to edit its settings.</p>
