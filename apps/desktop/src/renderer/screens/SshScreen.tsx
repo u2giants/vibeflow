@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import type { SshHost, SshConnectionTestResult, SshTarget } from '../../lib/shared-types';
+import { C, R } from '../theme';
 
 interface SshScreenProps {
   onBack: () => void;
@@ -25,6 +26,8 @@ export default function SshScreen({ onBack, projectId = null }: SshScreenProps) 
   const [form, setForm] = useState(emptyForm);
   const [formSaving, setFormSaving] = useState(false);
   const [formMsg, setFormMsg] = useState<string | null>(null);
+  const [backHov, setBackHov] = useState(false);
+  const [addHov, setAddHov] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -88,42 +91,87 @@ export default function SshScreen({ onBack, projectId = null }: SshScreenProps) 
     setSavedTargets(prev => prev.filter(t => t.id !== id));
   };
 
+  const labelStyle = {
+    fontSize: 11,
+    color: C.text3,
+    fontWeight: 600 as const,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.06em',
+    display: 'block' as const,
+    marginBottom: 5,
+  };
+
+  const inputStyle = {
+    width: '100%',
+    padding: '7px 10px',
+    backgroundColor: C.bg5,
+    color: C.text1,
+    border: `1px solid ${C.border2}`,
+    borderRadius: R.md,
+    outline: 'none',
+    fontSize: 13,
+    boxSizing: 'border-box' as const,
+    marginTop: 2,
+  };
+
+  const sectionLabel = {
+    fontSize: 11,
+    color: C.text3,
+    fontWeight: 600 as const,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.06em',
+    marginBottom: 10,
+    marginTop: 24,
+    display: 'block' as const,
+  };
+
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', backgroundColor: '#161b22', overflow: 'auto' }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', backgroundColor: C.bg0, overflow: 'auto' }}>
       {/* Header */}
       <div style={{
-        padding: '12px 16px',
-        borderBottom: '1px solid #30363d',
+        padding: '10px 16px',
+        borderBottom: `1px solid ${C.border}`,
         display: 'flex',
         alignItems: 'center',
         gap: 12,
+        backgroundColor: C.bg1,
+        flexShrink: 0,
       }}>
         <button
           onClick={onBack}
+          onMouseEnter={() => setBackHov(true)}
+          onMouseLeave={() => setBackHov(false)}
           style={{
-            padding: '4px 8px',
-            backgroundColor: 'transparent',
-            color: '#8b949e',
-            border: '1px solid #30363d',
-            borderRadius: 4,
+            padding: '5px 12px',
+            backgroundColor: backHov ? C.bg4 : 'transparent',
+            color: C.text2,
+            border: `1px solid ${C.border2}`,
+            borderRadius: R.md,
             cursor: 'pointer',
-            fontSize: 12,
+            fontSize: 13,
+            transition: 'background 0.15s',
           }}
         >
           ← Back
         </button>
-        <h3 style={{ margin: 0, color: '#c9d1d9', fontSize: 16 }}>🔑 SSH Connections</h3>
+        <h3 style={{ margin: 0, color: C.text1, fontSize: 16, fontWeight: 600 }}>SSH Connections</h3>
       </div>
 
-      <div style={{ padding: 16 }}>
+      <div style={{ padding: '16px 20px' }}>
+
         {/* Discovered Hosts */}
-        <h4 style={{ color: '#8b949e', fontSize: 13, textTransform: 'uppercase', marginBottom: 8 }}>
-          Discovered Hosts ({hosts.length})
-        </h4>
+        <span style={sectionLabel}>Discovered Hosts ({hosts.length})</span>
         {loading ? (
-          <div style={{ color: '#484f58', fontSize: 13 }}>Loading...</div>
+          <div style={{ color: C.text3, fontSize: 13 }}>Scanning...</div>
         ) : hosts.length === 0 ? (
-          <div style={{ color: '#484f58', fontSize: 13 }}>
+          <div style={{
+            padding: '12px 14px',
+            backgroundColor: C.bg2,
+            border: `1px solid ${C.border}`,
+            borderRadius: R.xl,
+            color: C.text3,
+            fontSize: 13,
+          }}>
             No SSH hosts found in ~/.ssh/config
           </div>
         ) : (
@@ -132,51 +180,70 @@ export default function SshScreen({ onBack, projectId = null }: SshScreenProps) 
               const tr = testResults[host.name];
               return (
                 <div key={host.name} style={{
-                  padding: 12,
-                  backgroundColor: '#0d1117',
-                  borderRadius: 6,
-                  border: '1px solid #30363d',
+                  padding: '12px 14px',
+                  backgroundColor: C.bg2,
+                  borderRadius: R.xl,
+                  border: `1px solid ${C.border}`,
                 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                     <div>
-                      <span style={{ color: '#58a6ff', fontWeight: 600, fontSize: 14 }}>{host.name}</span>
-                      <span style={{ color: '#8b949e', fontSize: 12, marginLeft: 8 }}>
+                      <span style={{ color: C.blue, fontWeight: 600, fontSize: 14 }}>{host.name}</span>
+                      <span style={{ color: C.text3, fontSize: 12, marginLeft: 10 }}>
                         {host.user}@{host.hostname}:{host.port}
                       </span>
                     </div>
-                    <button
-                      onClick={() => handleTestConnection(host)}
-                      disabled={tr?.testing}
-                      style={{
-                        padding: '4px 12px',
-                        backgroundColor: tr?.testing ? '#30363d' : '#238636',
-                        color: '#fff',
-                        border: 'none',
-                        borderRadius: 4,
-                        cursor: tr?.testing ? 'not-allowed' : 'pointer',
-                        fontSize: 12,
-                      }}
-                    >
-                      {tr?.testing ? 'Testing...' : 'Test Connection'}
-                    </button>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        onClick={() => handleTestConnection(host)}
+                        disabled={tr?.testing}
+                        style={{
+                          padding: '4px 12px',
+                          backgroundColor: tr?.testing ? C.bg4 : C.accentBg,
+                          color: tr?.testing ? C.text3 : C.accent,
+                          border: `1px solid ${tr?.testing ? C.border : C.accent + '55'}`,
+                          borderRadius: R.md,
+                          cursor: tr?.testing ? 'not-allowed' : 'pointer',
+                          fontSize: 12,
+                          fontWeight: 600,
+                        }}
+                      >
+                        {tr?.testing ? 'Testing...' : 'Test'}
+                      </button>
+                      <button
+                        onClick={() => handleSaveFromDiscovered(host)}
+                        style={{
+                          padding: '4px 12px',
+                          backgroundColor: C.greenBg,
+                          color: C.green,
+                          border: `1px solid ${C.greenBd}`,
+                          borderRadius: R.md,
+                          cursor: 'pointer',
+                          fontSize: 12,
+                          fontWeight: 600,
+                        }}
+                      >
+                        + Save
+                      </button>
+                    </div>
                   </div>
                   {host.identityFile && (
-                    <div style={{ color: '#484f58', fontSize: 11, fontFamily: 'monospace' }}>
-                      Key: {host.identityFile}
+                    <div style={{ color: C.text3, fontSize: 11, fontFamily: 'monospace', marginTop: 2 }}>
+                      {host.identityFile}
                     </div>
                   )}
                   {tr && !tr.testing && tr.result && (
                     <div style={{
                       marginTop: 8,
-                      padding: '4px 8px',
-                      borderRadius: 4,
+                      padding: '5px 10px',
+                      borderRadius: R.md,
                       fontSize: 12,
-                      backgroundColor: tr.result.success ? '#1a3a2a' : '#3d1f28',
-                      color: tr.result.success ? '#3fb950' : '#f85149',
+                      backgroundColor: tr.result.success ? C.greenBg : C.redBg,
+                      color: tr.result.success ? C.green : C.red,
+                      border: `1px solid ${tr.result.success ? C.greenBd : C.redBd}`,
                     }}>
                       {tr.result.success
-                        ? `✅ Connected — ${tr.result.latencyMs}ms`
-                        : `❌ ${tr.result.error}`}
+                        ? `Connected — ${tr.result.latencyMs}ms`
+                        : tr.result.error}
                     </div>
                   )}
                 </div>
@@ -186,22 +253,48 @@ export default function SshScreen({ onBack, projectId = null }: SshScreenProps) 
         )}
 
         {/* Saved Targets */}
-        <h4 style={{ color: '#8b949e', fontSize: 13, textTransform: 'uppercase', marginTop: 24, marginBottom: 8 }}>
-          Saved Targets ({savedTargets.length})
-        </h4>
+        <span style={sectionLabel}>Saved Targets ({savedTargets.length})</span>
         {savedTargets.length === 0 ? (
-          <div style={{ color: '#484f58', fontSize: 13 }}>No saved targets yet. Save a discovered host or add one manually below.</div>
+          <div style={{
+            padding: '12px 14px',
+            backgroundColor: C.bg2,
+            border: `1px solid ${C.border}`,
+            borderRadius: R.xl,
+            color: C.text3,
+            fontSize: 13,
+          }}>
+            No saved targets yet.
+          </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {savedTargets.map(t => (
-              <div key={t.id} style={{ padding: '8px 12px', backgroundColor: '#0d1117', borderRadius: 6, border: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div key={t.id} style={{
+                padding: '10px 14px',
+                backgroundColor: C.bg2,
+                borderRadius: R.xl,
+                border: `1px solid ${C.border}`,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}>
                 <div>
-                  <span style={{ color: '#58a6ff', fontWeight: 600, fontSize: 13 }}>{t.name}</span>
-                  <span style={{ color: '#8b949e', fontSize: 12, marginLeft: 8 }}>{t.username}@{t.hostname}:{t.port}</span>
+                  <span style={{ color: C.text1, fontWeight: 600, fontSize: 13 }}>{t.name}</span>
+                  <span style={{ color: C.text3, fontSize: 12, marginLeft: 10 }}>
+                    {t.username}@{t.hostname}:{t.port}
+                  </span>
                 </div>
                 <button
                   onClick={() => handleDeleteTarget(t.id)}
-                  style={{ padding: '3px 8px', backgroundColor: 'transparent', color: '#f85149', border: '1px solid #f85149', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
+                  style={{
+                    padding: '3px 10px',
+                    backgroundColor: 'transparent',
+                    color: C.red,
+                    border: `1px solid ${C.redBd}`,
+                    borderRadius: R.md,
+                    cursor: 'pointer',
+                    fontSize: 11,
+                    fontWeight: 600,
+                  }}
                 >
                   Delete
                 </button>
@@ -210,92 +303,94 @@ export default function SshScreen({ onBack, projectId = null }: SshScreenProps) 
           </div>
         )}
 
-        {/* Save discovered host as target */}
-        {hosts.length > 0 && (
+        {/* Add manually */}
+        <span style={sectionLabel}>Add Target Manually</span>
+        <div style={{
+          padding: 16,
+          backgroundColor: C.bg2,
+          border: `1px solid ${C.border}`,
+          borderRadius: R.xl,
+          maxWidth: 520,
+        }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {[
+              { label: 'Name', field: 'name', placeholder: 'My Server' },
+              { label: 'Hostname', field: 'hostname', placeholder: '192.168.1.10' },
+              { label: 'Username', field: 'username', placeholder: 'root' },
+              { label: 'Identity File (optional)', field: 'identityFile', placeholder: '~/.ssh/id_rsa' },
+            ].map(({ label, field, placeholder }) => (
+              <div key={field}>
+                <label style={labelStyle}>{label}</label>
+                <input
+                  type="text"
+                  placeholder={placeholder}
+                  value={(form as Record<string, string | number>)[field] as string}
+                  onChange={e => setForm(prev => ({ ...prev, [field]: e.target.value }))}
+                  style={inputStyle}
+                />
+              </div>
+            ))}
+            <div>
+              <label style={labelStyle}>Port</label>
+              <input
+                type="number"
+                value={form.port}
+                onChange={e => setForm(prev => ({ ...prev, port: parseInt(e.target.value) || 22 }))}
+                style={{ ...inputStyle, width: 90 }}
+              />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 4 }}>
+              <button
+                onClick={handleSaveManual}
+                disabled={formSaving}
+                onMouseEnter={() => setAddHov(true)}
+                onMouseLeave={() => setAddHov(false)}
+                style={{
+                  padding: '7px 18px',
+                  backgroundColor: formSaving ? C.bg4 : addHov ? '#0ea471' : C.green,
+                  color: formSaving ? C.text3 : '#fff',
+                  border: 'none',
+                  borderRadius: R.md,
+                  cursor: formSaving ? 'not-allowed' : 'pointer',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  transition: 'background 0.15s',
+                }}
+              >
+                {formSaving ? 'Saving...' : 'Add Target'}
+              </button>
+              {formMsg && (
+                <span style={{ fontSize: 12, color: formMsg.includes('✅') ? C.green : C.red }}>
+                  {formMsg}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Discovered Keys */}
+        {keys.length > 0 && (
           <>
-            <h4 style={{ color: '#8b949e', fontSize: 13, textTransform: 'uppercase', marginTop: 16, marginBottom: 6 }}>
-              Save Discovered Host
-            </h4>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {hosts.map(host => (
-                <button
-                  key={host.name}
-                  onClick={() => handleSaveFromDiscovered(host)}
-                  style={{ padding: '4px 10px', backgroundColor: '#1f6feb', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}
-                >
-                  + Save "{host.name}"
-                </button>
+            <span style={sectionLabel}>SSH Keys ({keys.length})</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {keys.map(key => (
+                <div key={key} style={{
+                  padding: '6px 12px',
+                  backgroundColor: C.bg2,
+                  borderRadius: R.md,
+                  border: `1px solid ${C.border}`,
+                  color: C.text2,
+                  fontSize: 12,
+                  fontFamily: 'monospace',
+                }}>
+                  {key}
+                </div>
               ))}
             </div>
           </>
         )}
 
-        {/* Add manually */}
-        <h4 style={{ color: '#8b949e', fontSize: 13, textTransform: 'uppercase', marginTop: 24, marginBottom: 8 }}>
-          Add Target Manually
-        </h4>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 480 }}>
-          {[
-            { label: 'Name', field: 'name', placeholder: 'My Server' },
-            { label: 'Hostname', field: 'hostname', placeholder: '192.168.1.10' },
-            { label: 'Username', field: 'username', placeholder: 'root' },
-            { label: 'Identity File (optional)', field: 'identityFile', placeholder: '~/.ssh/id_rsa' },
-          ].map(({ label, field, placeholder }) => (
-            <div key={field}>
-              <label style={{ fontSize: 12, color: '#8b949e' }}>{label}</label>
-              <input
-                type="text"
-                placeholder={placeholder}
-                value={(form as Record<string, string | number>)[field] as string}
-                onChange={e => setForm(prev => ({ ...prev, [field]: e.target.value }))}
-                style={{ width: '100%', marginTop: 2, padding: '5px 8px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: 4, color: '#c9d1d9', fontSize: 13, boxSizing: 'border-box' }}
-              />
-            </div>
-          ))}
-          <div>
-            <label style={{ fontSize: 12, color: '#8b949e' }}>Port</label>
-            <input
-              type="number"
-              value={form.port}
-              onChange={e => setForm(prev => ({ ...prev, port: parseInt(e.target.value) || 22 }))}
-              style={{ width: 80, marginTop: 2, marginLeft: 0, padding: '5px 8px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: 4, color: '#c9d1d9', fontSize: 13 }}
-            />
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <button
-              onClick={handleSaveManual}
-              disabled={formSaving}
-              style={{ padding: '6px 14px', backgroundColor: '#238636', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13 }}
-            >
-              {formSaving ? 'Saving...' : 'Add Target'}
-            </button>
-            {formMsg && <span style={{ fontSize: 12, color: formMsg.includes('✅') ? '#3fb950' : '#f85149' }}>{formMsg}</span>}
-          </div>
-        </div>
-
-        {/* Discovered Keys */}
-        <h4 style={{ color: '#8b949e', fontSize: 13, textTransform: 'uppercase', marginTop: 24, marginBottom: 8 }}>
-          SSH Keys ({keys.length})
-        </h4>
-        {keys.length === 0 ? (
-          <div style={{ color: '#484f58', fontSize: 13 }}>No SSH keys found in ~/.ssh</div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {keys.map(key => (
-              <div key={key} style={{
-                padding: '6px 10px',
-                backgroundColor: '#0d1117',
-                borderRadius: 4,
-                border: '1px solid #30363d',
-                color: '#c9d1d9',
-                fontSize: 12,
-                fontFamily: 'monospace',
-              }}>
-                {key}
-              </div>
-            ))}
-          </div>
-        )}
+        <div style={{ height: 24 }} />
       </div>
     </div>
   );

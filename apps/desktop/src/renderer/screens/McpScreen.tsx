@@ -1,7 +1,8 @@
 /** McpScreen — Manage MCP (Model Context Protocol) server connections. */
 
-import { useState, useEffect, type CSSProperties } from 'react';
+import { useState, useEffect } from 'react';
 import type { McpConnection } from '../../lib/shared-types';
+import { C, R } from '../theme';
 
 interface McpScreenProps {
   onBack: () => void;
@@ -21,6 +22,8 @@ export default function McpScreen({ onBack, projectId = null }: McpScreenProps) 
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [backHov, setBackHov] = useState(false);
+  const [addHov, setAddHov] = useState(false);
 
   useEffect(() => {
     window.vibeflow.mcp.list(projectId).then(setConnections);
@@ -68,83 +71,146 @@ export default function McpScreen({ onBack, projectId = null }: McpScreenProps) 
     setConnections(prev => prev.filter(c => c.id !== id));
   };
 
-  const inputStyle: CSSProperties = {
+  const labelStyle = {
+    fontSize: 11,
+    color: C.text3,
+    fontWeight: 600 as const,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.06em',
+    display: 'block' as const,
+    marginBottom: 5,
+  };
+
+  const inputStyle = {
     width: '100%',
-    padding: '6px 8px',
-    backgroundColor: '#0d1117',
-    border: '1px solid #30363d',
-    borderRadius: 4,
-    color: '#c9d1d9',
+    padding: '7px 10px',
+    backgroundColor: C.bg5,
+    color: C.text1,
+    border: `1px solid ${C.border2}`,
+    borderRadius: R.md,
+    outline: 'none',
     fontSize: 13,
-    boxSizing: 'border-box',
+    boxSizing: 'border-box' as const,
     marginTop: 2,
   };
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', backgroundColor: '#161b22', overflow: 'auto' }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', backgroundColor: C.bg0, overflow: 'auto' }}>
       {/* Header */}
-      <div style={{ padding: '12px 16px', borderBottom: '1px solid #30363d', display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{
+        padding: '10px 16px',
+        borderBottom: `1px solid ${C.border}`,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        backgroundColor: C.bg1,
+        flexShrink: 0,
+      }}>
         <button
           onClick={onBack}
-          style={{ padding: '4px 8px', backgroundColor: 'transparent', color: '#8b949e', border: '1px solid #30363d', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}
+          onMouseEnter={() => setBackHov(true)}
+          onMouseLeave={() => setBackHov(false)}
+          style={{
+            padding: '5px 12px',
+            backgroundColor: backHov ? C.bg4 : 'transparent',
+            color: C.text2,
+            border: `1px solid ${C.border2}`,
+            borderRadius: R.md,
+            cursor: 'pointer',
+            fontSize: 13,
+            transition: 'background 0.15s',
+          }}
         >
           ← Back
         </button>
-        <h3 style={{ margin: 0, color: '#c9d1d9', fontSize: 16 }}>🔌 MCP Servers</h3>
+        <h3 style={{ margin: 0, color: C.text1, fontSize: 16, fontWeight: 600 }}>MCP Servers</h3>
       </div>
 
-      <div style={{ padding: 16 }}>
+      <div style={{ padding: '16px 20px' }}>
         {/* Existing connections */}
-        <h4 style={{ color: '#8b949e', fontSize: 13, textTransform: 'uppercase', marginBottom: 8 }}>
+        <div style={{
+          fontSize: 11, color: C.text3, fontWeight: 600,
+          textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10,
+        }}>
           Configured ({connections.length})
-        </h4>
+        </div>
+
         {connections.length === 0 ? (
-          <div style={{ color: '#484f58', fontSize: 13, marginBottom: 16 }}>
+          <div style={{
+            padding: '12px 14px',
+            backgroundColor: C.bg2,
+            border: `1px solid ${C.border}`,
+            borderRadius: R.xl,
+            color: C.text3,
+            fontSize: 13,
+            marginBottom: 20,
+          }}>
             No MCP servers configured. Add one below.
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
             {connections.map(conn => (
               <div
                 key={conn.id}
                 style={{
-                  padding: '10px 12px',
-                  backgroundColor: '#0d1117',
-                  borderRadius: 6,
-                  border: `1px solid ${conn.enabled ? '#238636' : '#30363d'}`,
+                  padding: '12px 14px',
+                  backgroundColor: C.bg2,
+                  borderRadius: R.xl,
+                  border: `1px solid ${conn.enabled ? C.greenBd : C.border}`,
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
+                  gap: 12,
                 }}
               >
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ color: '#58a6ff', fontWeight: 600, fontSize: 13 }}>{conn.name}</span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <span style={{ color: C.text1, fontWeight: 600, fontSize: 13 }}>{conn.name}</span>
                     <span style={{
                       fontSize: 10,
-                      padding: '1px 6px',
-                      borderRadius: 10,
-                      backgroundColor: conn.enabled ? '#1a3a2a' : '#30363d',
-                      color: conn.enabled ? '#3fb950' : '#8b949e',
+                      padding: '1px 7px',
+                      borderRadius: R.full,
+                      backgroundColor: conn.enabled ? C.greenBg : C.bg4,
+                      color: conn.enabled ? C.green : C.text3,
+                      border: `1px solid ${conn.enabled ? C.greenBd : C.border}`,
+                      fontWeight: 600,
                     }}>
                       {conn.enabled ? 'enabled' : 'disabled'}
                     </span>
-                    <span style={{ fontSize: 10, color: '#484f58' }}>{conn.scope}</span>
+                    <span style={{ fontSize: 10, color: C.text3 }}>{conn.scope}</span>
                   </div>
-                  <div style={{ color: '#8b949e', fontSize: 12, marginTop: 2, fontFamily: 'monospace' }}>
+                  <div style={{ color: C.text3, fontSize: 12, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {conn.command} {conn.args.join(' ')}
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: 6 }}>
+                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                   <button
                     onClick={() => handleToggle(conn)}
-                    style={{ padding: '3px 8px', backgroundColor: 'transparent', color: '#8b949e', border: '1px solid #30363d', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
+                    style={{
+                      padding: '4px 10px',
+                      backgroundColor: 'transparent',
+                      color: C.text2,
+                      border: `1px solid ${C.border2}`,
+                      borderRadius: R.md,
+                      cursor: 'pointer',
+                      fontSize: 11,
+                      fontWeight: 600,
+                    }}
                   >
                     {conn.enabled ? 'Disable' : 'Enable'}
                   </button>
                   <button
                     onClick={() => handleDelete(conn.id)}
-                    style={{ padding: '3px 8px', backgroundColor: 'transparent', color: '#f85149', border: '1px solid #f85149', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
+                    style={{
+                      padding: '4px 10px',
+                      backgroundColor: 'transparent',
+                      color: C.red,
+                      border: `1px solid ${C.redBd}`,
+                      borderRadius: R.md,
+                      cursor: 'pointer',
+                      fontSize: 11,
+                      fontWeight: 600,
+                    }}
                   >
                     Delete
                   </button>
@@ -155,73 +221,115 @@ export default function McpScreen({ onBack, projectId = null }: McpScreenProps) 
         )}
 
         {/* Add new */}
-        <h4 style={{ color: '#8b949e', fontSize: 13, textTransform: 'uppercase', marginBottom: 8 }}>
+        <div style={{
+          fontSize: 11, color: C.text3, fontWeight: 600,
+          textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10,
+        }}>
           Add MCP Server
-        </h4>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 480 }}>
-          <div>
-            <label style={{ fontSize: 12, color: '#8b949e' }}>Name</label>
-            <input
-              type="text"
-              placeholder="My MCP Server"
-              value={form.name}
-              onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))}
-              style={inputStyle}
-            />
-          </div>
-          <div>
-            <label style={{ fontSize: 12, color: '#8b949e' }}>Command</label>
-            <input
-              type="text"
-              placeholder="node, python, npx, etc."
-              value={form.command}
-              onChange={e => setForm(prev => ({ ...prev, command: e.target.value }))}
-              style={inputStyle}
-            />
-          </div>
-          <div>
-            <label style={{ fontSize: 12, color: '#8b949e' }}>Arguments (space-separated)</label>
-            <input
-              type="text"
-              placeholder="server.js --port 3000"
-              value={form.args}
-              onChange={e => setForm(prev => ({ ...prev, args: e.target.value }))}
-              style={inputStyle}
-            />
-          </div>
-          <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+        </div>
+        <div style={{
+          padding: 16,
+          backgroundColor: C.bg2,
+          border: `1px solid ${C.border}`,
+          borderRadius: R.xl,
+          maxWidth: 520,
+        }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div>
-              <label style={{ fontSize: 12, color: '#8b949e' }}>Scope</label>
-              <select
-                value={form.scope}
-                onChange={e => setForm(prev => ({ ...prev, scope: e.target.value as 'global' | 'project' }))}
-                style={{ ...inputStyle, width: 'auto', padding: '5px 8px' }}
-              >
-                <option value="project">Project</option>
-                <option value="global">Global</option>
-              </select>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 16 }}>
+              <label style={labelStyle}>Name</label>
               <input
-                type="checkbox"
-                id="mcp-enabled"
-                checked={form.enabled}
-                onChange={e => setForm(prev => ({ ...prev, enabled: e.target.checked }))}
+                type="text"
+                placeholder="My MCP Server"
+                value={form.name}
+                onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))}
+                style={inputStyle}
               />
-              <label htmlFor="mcp-enabled" style={{ fontSize: 13, color: '#c9d1d9' }}>Enabled</label>
             </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <button
-              onClick={handleCreate}
-              disabled={saving}
-              style={{ padding: '6px 16px', backgroundColor: '#238636', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13 }}
-            >
-              {saving ? 'Adding...' : 'Add Server'}
-            </button>
-            {msg && <span style={{ fontSize: 12, color: msg.includes('✅') ? '#3fb950' : '#f85149' }}>{msg}</span>}
+            <div>
+              <label style={labelStyle}>Command</label>
+              <input
+                type="text"
+                placeholder="node, python, npx, etc."
+                value={form.command}
+                onChange={e => setForm(prev => ({ ...prev, command: e.target.value }))}
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Arguments (space-separated)</label>
+              <input
+                type="text"
+                placeholder="server.js --port 3000"
+                value={form.args}
+                onChange={e => setForm(prev => ({ ...prev, args: e.target.value }))}
+                style={inputStyle}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 20, alignItems: 'flex-end' }}>
+              <div>
+                <label style={labelStyle}>Scope</label>
+                <select
+                  value={form.scope}
+                  onChange={e => setForm(prev => ({ ...prev, scope: e.target.value as 'global' | 'project' }))}
+                  style={{
+                    padding: '7px 10px',
+                    backgroundColor: C.bg5,
+                    color: C.text1,
+                    border: `1px solid ${C.border2}`,
+                    borderRadius: R.md,
+                    outline: 'none',
+                    fontSize: 13,
+                    cursor: 'pointer',
+                    marginTop: 2,
+                  }}
+                >
+                  <option value="project">Project</option>
+                  <option value="global">Global</option>
+                </select>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 2 }}>
+                <input
+                  type="checkbox"
+                  id="mcp-enabled"
+                  checked={form.enabled}
+                  onChange={e => setForm(prev => ({ ...prev, enabled: e.target.checked }))}
+                  style={{ accentColor: C.accent, width: 14, height: 14 }}
+                />
+                <label htmlFor="mcp-enabled" style={{ fontSize: 13, color: C.text2, cursor: 'pointer' }}>
+                  Enabled
+                </label>
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 4 }}>
+              <button
+                onClick={handleCreate}
+                disabled={saving}
+                onMouseEnter={() => setAddHov(true)}
+                onMouseLeave={() => setAddHov(false)}
+                style={{
+                  padding: '7px 18px',
+                  backgroundColor: saving ? C.bg4 : addHov ? C.accentHov : C.accent,
+                  color: saving ? C.text3 : '#fff',
+                  border: 'none',
+                  borderRadius: R.md,
+                  cursor: saving ? 'not-allowed' : 'pointer',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  transition: 'background 0.15s',
+                }}
+              >
+                {saving ? 'Adding...' : 'Add Server'}
+              </button>
+              {msg && (
+                <span style={{ fontSize: 12, color: msg.includes('✅') ? C.green : C.red }}>
+                  {msg}
+                </span>
+              )}
+            </div>
           </div>
         </div>
+
+        <div style={{ height: 24 }} />
       </div>
     </div>
   );

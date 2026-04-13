@@ -1,147 +1,66 @@
-/**
- * UpdateBanner — non-intrusive banner shown below the TopBar when an update is available.
- * States:
- * - 'available': "Update available: v{version} — Install now or later"
- * - 'downloading': "Downloading update... {percent}%"
- * - 'ready': "Update ready — Restart to apply"
- * - null: nothing shown
- */
-
 import { useState, useEffect } from 'react';
+import { C } from '../theme';
 
 type UpdateState = 'available' | 'downloading' | 'ready' | null;
 
 export default function UpdateBanner() {
-  const [updateState, setUpdateState] = useState<UpdateState>(null);
-  const [updateVersion, setUpdateVersion] = useState('');
-  const [downloadPercent, setDownloadPercent] = useState(0);
+  const [state, setState] = useState<UpdateState>(null);
+  const [version, setVersion] = useState('');
+  const [percent, setPercent] = useState(0);
 
   useEffect(() => {
-    // Listen for update available
-    window.vibeflow.updater.onUpdateAvailable((info) => {
-      setUpdateVersion(info.version);
-      setUpdateState('available');
-    });
-
-    // Listen for download progress
-    window.vibeflow.updater.onDownloadProgress((progress) => {
-      setDownloadPercent(progress.percent);
-      setUpdateState('downloading');
-    });
-
-    // Listen for update downloaded
-    window.vibeflow.updater.onUpdateDownloaded(() => {
-      setUpdateState('ready');
-    });
-
-    return () => {
-      window.vibeflow.updater.removeListeners();
-    };
+    window.vibeflow.updater.onUpdateAvailable(info => { setVersion(info.version); setState('available'); });
+    window.vibeflow.updater.onDownloadProgress(p => { setPercent(p.percent); setState('downloading'); });
+    window.vibeflow.updater.onUpdateDownloaded(() => setState('ready'));
+    return () => { window.vibeflow.updater.removeListeners(); };
   }, []);
 
-  const handleInstallNow = () => {
-    window.vibeflow.updater.downloadUpdate();
-  };
+  if (!state) return null;
 
-  const handleLater = () => {
-    setUpdateState(null);
-  };
-
-  const handleRestart = () => {
-    window.vibeflow.updater.installUpdate();
-  };
-
-  if (!updateState) return null;
+  const isReady = state === 'ready';
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '8px 16px',
-        backgroundColor: updateState === 'ready' ? '#2d6a4f' : '#3a0ca3',
-        color: '#fff',
-        fontSize: 13,
-        borderBottom: '1px solid #555',
-      }}
-    >
-      {updateState === 'available' && (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: '6px 16px',
+      backgroundColor: isReady ? C.greenBg : C.accentBg,
+      borderBottom: `1px solid ${isReady ? C.greenBd : C.border}`,
+      fontSize: 12,
+      color: isReady ? C.green : C.text1,
+      flexShrink: 0,
+    }}>
+      {state === 'available' && (
         <>
-          <span>Update available: v{updateVersion}</span>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              onClick={handleInstallNow}
-              style={{
-                padding: '4px 12px',
-                backgroundColor: '#4cc9f0',
-                color: '#000',
-                border: 'none',
-                borderRadius: 4,
-                cursor: 'pointer',
-                fontWeight: 'bold',
-              }}
-            >
-              Install Now
-            </button>
-            <button
-              onClick={handleLater}
-              style={{
-                padding: '4px 12px',
-                backgroundColor: 'transparent',
-                color: '#ccc',
-                border: '1px solid #666',
-                borderRadius: 4,
-                cursor: 'pointer',
-              }}
-            >
-              Later
-            </button>
+          <span>Update available: <strong>v{version}</strong></span>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button onClick={() => window.vibeflow.updater.downloadUpdate()} style={{
+              padding: '3px 10px', backgroundColor: C.accent, color: '#fff',
+              border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 11, fontWeight: 600,
+            }}>Install</button>
+            <button onClick={() => setState(null)} style={{
+              padding: '3px 10px', backgroundColor: 'transparent', color: C.text2,
+              border: `1px solid ${C.border2}`, borderRadius: 4, cursor: 'pointer', fontSize: 11,
+            }}>Later</button>
           </div>
         </>
       )}
-
-      {updateState === 'downloading' && (
+      {state === 'downloading' && (
         <>
-          <span>Downloading update... {downloadPercent}%</span>
-          <div
-            style={{
-              width: 200,
-              height: 6,
-              backgroundColor: '#555',
-              borderRadius: 3,
-              overflow: 'hidden',
-            }}
-          >
-            <div
-              style={{
-                width: `${downloadPercent}%`,
-                height: '100%',
-                backgroundColor: '#4cc9f0',
-                transition: 'width 0.3s ease',
-              }}
-            />
+          <span>Downloading update… {Math.round(percent)}%</span>
+          <div style={{ width: 160, height: 4, backgroundColor: C.bg4, borderRadius: 2, overflow: 'hidden' }}>
+            <div style={{ width: `${percent}%`, height: '100%', backgroundColor: C.accent, transition: 'width 0.3s' }} />
           </div>
         </>
       )}
-
-      {updateState === 'ready' && (
+      {state === 'ready' && (
         <>
-          <span>Update ready — Restart to apply</span>
-          <button
-            onClick={handleRestart}
-            style={{
-              padding: '4px 12px',
-              backgroundColor: '#4cc9f0',
-              color: '#000',
-              border: 'none',
-              borderRadius: 4,
-              cursor: 'pointer',
-              fontWeight: 'bold',
-            }}
-          >
-            Restart Now
-          </button>
+          <span>Update ready to install</span>
+          <button onClick={() => window.vibeflow.updater.installUpdate()} style={{
+            padding: '3px 10px', backgroundColor: C.green, color: '#fff',
+            border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 11, fontWeight: 600,
+          }}>Restart Now</button>
         </>
       )}
     </div>
