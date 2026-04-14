@@ -35,11 +35,16 @@ import type {
 } from '../lib/shared-types';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { runOrchestrator } from '../lib/orchestrator/orchestrator';
+import { OrchestrationEngine } from '../lib/orchestrator/orchestration-engine';
 import { SyncEngine } from '../lib/sync/sync-engine';
 import { FileService } from '../lib/tooling/file-service';
 import { TerminalService } from '../lib/tooling/terminal-service';
 import { GitService } from '../lib/tooling/git-service';
 import { SshService } from '../lib/tooling/ssh-service';
+import { CapabilityRegistry } from '../lib/capability-fabric/capability-registry';
+import { registerBuiltinCapabilities } from '../lib/capability-fabric/capability-adapter';
+import { McpConnectionManager } from '../lib/mcp-manager/mcp-connection-manager';
+import { McpToolExecutor } from '../lib/mcp-manager/mcp-tool-executor';
 import { BUILT_IN_TEMPLATES } from '../lib/devops/devops-templates';
 import { GitHubActionsClient } from '../lib/devops/github-actions-client';
 import { CoolifyClient } from '../lib/devops/coolify-client';
@@ -60,6 +65,9 @@ import { HandoffStorage } from '../lib/handoff/handoff-storage';
 import type { GenerateHandoffArgs, HandoffResult } from '../lib/shared-types';
 import * as fs from 'fs';
 import { initAutoUpdater, downloadUpdate, installUpdate } from '../lib/updater/auto-updater';
+import { IndexingPipeline, detectFramework, ImpactAnalyzer, TopologyBuilder, ContextPackAssembler } from '../lib/project-intelligence';
+import { ChangeEngine } from '../lib/change-engine';
+import type { CreateWorkspaceRunArgs, ApplyPatchArgs, CommitWorkspaceArgs } from '../lib/shared-types';
 
 const KEYTAR_SERVICE = 'vibeflow';
 const KEYTAR_OPENROUTER_KEY = 'openrouter-api-key';
@@ -74,6 +82,11 @@ const fileService = new FileService();
 const terminalService = new TerminalService();
 const gitService = new GitService();
 const sshService = new SshService();
+const capabilityRegistry = new CapabilityRegistry();
+const mcpConnectionManager = new McpConnectionManager();
+const mcpToolExecutor = new McpToolExecutor();
+let orchestrationEngine: OrchestrationEngine | null = null;
+let changeEngine: ChangeEngine | null = null;
 
 function getSupabaseClient(): SupabaseClient | null {
   if (supabase) return supabase;
@@ -89,15 +102,68 @@ function getSupabaseClient(): SupabaseClient | null {
   return supabase;
 }
 
+/** Get the repo path for a project. For self-maintenance, use VibeFlow repo. */
+async function getProjectRepoPath(projectId: string): Promise<string> {
+  if (!localDb) return process.cwd();
+  const project = localDb.listProjects('').find(p => p.id === projectId);
+  if (project?.isSelfMaintenance) {
+    if (app.isPackaged) return app.getAppPath();
+    return path.resolve(__dirname, '../../../..');
+  }
+  // For regular projects, default to current working directory
+  // In a real implementation, this would read a stored project path
+  return process.cwd();
+}
+
 // ── Sync Engine ─────────────────────────────────────────────────────
 
 async function initSyncEngine(userId: string): Promise<void> {
-  // Sync is temporarily disabled due to SQLite native module issues.
-  // The app works fully without sync — all data is stored locally.
-  // Sync will be re-enabled in a future milestone.
-  console.log('[main] Sync is temporarily disabled. All data is stored locally.');
-  if (mainWindow) {
-    mainWindow.webContents.send('sync:statusChanged', 'offline');
+  if (!localDb) {
+    console.warn('[main] Cannot init sync: LocalDb not initialized');
+    if (mainWindow) {
+      mainWindow.webContents.send('sync:statusChanged', 'offline');
+    }
+    return;
+  }
+
+  const supabaseUrl = process.env.VITE_SUPABASE_URL ?? '';
+  const anonKey = process.env.VITE_SUPABASE_ANON_KEY ?? '';
+
+  if (!supabaseUrl || !anonKey) {
+    console.warn('[main] Supabase not configured — sync disabled');
+    if (mainWindow) {
+      mainWindow.webContents.send('sync:statusChanged', 'offline');
+    }
+    return;
+  }
+
+  // Get or create stable device ID
+  let deviceId = localDb.getDeviceId();
+  if (!deviceId) {
+    deviceId = crypto.randomUUID();
+    localDb.setDeviceId(deviceId);
+    console.log('[main] Generated new device ID:', deviceId);
+  }
+
+  const deviceName = os.hostname();
+
+  syncEngine = new SyncEngine(supabaseUrl, anonKey, deviceId, deviceName, userId, localDb);
+
+  // Forward sync events to renderer
+  syncEngine.on((event) => {
+    if (event.type === 'sync-status-changed' && mainWindow) {
+      mainWindow.webContents.send('sync:statusChanged', event.data);
+    }
+  });
+
+  try {
+    await syncEngine.start();
+    console.log('[main] Sync engine started for user:', userId);
+  } catch (err) {
+    console.error('[main] Sync engine start failed:', err);
+    if (mainWindow) {
+      mainWindow.webContents.send('sync:statusChanged', 'degraded');
+    }
   }
 }
 
@@ -392,6 +458,7 @@ app.whenReady().then(async () => {
         const dbPath = path.join(app.getPath('userData'), 'vibeflow-cache.sqlite');
         localDb = new LocalDb(dbPath);
         await localDb.init();
+        changeEngine = new ChangeEngine(localDb);
         localDb.seedDefaultModes(DEFAULT_MODES);
         console.log('[main] LocalDb lazy-initialized in createSelfMaintenance');
       } catch (err) {
@@ -448,6 +515,17 @@ app.whenReady().then(async () => {
     console.log('[main] Local SQLite DB initialized at', dbPath);
     localDb.seedDefaultModes(DEFAULT_MODES);
     console.log('[main] Default modes seeded');
+
+    // Initialize capability registry with builtin capabilities
+    capabilityRegistry.db = localDb;
+    capabilityRegistry.loadFromDb();
+    registerBuiltinCapabilities(capabilityRegistry);
+    console.log('[main] Capability registry initialized with builtin capabilities');
+
+    // Initialize MCP connection manager
+    mcpConnectionManager.db = localDb;
+    mcpConnectionManager.loadFromDb();
+    console.log('[main] MCP connection manager initialized');
   } catch (err) {
     console.error('[main] SQLite DB init failed (non-fatal):', err);
     localDb = null;
@@ -627,23 +705,122 @@ app.whenReady().then(async () => {
     return assistantMsg;
   });
 
-  // ── Sync IPC Handlers (temporarily disabled — all data is local) ──
+  // ── Orchestrator IPC Handlers (Component 12) ──────────────────────────
 
-  ipcMain.handle('sync:getDeviceId', async (): Promise<string | null> => 'local');
+  ipcMain.handle('orchestrator:decomposeMission', async (_event, args: { missionId: string; projectId: string }) => {
+    if (!localDb) throw new Error('DB not initialized');
+
+    const mission = localDb.getMission(args.missionId);
+    if (!mission) throw new Error(`Mission ${args.missionId} not found`);
+
+    const apiKey = await keytar.getPassword(KEYTAR_SERVICE, KEYTAR_OPENROUTER_KEY);
+    if (!apiKey) throw new Error('OpenRouter API key not set');
+
+    const modes = localDb.listModes();
+
+    // Initialize or reuse the engine
+    if (!orchestrationEngine) {
+      orchestrationEngine = new OrchestrationEngine(apiKey, modes, (state) => {
+        // Broadcast state changes to renderer
+        if (mainWindow) {
+          mainWindow.webContents.send('orchestrator:stateChanged', state);
+        }
+      });
+    } else {
+      orchestrationEngine.setApiKey(apiKey);
+    }
+
+    const plan = await orchestrationEngine.decomposeMission(mission);
+
+    // Persist the plan to local DB
+    localDb.upsertPlan({
+      missionId: plan.missionId,
+      steps: plan.steps.map(s => ({
+        id: s.id,
+        missionId: plan.missionId,
+        order: s.order,
+        title: s.title,
+        description: s.description,
+        status: s.status === 'failed' ? 'blocked' : s.status,
+        requiredCapabilities: s.requiredEvidence,
+        riskLabel: s.riskLabel,
+        requiredEvidence: s.requiredEvidence,
+        expectedOutput: s.expectedOutput,
+      })),
+      createdAt: plan.createdAt,
+      updatedAt: new Date().toISOString(),
+    });
+
+    // Update mission status to planning
+    localDb.updateMission(args.missionId, { status: 'planning' });
+
+    return plan;
+  });
+
+  ipcMain.handle('orchestrator:assignRole', async (_event, args: { missionId: string; stepId: string; roleSlug: string }) => {
+    if (!orchestrationEngine) throw new Error('Orchestration engine not initialized');
+    return orchestrationEngine.assignRole(args.missionId, args.stepId);
+  });
+
+  ipcMain.handle('orchestrator:getPlan', async (_event, missionId: string) => {
+    if (!localDb) return null;
+    return localDb.getPlan(missionId);
+  });
+
+  ipcMain.handle('orchestrator:getState', async () => {
+    if (!orchestrationEngine) return { status: 'idle' as const, missionId: null, currentPlan: null, activeStepId: null, roleAssignments: [], executionProgress: 0, error: null, updatedAt: new Date().toISOString() };
+    return orchestrationEngine.getState();
+  });
+
+  // ── Sync IPC Handlers ──
+
+  ipcMain.handle('sync:getDeviceId', async (): Promise<string | null> => {
+    return localDb?.getDeviceId() ?? null;
+  });
 
   ipcMain.handle(
     'sync:registerDevice',
-    async (): Promise<{ deviceId: string; deviceName: string }> => ({
-      deviceId: 'local',
-      deviceName: os.hostname(),
-    })
+    async (): Promise<{ deviceId: string; deviceName: string }> => {
+      if (!localDb) throw new Error('LocalDb not initialized');
+      let deviceId = localDb.getDeviceId();
+      if (!deviceId) {
+        deviceId = crypto.randomUUID();
+        localDb.setDeviceId(deviceId);
+      }
+      return { deviceId, deviceName: os.hostname() };
+    }
   );
 
-  ipcMain.handle('sync:syncAll', async (): Promise<{ success: boolean }> => ({ success: true }));
-  ipcMain.handle('sync:acquireLease', async (): Promise<{ success: boolean; error?: string }> => ({ success: true }));
-  ipcMain.handle('sync:releaseLease', async (): Promise<{ success: boolean }> => ({ success: true }));
-  ipcMain.handle('sync:takeoverLease', async (): Promise<{ success: boolean; error?: string }> => ({ success: true }));
-  ipcMain.handle('sync:getLease', async (): Promise<null> => null);
+  ipcMain.handle('sync:syncAll', async (): Promise<{ success: boolean }> => {
+    if (!syncEngine) return { success: false };
+    try {
+      await syncEngine.syncAll();
+      return { success: true };
+    } catch (err) {
+      console.error('[main] sync:syncAll failed:', err);
+      return { success: false };
+    }
+  });
+
+  ipcMain.handle('sync:acquireLease', async (_event, conversationId: string): Promise<{ success: boolean; error?: string }> => {
+    if (!syncEngine) return { success: false, error: 'Sync engine not initialized' };
+    return syncEngine.acquireLease(conversationId);
+  });
+
+  ipcMain.handle('sync:releaseLease', async (_event, conversationId: string): Promise<{ success: boolean }> => {
+    if (!syncEngine) return { success: false };
+    return syncEngine.releaseLease(conversationId);
+  });
+
+  ipcMain.handle('sync:takeoverLease', async (_event, conversationId: string): Promise<{ success: boolean; error?: string }> => {
+    if (!syncEngine) return { success: false, error: 'Sync engine not initialized' };
+    return syncEngine.takeoverLease(conversationId);
+  });
+
+  ipcMain.handle('sync:getLease', async (_event, conversationId: string) => {
+    if (!syncEngine) return null;
+    return syncEngine.getLease(conversationId);
+  });
 
   // ── Tooling IPC Handlers ──────────────────────────────────────────
 
@@ -685,6 +862,209 @@ app.whenReady().then(async () => {
   ipcMain.handle('ssh:discoverKeys', () => sshService.discoverKeys());
   ipcMain.handle('ssh:testConnection', (_event, host: SshHost) =>
     sshService.testConnection(host));
+
+  // ── Capabilities IPC Handlers ─────────────────────────────────────
+
+  ipcMain.handle('capabilities:list', () => {
+    return capabilityRegistry.list();
+  });
+
+  ipcMain.handle('capabilities:get', (_event, id: string) => {
+    return capabilityRegistry.get(id);
+  });
+
+  ipcMain.handle('capabilities:getHealth', () => {
+    return capabilityRegistry.getHealth();
+  });
+
+  ipcMain.handle('capabilities:getInvocationLog', (_event, capabilityId: string, limit: number = 50) => {
+    return capabilityRegistry.getInvocationLog(capabilityId, limit);
+  });
+
+  // ── MCP IPC Handlers ──────────────────────────────────────────────
+
+  ipcMain.handle('mcp:list', () => {
+    return mcpConnectionManager.listServers();
+  });
+
+  ipcMain.handle('mcp:add', (_event, config) => {
+    return mcpConnectionManager.addServer(config);
+  });
+
+  ipcMain.handle('mcp:update', (_event, id: string, updates) => {
+    const result = mcpConnectionManager.updateServer(id, updates);
+    if (!result) throw new Error(`MCP server ${id} not found`);
+    return result;
+  });
+
+  ipcMain.handle('mcp:remove', (_event, id: string) => {
+    const success = mcpConnectionManager.removeServer(id);
+    return { success };
+  });
+
+  ipcMain.handle('mcp:enable', (_event, id: string) => {
+    const result = mcpConnectionManager.enableServer(id);
+    if (!result) throw new Error(`MCP server ${id} not found`);
+    return result;
+  });
+
+  ipcMain.handle('mcp:disable', (_event, id: string) => {
+    const result = mcpConnectionManager.disableServer(id);
+    if (!result) throw new Error(`MCP server ${id} not found`);
+    return result;
+  });
+
+  ipcMain.handle('mcp:testConnection', async (_event, id: string) => {
+    return mcpConnectionManager.testConnection(id);
+  });
+
+  ipcMain.handle('mcp:executeTool', async (_event, serverId: string, toolName: string, parameters: Record<string, unknown>) => {
+    const server = mcpConnectionManager.getServer(serverId);
+    if (!server) throw new Error(`MCP server ${serverId} not found`);
+    return mcpToolExecutor.executeTool(server, toolName, parameters);
+  });
+
+  // ── Project Intelligence IPC Handlers (Component 11) ──────────────
+
+  ipcMain.handle('projectIntelligence:getIndex', async (_event, projectId: string) => {
+    if (!localDb) return null;
+    return localDb.getProjectIndex(projectId);
+  });
+
+  ipcMain.handle('projectIntelligence:triggerIndex', async (_event, projectId: string, options?: { fullReindex: boolean }) => {
+    if (!localDb) throw new Error('DB not initialized');
+
+    // Get project path — for self-maintenance use VibeFlow repo, otherwise use a default
+    const repoPath = await getProjectRepoPath(projectId);
+
+    const pipeline = new IndexingPipeline(localDb, projectId, repoPath, (current, total) => {
+      if (mainWindow) {
+        mainWindow.webContents.send('projectIntelligence:indexProgress', { current, total });
+      }
+    });
+
+    const result = await pipeline.run(options);
+    return { success: true, fileCount: result.fileCount };
+  });
+
+  ipcMain.handle('projectIntelligence:getIndexStatus', async (_event, projectId: string) => {
+    if (!localDb) return { indexed: false, fileCount: 0, staleness: 'unknown', indexedAt: null };
+    const index = localDb.getProjectIndex(projectId);
+    const fileCount = localDb.listFileRecords(projectId).length;
+    return {
+      indexed: !!index,
+      fileCount,
+      staleness: index?.staleness ?? 'unknown',
+      indexedAt: index?.indexedAt ?? null,
+    };
+  });
+
+  ipcMain.handle('projectIntelligence:getFiles', async (_event, projectId: string, filter?: { language?: string; isGenerated?: boolean }) => {
+    if (!localDb) return [];
+    return localDb.listFileRecords(projectId, filter);
+  });
+
+  ipcMain.handle('projectIntelligence:getFile', async (_event, projectId: string, path: string) => {
+    if (!localDb) return null;
+    return localDb.getFileRecord(projectId, path);
+  });
+
+  ipcMain.handle('projectIntelligence:getSymbols', async (_event, projectId: string, filter?: { fileId?: string; kind?: string }) => {
+    if (!localDb) return [];
+    return localDb.listSymbolRecords(projectId, filter);
+  });
+
+  ipcMain.handle('projectIntelligence:getSymbol', async (_event, projectId: string, id: string) => {
+    if (!localDb) return null;
+    return localDb.getSymbolRecord(projectId, id);
+  });
+
+  ipcMain.handle('projectIntelligence:getImpactAnalysis', async (_event, projectId: string, targetPath: string) => {
+    if (!localDb) throw new Error('DB not initialized');
+    const analyzer = new ImpactAnalyzer(localDb, projectId);
+    return analyzer.analyze(targetPath);
+  });
+
+  ipcMain.handle('projectIntelligence:getTopology', async (_event, projectId: string) => {
+    if (!localDb) return { nodes: [], edges: [] };
+    const stack = detectFramework(await getProjectRepoPath(projectId));
+    const builder = new TopologyBuilder(localDb, projectId);
+    return builder.build(stack);
+  });
+
+  ipcMain.handle('projectIntelligence:getConfigVariables', async (_event, projectId: string) => {
+    if (!localDb) return [];
+    return localDb.listConfigVariableRecords(projectId);
+  });
+
+  ipcMain.handle('projectIntelligence:getMissingConfig', async (_event, projectId: string, environment: string) => {
+    if (!localDb) return [];
+    const all = localDb.listConfigVariableRecords(projectId);
+    return all.filter(c => c.missingEnvironments.includes(environment));
+  });
+
+  ipcMain.handle('projectIntelligence:getDetectedStack', async (_event, projectId: string) => {
+    const repoPath = await getProjectRepoPath(projectId);
+    return detectFramework(repoPath);
+  });
+
+  // ── Context Packs IPC Handlers (Component 11) ─────────────────────
+
+  ipcMain.handle('contextPacks:createPack', async (_event, missionId: string, options?) => {
+    if (!localDb) throw new Error('DB not initialized');
+
+    // Get projectId from mission
+    const mission = localDb.getMission(missionId);
+    if (!mission) throw new Error(`Mission ${missionId} not found`);
+
+    const assembler = new ContextPackAssembler(localDb, mission.projectId);
+    return assembler.assemble(missionId, options);
+  });
+
+  ipcMain.handle('contextPacks:getPack', async (_event, packId: string) => {
+    if (!localDb) return null;
+    return localDb.getContextPack(packId);
+  });
+
+  ipcMain.handle('contextPacks:getPackForMission', async (_event, missionId: string) => {
+    if (!localDb) return null;
+    return localDb.getContextPackForMission(missionId);
+  });
+
+  ipcMain.handle('contextPacks:updatePack', async (_event, packId: string, updates) => {
+    if (!localDb) throw new Error('DB not initialized');
+    const pack = localDb.getContextPack(packId);
+    if (!pack) throw new Error(`Context pack ${packId} not found`);
+    if (updates.items) pack.items = updates.items;
+    if (updates.warnings) pack.warnings = updates.warnings;
+    pack.updatedAt = new Date().toISOString();
+    localDb.upsertContextPack(pack);
+    return pack;
+  });
+
+  ipcMain.handle('contextPacks:pinItem', async (_event, packId: string, itemId: string) => {
+    if (!localDb) throw new Error('DB not initialized');
+    const assembler = new ContextPackAssembler(localDb, '');
+    return assembler.pinItem(packId, itemId);
+  });
+
+  ipcMain.handle('contextPacks:unpinItem', async (_event, packId: string, itemId: string) => {
+    if (!localDb) throw new Error('DB not initialized');
+    const assembler = new ContextPackAssembler(localDb, '');
+    return assembler.unpinItem(packId, itemId);
+  });
+
+  ipcMain.handle('contextPacks:swapStaleItem', async (_event, packId: string, itemId: string) => {
+    if (!localDb) throw new Error('DB not initialized');
+    const assembler = new ContextPackAssembler(localDb, '');
+    return assembler.swapStaleItem(packId, itemId);
+  });
+
+  ipcMain.handle('contextPacks:getDashboard', async (_event, packId: string) => {
+    if (!localDb) throw new Error('DB not initialized');
+    const assembler = new ContextPackAssembler(localDb, '');
+    return assembler.getDashboard(packId);
+  });
 
   // ── DevOps IPC Handlers ──────────────────────────────────────────
 
@@ -770,6 +1150,32 @@ app.whenReady().then(async () => {
       const timestamp = new Date().toISOString();
       const filename = `handoff-${timestamp.replace(/[:.]/g, '-').slice(0, 19)}.md`;
 
+      // Component 22: Extended handoff context with mission/plan/evidence
+      const missions = localDb?.listMissions(args.projectId) ?? [];
+      const latestMission = missions.length > 0 ? missions[0] : null;
+      const plan = latestMission ? localDb?.getPlan(latestMission.id) ?? null : null;
+      const evidence = latestMission ? localDb?.listEvidenceItems(latestMission.id) ?? [] : [];
+
+      const missionState = latestMission
+        ? { id: latestMission.id, title: latestMission.title, status: latestMission.status }
+        : undefined;
+
+      const planState = plan
+        ? {
+            completedSteps: plan.steps.filter((s) => s.status === 'completed').length,
+            totalSteps: plan.steps.length,
+            nextStep: plan.steps.find((s) => s.status === 'pending')?.title ?? 'No pending steps',
+          }
+        : undefined;
+
+      const evidenceSummary = evidence.length > 0
+        ? {
+            passed: evidence.filter((e) => e.status === 'pass').length,
+            failed: evidence.filter((e) => e.status === 'fail').length,
+            warnings: evidence.filter((e) => e.status === 'warning').length,
+          }
+        : undefined;
+
       const ctx = {
         conversationId: args.conversationId,
         projectId: args.projectId,
@@ -787,6 +1193,10 @@ app.whenReady().then(async () => {
         timestamp,
         isSelfMaintenance: args.isSelfMaintenance ?? false,
         vibeFlowRepoPath: args.isSelfMaintenance ? path.resolve(__dirname, '../../../..') : undefined,
+        missionState,
+        planState,
+        evidenceSummary,
+        blockedItems: undefined,
       };
 
       const handoffDoc = generateHandoffDoc(ctx);
@@ -932,6 +1342,73 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('approval:getLog', () => getRecentApprovals(20));
 
+  // ── Component 13: Change Engine IPC ──────────────────────────────────
+
+  ipcMain.handle('changeEngine:createWorkspaceRun', async (_event, args: CreateWorkspaceRunArgs) => {
+    if (!changeEngine) throw new Error('Change engine not initialized');
+    return changeEngine.createWorkspaceRun(args.missionId, args.planStepId, args.projectRoot);
+  });
+
+  ipcMain.handle('changeEngine:applyPatch', async (_event, args: ApplyPatchArgs) => {
+    if (!changeEngine) throw new Error('Change engine not initialized');
+    return changeEngine.applyPatch(args.workspaceRunId, {
+      filePath: args.filePath,
+      operation: args.operation,
+      newContent: args.newContent,
+      rationale: args.rationale,
+    });
+  });
+
+  ipcMain.handle('changeEngine:getChangeSet', async (_event, workspaceRunId: string) => {
+    if (!changeEngine) throw new Error('Change engine not initialized');
+    return changeEngine.getChangeSet(workspaceRunId);
+  });
+
+  ipcMain.handle('changeEngine:runValidityChecks', async (_event, workspaceRunId: string) => {
+    if (!changeEngine) throw new Error('Change engine not initialized');
+    return changeEngine.runValidityChecks(workspaceRunId);
+  });
+
+  ipcMain.handle('changeEngine:createCheckpoint', async (_event, workspaceRunId: string, label: string) => {
+    if (!changeEngine) throw new Error('Change engine not initialized');
+    return changeEngine.createCheckpoint(workspaceRunId, label);
+  });
+
+  ipcMain.handle('changeEngine:rollbackToCheckpoint', async (_event, checkpointId: string) => {
+    if (!changeEngine) throw new Error('Change engine not initialized');
+    return changeEngine.rollbackToCheckpoint(checkpointId);
+  });
+
+  ipcMain.handle('changeEngine:getSemanticGroups', async (_event, workspaceRunId: string) => {
+    if (!changeEngine) throw new Error('Change engine not initialized');
+    return changeEngine.getSemanticGroups(workspaceRunId);
+  });
+
+  ipcMain.handle('changeEngine:getDuplicateWarnings', async (_event, workspaceRunId: string) => {
+    if (!changeEngine) throw new Error('Change engine not initialized');
+    return changeEngine.getDuplicateWarnings(workspaceRunId);
+  });
+
+  ipcMain.handle('changeEngine:commitWorkspace', async (_event, args: CommitWorkspaceArgs) => {
+    if (!changeEngine) throw new Error('Change engine not initialized');
+    return changeEngine.commitWorkspace(args.workspaceRunId, args.message);
+  });
+
+  ipcMain.handle('changeEngine:cleanupWorkspace', async (_event, workspaceRunId: string) => {
+    if (!changeEngine) throw new Error('Change engine not initialized');
+    return changeEngine.cleanupWorkspace(workspaceRunId);
+  });
+
+  ipcMain.handle('changeEngine:listWorkspaceRuns', async (_event, missionId?: string) => {
+    if (!changeEngine) throw new Error('Change engine not initialized');
+    return changeEngine.listWorkspaceRuns(missionId);
+  });
+
+  ipcMain.handle('changeEngine:listCheckpoints', async (_event, workspaceRunId: string) => {
+    if (!changeEngine) throw new Error('Change engine not initialized');
+    return changeEngine.listCheckpoints(workspaceRunId);
+  });
+
   createWindow();
 
   // Only init auto-updater in packaged builds (not dev mode)
@@ -953,6 +1430,6 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
-  // syncEngine is disabled — no stop needed
+  syncEngine?.stop();
   localDb?.close();
 });

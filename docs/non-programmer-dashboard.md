@@ -1,13 +1,38 @@
 # VibeFlow — Owner Dashboard
 
-Last updated: 2026-04-12 (MVP Complete — All 10 Milestones Done)
+Last updated: 2026-04-14 (Component 13: Change Engine Complete)
 
 ---
 
 ## Current Sprint
 
-**Sprint 11 — Milestone 10: Self-Maintenance Mode**
-Status: ✅ Complete — VibeFlow can now work on itself
+**Sprint 20 — Component 13: Change Engine and Code Operations**
+Status: ✅ Complete — Change engine implemented with isolated workspaces, semantic grouping, validity checks, and ChangePanel UI
+
+**What was done:**
+- Added 8 new shared types for change engine (WorkspaceRun, FileEdit, ChangeSet, etc.)
+- Created 7 new change-engine modules (workspace manager, patch applier, validity pipeline, semantic grouper, duplicate detector, checkpoint manager, main orchestrator)
+- Added 5 new SQLite tables for persistence (workspace_runs, file_edits, checkpoints, semantic_change_groups, change_sets, duplicate_warnings)
+- Wired IPC handlers in main process and preload script for all change engine operations
+- Replaced ChangePanel placeholder with real UI showing semantic change groups, blast radius, verification status, and raw diff drill-down
+- Worktree support with branch fallback for Windows compatibility
+- Immediate validity checks: syntax, typecheck, lint, dependency integrity
+
+**Previous Sprint:**
+Sprint 19 — Documentation Hardening & Handoff Package — ✅ Complete
+
+**What was done:**
+- Expanded `docs/product-overview.md` into a comprehensive product description
+- Expanded `docs/architecture.md` into a detailed architecture reference
+- Expanded `docs/decisions.md` with all major decisions including sql.js migration, sync disablement, OAuth fixes
+- Updated `docs/risks.md` to reflect the real current situation
+- Updated `docs/idiosyncrasies.md` with all 10 known intentional oddities
+- Created `docs/handoff.md` — the single best file for a new developer/AI to read
+- Created `docs/what-is-left.md` — explicit list of remaining work after MVP
+- Created `docs/troubleshooting.md` — diagnosis and recovery guide for common issues
+
+**Previous Sprint:**
+Sprint 13 — Milestone 10: Self-Maintenance Mode — ✅ Complete
 
 ---
 

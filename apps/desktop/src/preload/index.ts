@@ -4,7 +4,7 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
-import type { VibeFlowAPI, CreateConversationArgs, SendMessageArgs, StreamTokenData, StreamDoneData, StreamErrorData, TerminalRunArgs, GitCommitArgs, GitPushArgs, SshHost, ProjectDevOpsConfig, ActionRequest, HumanDecisionArgs, GenerateHandoffArgs } from '../lib/shared-types';
+import type { VibeFlowAPI, CreateConversationArgs, SendMessageArgs, StreamTokenData, StreamDoneData, StreamErrorData, TerminalRunArgs, GitCommitArgs, GitPushArgs, SshHost, ProjectDevOpsConfig, ActionRequest, HumanDecisionArgs, GenerateHandoffArgs, DecomposeMissionArgs, AssignRoleArgs, McpServerConfig, CapabilityHealth, ContextPackOptions, ContextPackUpdates, CreateWorkspaceRunArgs, ApplyPatchArgs, CommitWorkspaceArgs } from '../lib/shared-types';
 import { SyncStatus } from '../lib/shared-types';
 
 const api: VibeFlowAPI = {
@@ -159,6 +159,77 @@ const api: VibeFlowAPI = {
       ipcRenderer.removeAllListeners('updater:download-progress');
       ipcRenderer.removeAllListeners('updater:update-downloaded');
     },
+  },
+  // Component 12: Orchestrator IPC (stub — wired in Phase 4)
+  orchestrator: {
+    decomposeMission: (args: DecomposeMissionArgs) => ipcRenderer.invoke('orchestrator:decomposeMission', args),
+    assignRole: (args: AssignRoleArgs) => ipcRenderer.invoke('orchestrator:assignRole', args),
+    getPlan: (missionId: string) => ipcRenderer.invoke('orchestrator:getPlan', missionId),
+    getState: () => ipcRenderer.invoke('orchestrator:getState'),
+  },
+  // Component 14: Capabilities and MCP
+  capabilities: {
+    list: () => ipcRenderer.invoke('capabilities:list'),
+    get: (id: string) => ipcRenderer.invoke('capabilities:get', id),
+    getHealth: () => ipcRenderer.invoke('capabilities:getHealth'),
+    getInvocationLog: (capabilityId: string, limit?: number) => ipcRenderer.invoke('capabilities:getInvocationLog', capabilityId, limit ?? 50),
+  },
+  mcp: {
+    list: () => ipcRenderer.invoke('mcp:list'),
+    add: (config: Omit<McpServerConfig, 'id' | 'createdAt' | 'updatedAt' | 'health' | 'discoveredTools'>) => ipcRenderer.invoke('mcp:add', config),
+    update: (id: string, updates: Partial<McpServerConfig>) => ipcRenderer.invoke('mcp:update', id, updates),
+    remove: (id: string) => ipcRenderer.invoke('mcp:remove', id),
+    enable: (id: string) => ipcRenderer.invoke('mcp:enable', id),
+    disable: (id: string) => ipcRenderer.invoke('mcp:disable', id),
+    testConnection: (id: string) => ipcRenderer.invoke('mcp:testConnection', id),
+    executeTool: (serverId: string, toolName: string, parameters: Record<string, unknown>) => ipcRenderer.invoke('mcp:executeTool', serverId, toolName, parameters),
+    onHealthChanged: (callback: (data: { serverId: string; health: CapabilityHealth }) => void) => {
+      ipcRenderer.on('mcp:healthChanged', (_event, data: { serverId: string; health: CapabilityHealth }) => callback(data));
+    },
+    removeHealthChangedListener: () => {
+      ipcRenderer.removeAllListeners('mcp:healthChanged');
+    },
+  },
+  // Component 11: Project Intelligence
+  projectIntelligence: {
+    getIndex: (projectId: string) => ipcRenderer.invoke('projectIntelligence:getIndex', projectId),
+    triggerIndex: (projectId: string, options?: { fullReindex: boolean }) => ipcRenderer.invoke('projectIntelligence:triggerIndex', projectId, options),
+    getIndexStatus: (projectId: string) => ipcRenderer.invoke('projectIntelligence:getIndexStatus', projectId),
+    getFiles: (projectId: string, filter?: { language?: string; isGenerated?: boolean }) => ipcRenderer.invoke('projectIntelligence:getFiles', projectId, filter),
+    getFile: (projectId: string, path: string) => ipcRenderer.invoke('projectIntelligence:getFile', projectId, path),
+    getSymbols: (projectId: string, filter?: { fileId?: string; kind?: string }) => ipcRenderer.invoke('projectIntelligence:getSymbols', projectId, filter),
+    getSymbol: (projectId: string, id: string) => ipcRenderer.invoke('projectIntelligence:getSymbol', projectId, id),
+    getImpactAnalysis: (projectId: string, targetPath: string) => ipcRenderer.invoke('projectIntelligence:getImpactAnalysis', projectId, targetPath),
+    getTopology: (projectId: string) => ipcRenderer.invoke('projectIntelligence:getTopology', projectId),
+    getConfigVariables: (projectId: string) => ipcRenderer.invoke('projectIntelligence:getConfigVariables', projectId),
+    getMissingConfig: (projectId: string, environment: string) => ipcRenderer.invoke('projectIntelligence:getMissingConfig', projectId, environment),
+    getDetectedStack: (projectId: string) => ipcRenderer.invoke('projectIntelligence:getDetectedStack', projectId),
+  },
+  // Component 11: Context Packs
+  contextPacks: {
+    createPack: (missionId: string, options?: ContextPackOptions) => ipcRenderer.invoke('contextPacks:createPack', missionId, options),
+    getPack: (packId: string) => ipcRenderer.invoke('contextPacks:getPack', packId),
+    getPackForMission: (missionId: string) => ipcRenderer.invoke('contextPacks:getPackForMission', missionId),
+    updatePack: (packId: string, updates: ContextPackUpdates) => ipcRenderer.invoke('contextPacks:updatePack', packId, updates),
+    pinItem: (packId: string, itemId: string) => ipcRenderer.invoke('contextPacks:pinItem', packId, itemId),
+    unpinItem: (packId: string, itemId: string) => ipcRenderer.invoke('contextPacks:unpinItem', packId, itemId),
+    swapStaleItem: (packId: string, itemId: string) => ipcRenderer.invoke('contextPacks:swapStaleItem', packId, itemId),
+    getDashboard: (packId: string) => ipcRenderer.invoke('contextPacks:getDashboard', packId),
+  },
+  // Component 13: Change Engine
+  changeEngine: {
+    createWorkspaceRun: (args: CreateWorkspaceRunArgs) => ipcRenderer.invoke('changeEngine:createWorkspaceRun', args),
+    applyPatch: (args: ApplyPatchArgs) => ipcRenderer.invoke('changeEngine:applyPatch', args),
+    getChangeSet: (workspaceRunId: string) => ipcRenderer.invoke('changeEngine:getChangeSet', workspaceRunId),
+    runValidityChecks: (workspaceRunId: string) => ipcRenderer.invoke('changeEngine:runValidityChecks', workspaceRunId),
+    createCheckpoint: (workspaceRunId: string, label: string) => ipcRenderer.invoke('changeEngine:createCheckpoint', workspaceRunId, label),
+    rollbackToCheckpoint: (checkpointId: string) => ipcRenderer.invoke('changeEngine:rollbackToCheckpoint', checkpointId),
+    getSemanticGroups: (workspaceRunId: string) => ipcRenderer.invoke('changeEngine:getSemanticGroups', workspaceRunId),
+    getDuplicateWarnings: (workspaceRunId: string) => ipcRenderer.invoke('changeEngine:getDuplicateWarnings', workspaceRunId),
+    commitWorkspace: (args: CommitWorkspaceArgs) => ipcRenderer.invoke('changeEngine:commitWorkspace', args),
+    cleanupWorkspace: (workspaceRunId: string) => ipcRenderer.invoke('changeEngine:cleanupWorkspace', workspaceRunId),
+    listWorkspaceRuns: (missionId?: string) => ipcRenderer.invoke('changeEngine:listWorkspaceRuns', missionId),
+    listCheckpoints: (workspaceRunId: string) => ipcRenderer.invoke('changeEngine:listCheckpoints', workspaceRunId),
   },
 };
 

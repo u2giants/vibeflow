@@ -1,6 +1,6 @@
 /** IPC message types for Electron main ↔ renderer communication. */
 
-import type { Project, SyncStatus, Account, Mode, OpenRouterModel, ConversationThread, Message, ProjectDevOpsConfig, DeployRun } from './entities';
+import type { Project, SyncStatus, Account, Mode, OpenRouterModel, ConversationThread, Message, ProjectDevOpsConfig, DeployRun, PlanRecord, RoleAssignment, OrchestrationState, Capability, CapabilityHealth, CapabilityInvocationLog, McpServerConfig, McpToolInfo, McpInvocationResult, ProjectIndex, FileRecord, SymbolRecord, ReferenceEdge, RouteRecord, ApiEndpointRecord, JobRecord, ServiceNode, ServiceEdge, ConfigVariableRecord, ContextPackEnriched, ContextItem, ContextWarning, ContextDashboard, DetectedStack, ImpactAnalysis, EvidenceItem, WorkspaceRun, PatchProposal, FileEdit, SemanticChangeGroup, Checkpoint, ChangeSet, DuplicateWarning, PatternReuseSuggestion } from './entities';
 
 // ── Auth IPC ──────────────────────────────────────────────────────
 
@@ -392,6 +392,143 @@ export interface UpdaterChannel {
   removeListeners: () => void;
 }
 
+// ── Orchestrator IPC ────────────────────────────────────────────────
+
+export interface DecomposeMissionArgs {
+  missionId: string;
+  projectId: string;
+}
+
+export interface AssignRoleArgs {
+  missionId: string;
+  stepId: string;
+  roleSlug: string;
+}
+
+export interface OrchestratorChannel {
+  decomposeMission: (args: DecomposeMissionArgs) => Promise<PlanRecord>;
+  assignRole: (args: AssignRoleArgs) => Promise<RoleAssignment>;
+  getPlan: (missionId: string) => Promise<PlanRecord | null>;
+  getState: () => Promise<OrchestrationState>;
+}
+
+// ── Capabilities IPC ────────────────────────────────────────────────
+
+export interface CapabilitiesChannel {
+  list: () => Promise<Capability[]>;
+  get: (id: string) => Promise<Capability | null>;
+  getHealth: () => Promise<Record<string, CapabilityHealth>>;
+  getInvocationLog: (capabilityId: string, limit?: number) => Promise<CapabilityInvocationLog[]>;
+}
+
+// ── MCP IPC ─────────────────────────────────────────────────────────
+
+export interface McpChannel {
+  list: () => Promise<McpServerConfig[]>;
+  add: (config: Omit<McpServerConfig, 'id' | 'createdAt' | 'updatedAt' | 'health' | 'discoveredTools'>) => Promise<McpServerConfig>;
+  update: (id: string, updates: Partial<McpServerConfig>) => Promise<McpServerConfig>;
+  remove: (id: string) => Promise<{ success: boolean }>;
+  enable: (id: string) => Promise<McpServerConfig>;
+  disable: (id: string) => Promise<McpServerConfig>;
+  testConnection: (id: string) => Promise<{ success: boolean; error: string | null; tools: McpToolInfo[] }>;
+  executeTool: (serverId: string, toolName: string, parameters: Record<string, unknown>) => Promise<McpInvocationResult>;
+  onHealthChanged: (callback: (data: { serverId: string; health: CapabilityHealth }) => void) => void;
+  removeHealthChangedListener: () => void;
+}
+
+// ── Project Intelligence IPC ────────────────────────────────────────────────
+
+export interface ProjectIntelligenceChannel {
+  // Index management
+  getIndex: (projectId: string) => Promise<ProjectIndex | null>;
+  triggerIndex: (projectId: string, options?: { fullReindex: boolean }) => Promise<{ success: boolean; fileCount: number }>;
+  getIndexStatus: (projectId: string) => Promise<{ indexed: boolean; fileCount: number; staleness: string; indexedAt: string | null }>;
+
+  // File queries
+  getFiles: (projectId: string, filter?: { language?: string; isGenerated?: boolean }) => Promise<FileRecord[]>;
+  getFile: (projectId: string, path: string) => Promise<FileRecord | null>;
+
+  // Symbol queries
+  getSymbols: (projectId: string, filter?: { fileId?: string; kind?: string }) => Promise<SymbolRecord[]>;
+  getSymbol: (projectId: string, id: string) => Promise<SymbolRecord | null>;
+
+  // Impact analysis
+  getImpactAnalysis: (projectId: string, targetPath: string) => Promise<ImpactAnalysis>;
+
+  // Service topology
+  getTopology: (projectId: string) => Promise<{ nodes: ServiceNode[]; edges: ServiceEdge[] }>;
+
+  // Configuration
+  getConfigVariables: (projectId: string) => Promise<ConfigVariableRecord[]>;
+  getMissingConfig: (projectId: string, environment: string) => Promise<ConfigVariableRecord[]>;
+
+  // Framework detection
+  getDetectedStack: (projectId: string) => Promise<DetectedStack>;
+}
+
+// ── Context Packs IPC ───────────────────────────────────────────────────────
+
+export interface ContextPackOptions {
+  tokenBudget?: number;
+  includeFiles?: boolean;
+  includeSymbols?: boolean;
+  includeRoutes?: boolean;
+  includeServices?: boolean;
+  includeConfig?: boolean;
+}
+
+export interface ContextPackUpdates {
+  items?: ContextItem[];
+  warnings?: ContextWarning[];
+}
+
+export interface ContextPacksChannel {
+  createPack: (missionId: string, options?: ContextPackOptions) => Promise<ContextPackEnriched>;
+  getPack: (packId: string) => Promise<ContextPackEnriched | null>;
+  getPackForMission: (missionId: string) => Promise<ContextPackEnriched | null>;
+  updatePack: (packId: string, updates: ContextPackUpdates) => Promise<ContextPackEnriched>;
+  pinItem: (packId: string, itemId: string) => Promise<ContextPackEnriched>;
+  unpinItem: (packId: string, itemId: string) => Promise<ContextPackEnriched>;
+  swapStaleItem: (packId: string, itemId: string) => Promise<ContextPackEnriched>;
+  getDashboard: (packId: string) => Promise<ContextDashboard>;
+}
+
+// ── Component 13: Change Engine IPC ───────────────────────────────────────
+
+export interface CreateWorkspaceRunArgs {
+  missionId: string;
+  planStepId: string;
+  projectRoot: string;
+}
+
+export interface ApplyPatchArgs {
+  workspaceRunId: string;
+  filePath: string;
+  operation: 'create' | 'modify' | 'delete';
+  newContent: string | null;
+  rationale: string;
+}
+
+export interface CommitWorkspaceArgs {
+  workspaceRunId: string;
+  message: string;
+}
+
+export interface ChangeEngineChannel {
+  createWorkspaceRun: (args: CreateWorkspaceRunArgs) => Promise<WorkspaceRun>;
+  applyPatch: (args: ApplyPatchArgs) => Promise<FileEdit>;
+  getChangeSet: (workspaceRunId: string) => Promise<ChangeSet | null>;
+  runValidityChecks: (workspaceRunId: string) => Promise<EvidenceItem[]>;
+  createCheckpoint: (workspaceRunId: string, label: string) => Promise<Checkpoint>;
+  rollbackToCheckpoint: (checkpointId: string) => Promise<boolean>;
+  getSemanticGroups: (workspaceRunId: string) => Promise<SemanticChangeGroup[]>;
+  getDuplicateWarnings: (workspaceRunId: string) => Promise<DuplicateWarning[]>;
+  commitWorkspace: (args: CommitWorkspaceArgs) => Promise<GitCommitResult>;
+  cleanupWorkspace: (workspaceRunId: string) => Promise<boolean>;
+  listWorkspaceRuns: (missionId?: string) => Promise<WorkspaceRun[]>;
+  listCheckpoints: (workspaceRunId: string) => Promise<Checkpoint[]>;
+}
+
 // ── Full window API ──────────────────────────────────────────────
 
 export interface VibeFlowAPI {
@@ -410,4 +547,10 @@ export interface VibeFlowAPI {
   approval: ApprovalApi;
   handoff: HandoffApi;
   updater: UpdaterChannel;
+  orchestrator: OrchestratorChannel;
+  capabilities: CapabilitiesChannel;
+  mcp: McpChannel;
+  projectIntelligence: ProjectIntelligenceChannel;
+  contextPacks: ContextPacksChannel;
+  changeEngine: ChangeEngineChannel;
 }
