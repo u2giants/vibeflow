@@ -1,6 +1,7 @@
 /** ApprovalCard — modal overlay for Tier 3 human approval. */
 
 import type { ActionRequest, RiskClass } from '../../lib/shared-types';
+import { C, R } from '../theme';
 
 interface ApprovalCardProps {
   action: ActionRequest;
@@ -37,6 +38,8 @@ const RISK_CLASS_LABELS: Record<RiskClass, string> = {
 };
 
 export default function ApprovalCard({ action, onApprove, onReject, onAskMore, riskClass }: ApprovalCardProps) {
+  const risk = RISK[action.rollbackDifficulty] ?? RISK.easy;
+
   return (
     <div style={{
       position: 'fixed', inset: 0,

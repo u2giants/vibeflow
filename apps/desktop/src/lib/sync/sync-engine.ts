@@ -9,7 +9,7 @@
 
 import { createClient, type SupabaseClient, type RealtimeChannel } from '@supabase/supabase-js';
 import type {
-  SyncStatus, ConversationThread, Message, Project, RunState,
+  SyncStatus, ConversationThread, Message, Project, RunState, Mode, ApprovalPolicy,
   Mission, EvidenceItem, Capability, Incident, DeployCandidate, Environment,
 } from '../shared-types';
 import type { LocalDb } from '../storage/local-db';
@@ -259,6 +259,29 @@ export class SyncEngine {
     });
     if (error) {
       console.error('[sync] Failed to push message:', error.message);
+    }
+  }
+
+  async pushMode(mode: Mode): Promise<void> {
+    const { error } = await this.supabase.from('modes').upsert({
+      id: mode.id,
+      user_id: this.userId,
+      slug: mode.slug,
+      name: mode.name,
+      description: mode.description,
+      icon: mode.icon,
+      color: mode.color,
+      soul: mode.soul,
+      model_id: mode.modelId,
+      fallback_model_id: mode.fallbackModelId,
+      temperature: mode.temperature,
+      approval_policy: mode.approvalPolicy,
+      is_built_in: mode.isBuiltIn,
+      created_at: mode.createdAt,
+      updated_at: mode.updatedAt,
+    });
+    if (error) {
+      console.error('[sync] Failed to push mode:', error.message);
     }
   }
 

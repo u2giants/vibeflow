@@ -17,6 +17,7 @@ import EnvironmentPanel from './panels/EnvironmentPanel';
 import CapabilitiesPanel from './panels/CapabilitiesPanel';
 import WatchPanel from './panels/WatchPanel';
 import AuditPanel from './panels/AuditPanel';
+import MemoryPanel from './panels/MemoryPanel';
 import { VerificationPanel } from './panels/VerificationPanel';
 import { AcceptancePanel } from './panels/AcceptancePanel';
 import ConversationScreen from '../screens/ConversationScreen';
@@ -42,6 +43,7 @@ const PANELS = [
   { id: 'audit', label: 'Audit', component: AuditPanel },
   { id: 'verification', label: 'Verification', component: VerificationPanel },
   { id: 'acceptance', label: 'Acceptance', component: AcceptancePanel },
+  { id: 'memory', label: 'Memory', component: MemoryPanel },
 ];
 
 const DEFAULT_COLLAPSED: Record<string, boolean> = {
@@ -55,6 +57,7 @@ const DEFAULT_COLLAPSED: Record<string, boolean> = {
   audit: true,
   verification: true,
   acceptance: true,
+  memory: true,
 };
 
 export default function PanelWorkspace({

@@ -4,7 +4,7 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
-import type { VibeFlowAPI, CreateConversationArgs, SendMessageArgs, StreamTokenData, StreamDoneData, StreamErrorData, TerminalRunArgs, GitCommitArgs, GitPushArgs, SshHost, ProjectDevOpsConfig, ActionRequest, HumanDecisionArgs, GenerateHandoffArgs, DecomposeMissionArgs, AssignRoleArgs, McpServerConfig, CapabilityHealth, ContextPackOptions, ContextPackUpdates, CreateWorkspaceRunArgs, ApplyPatchArgs, CommitWorkspaceArgs, AuditHistoryFilter, RuntimeStartArgs, BrowserSessionArgs, SecretRecord, MigrationPlan, MigrationRiskClass, Environment, DeployWorkflow, DriftReport, DeployInitiateArgs, WatchStartSessionArgs, SelfHealingExecuteArgs } from '../lib/shared-types';
+import type { VibeFlowAPI, CreateConversationArgs, SendMessageArgs, StreamTokenData, StreamDoneData, StreamErrorData, TerminalRunArgs, GitCommitArgs, GitPushArgs, SshHost, ProjectDevOpsConfig, ActionRequest, HumanDecisionArgs, GenerateHandoffArgs, DecomposeMissionArgs, AssignRoleArgs, McpServerConfig, CapabilityHealth, ContextPackOptions, ContextPackUpdates, CreateWorkspaceRunArgs, ApplyPatchArgs, CommitWorkspaceArgs, AuditHistoryFilter, RuntimeStartArgs, BrowserSessionArgs, SecretRecord, MigrationPlan, MigrationRiskClass, Environment, DeployWorkflow, DriftReport, DeployInitiateArgs, WatchStartSessionArgs, SelfHealingExecuteArgs, UpdateModeConfigArgs, ExecutionEventData, CreateSshTargetArgs } from '../lib/shared-types';
 import { SyncStatus } from '../lib/shared-types';
 
 const api: VibeFlowAPI = {
@@ -373,6 +373,43 @@ const api: VibeFlowAPI = {
       ipcRenderer.removeAllListeners('selfHealing:actionCompleted');
       ipcRenderer.removeAllListeners('selfHealing:approvalRequired');
     },
+  },
+  // Component 20: Memory, Skills, Decisions
+  memory: {
+    list: (projectId, filters) => ipcRenderer.invoke('memory:list', projectId, filters),
+    get: (id) => ipcRenderer.invoke('memory:get', id),
+    search: (projectId, query) => ipcRenderer.invoke('memory:search', projectId, query),
+    create: (item) => ipcRenderer.invoke('memory:create', item),
+    update: (id, updates) => ipcRenderer.invoke('memory:update', id, updates),
+    retire: (id, reason) => ipcRenderer.invoke('memory:retire', id, reason),
+    reactivate: (id) => ipcRenderer.invoke('memory:reactivate', id),
+    getStale: (projectId, days) => ipcRenderer.invoke('memory:getStale', projectId, days),
+    getDashboard: (projectId) => ipcRenderer.invoke('memory:getDashboard', projectId),
+    evictStale: (projectId, cutoff) => ipcRenderer.invoke('memory:evictStale', projectId, cutoff),
+    summarizeGroup: (projectId, category) => ipcRenderer.invoke('memory:summarizeGroup', projectId, category),
+  },
+  skills: {
+    list: (projectId, activeOnly) => ipcRenderer.invoke('skills:list', projectId, activeOnly),
+    get: (id) => ipcRenderer.invoke('skills:get', id),
+    create: (skill) => ipcRenderer.invoke('skills:create', skill),
+    update: (id, updates) => ipcRenderer.invoke('skills:update', id, updates),
+    invoke: (id) => ipcRenderer.invoke('skills:invoke', id),
+    retire: (id) => ipcRenderer.invoke('skills:retire', id),
+  },
+  decisions: {
+    list: (projectId, activeOnly) => ipcRenderer.invoke('decisions:list', projectId, activeOnly),
+    get: (id) => ipcRenderer.invoke('decisions:get', id),
+    getByNumber: (projectId, number) => ipcRenderer.invoke('decisions:getByNumber', projectId, number),
+    create: (record) => ipcRenderer.invoke('decisions:create', record),
+    update: (id, updates) => ipcRenderer.invoke('decisions:update', id, updates),
+    supersede: (id, supersededBy) => ipcRenderer.invoke('decisions:supersede', id, supersededBy),
+    seedFromDocs: (projectId) => ipcRenderer.invoke('decisions:seedFromDocs', projectId),
+  },
+  // SSH Targets (from remote merge)
+  sshTargets: {
+    list: (projectId: string | null) => ipcRenderer.invoke('sshTargets:list', projectId),
+    save: (args: CreateSshTargetArgs) => ipcRenderer.invoke('sshTargets:save', args),
+    delete: (id: string) => ipcRenderer.invoke('sshTargets:delete', id),
   },
 };
 

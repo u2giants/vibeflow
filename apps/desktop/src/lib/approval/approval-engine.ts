@@ -43,7 +43,13 @@ export type ActionType =
   | 'watch:stop'
   | 'self-heal:restart'
   | 'self-heal:rerun-check'
-  | 'self-heal:disable-probe';
+  | 'self-heal:disable-probe'
+  // Component 20: memory and decision actions
+  | 'memory:write'
+  | 'memory:retire'
+  | 'memory:summarize'
+  | 'skill:invoke'
+  | 'decision:record';
 
 export interface ActionRequest {
   id: string;

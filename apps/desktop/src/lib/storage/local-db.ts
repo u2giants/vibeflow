@@ -15,6 +15,7 @@ import type {
   DeployCandidate,
   Environment, EnvironmentType, EnvironmentProtection, MutabilityRule,
   McpServerConfig, McpToolInfo,
+  SshTarget, McpConnection,
   ProjectIndex, FileRecord, SymbolRecord, ReferenceEdge, RouteRecord, ApiEndpointRecord, JobRecord,
   ServiceNode, ServiceEdge, ConfigVariableRecord,
   ContextPackEnriched, ContextItem, ContextWarning,
@@ -25,6 +26,7 @@ import type {
   SecretRecord, MigrationPlan, MigrationRiskClass, MigrationPreview, DatabaseSchemaInfo, MigrationHistoryEntry,
   DeployWorkflow, DeployStep, DriftReport,
   WatchSession, WatchProbe, AnomalyEvent, SelfHealingAction,
+  MemoryItem, MemoryCategory, MemoryRevision, Skill, SkillStep, SkillVersionEntry, DecisionRecord,
 } from '../shared-types';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -805,6 +807,113 @@ export class LocalDb {
         result TEXT,
         executed_at TEXT,
         audit_record_id TEXT
+      );
+
+      /* ── Component 20: Memory, Skills, and Decision Knowledge ── */
+
+      CREATE TABLE IF NOT EXISTS memory_items (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        category TEXT NOT NULL,
+        title TEXT NOT NULL,
+        scope TEXT NOT NULL DEFAULT '',
+        tags_json TEXT NOT NULL DEFAULT '[]',
+        description TEXT NOT NULL DEFAULT '',
+        free_form_notes TEXT,
+        examples_json TEXT NOT NULL DEFAULT '[]',
+        trigger_conditions_json TEXT NOT NULL DEFAULT '[]',
+        freshness_notes TEXT,
+        source_material TEXT,
+        owner TEXT,
+        reviewer TEXT,
+        last_reviewed_at TEXT,
+        revision_history_json TEXT NOT NULL DEFAULT '[]',
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS skills (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        category TEXT NOT NULL DEFAULT 'skill-runbook',
+        steps_json TEXT NOT NULL DEFAULT '[]',
+        trigger_conditions_json TEXT NOT NULL DEFAULT '[]',
+        version INTEGER NOT NULL DEFAULT 1,
+        version_history_json TEXT NOT NULL DEFAULT '[]',
+        owner TEXT,
+        reviewer TEXT,
+        last_reviewed_at TEXT,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS decision_records (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        decision_number INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        date TEXT NOT NULL,
+        decided_by TEXT NOT NULL DEFAULT '',
+        decision TEXT NOT NULL DEFAULT '',
+        alternatives_json TEXT NOT NULL DEFAULT '[]',
+        rationale TEXT NOT NULL DEFAULT '',
+        consequences_json TEXT NOT NULL DEFAULT '[]',
+        related_files_json TEXT NOT NULL DEFAULT '[]',
+        tags_json TEXT NOT NULL DEFAULT '[]',
+        is_active INTEGER NOT NULL DEFAULT 1,
+        superseded_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      // ── SSH Targets (from remote merge) ──
+      CREATE TABLE IF NOT EXISTS ssh_targets (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        project_id TEXT,
+        name TEXT NOT NULL,
+        hostname TEXT NOT NULL,
+        username TEXT NOT NULL,
+        port INTEGER NOT NULL DEFAULT 22,
+        identity_file TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      // ── MCP Connections (from remote merge) ──
+      CREATE TABLE IF NOT EXISTS mcp_connections (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        project_id TEXT,
+        name TEXT NOT NULL,
+        command TEXT NOT NULL,
+        args TEXT NOT NULL DEFAULT '[]',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        scope TEXT NOT NULL DEFAULT 'global',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      // ── DevOps Templates (from remote merge) ──
+      CREATE TABLE IF NOT EXISTS devops_templates (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        branch_strategy TEXT NOT NULL DEFAULT '',
+        build_tool TEXT NOT NULL DEFAULT '',
+        registry TEXT NOT NULL DEFAULT '',
+        image_name TEXT NOT NULL DEFAULT '',
+        image_tags TEXT NOT NULL DEFAULT '[]',
+        deploy_target_type TEXT NOT NULL DEFAULT '',
+        trigger_method TEXT NOT NULL DEFAULT '',
+        required_secrets TEXT NOT NULL DEFAULT '[]',
+        plain_english_explanation TEXT NOT NULL DEFAULT '',
+        is_built_in INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
       );
     `);
 
@@ -3019,5 +3128,412 @@ export class LocalDb {
     const openIncidents = this.listIncidents(projectId).filter((i) => i.status === 'open' || i.status === 'investigating');
     const recentSelfHealingActions = this.listSelfHealingActions(projectId).slice(0, 20);
     return { activeSessions, recentAnomalies, openIncidents, recentSelfHealingActions };
+  }
+
+  // ── Component 20: Memory Items ──────────────────────────────────────
+
+  upsertMemoryItem(item: MemoryItem): void {
+    this.db!.run(
+      'INSERT OR REPLACE INTO memory_items (id, project_id, category, title, scope, tags_json, description, free_form_notes, examples_json, trigger_conditions_json, freshness_notes, source_material, owner, reviewer, last_reviewed_at, revision_history_json, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        item.id, item.projectId, item.category, item.title, item.scope,
+        JSON.stringify(item.tags), item.description, item.freeFormNotes,
+        JSON.stringify(item.examples), JSON.stringify(item.triggerConditions),
+        item.freshnessNotes, item.sourceMaterial, item.owner, item.reviewer,
+        item.lastReviewedAt, JSON.stringify(item.revisionHistory),
+        item.isActive ? 1 : 0, item.createdAt, item.updatedAt,
+      ]
+    );
+    this.save();
+  }
+
+  getMemoryItem(id: string): MemoryItem | null {
+    const result = this.db!.exec('SELECT * FROM memory_items WHERE id = ?', [id])[0];
+    const objs = this.toObjAll(result);
+    if (!objs.length) return null;
+    return this.rowToMemoryItem(objs[0]);
+  }
+
+  listMemoryItems(projectId: string, filters?: { category?: MemoryCategory; activeOnly?: boolean }): MemoryItem[] {
+    let sql = 'SELECT * FROM memory_items WHERE project_id = ?';
+    const params: unknown[] = [projectId];
+    if (filters?.category) { sql += ' AND category = ?'; params.push(filters.category); }
+    if (filters?.activeOnly) { sql += ' AND is_active = 1'; }
+    sql += ' ORDER BY updated_at DESC';
+    const result = this.db!.exec(sql, params)[0];
+    return this.toObjAll(result).map((r) => this.rowToMemoryItem(r));
+  }
+
+  searchMemoryItems(projectId: string, query: { tags?: string[]; category?: MemoryCategory; triggerMatch?: string }): MemoryItem[] {
+    let sql = 'SELECT * FROM memory_items WHERE project_id = ? AND is_active = 1';
+    const params: unknown[] = [projectId];
+    if (query.category) { sql += ' AND category = ?'; params.push(query.category); }
+    sql += ' ORDER BY updated_at DESC';
+    const result = this.db!.exec(sql, params)[0];
+    const all = this.toObjAll(result).map((r) => this.rowToMemoryItem(r));
+
+    if (!query.tags?.length && !query.triggerMatch) return all;
+
+    const searchTerms = [
+      ...(query.tags ?? []),
+      ...(query.triggerMatch ? query.triggerMatch.toLowerCase().split(/\s+/) : []),
+    ];
+    return all
+      .map(item => {
+        let score = 0;
+        for (const term of searchTerms) {
+          if (item.tags.some(t => t.toLowerCase().includes(term))) score += 2;
+          if (item.triggerConditions.some(t => t.toLowerCase().includes(term))) score += 1;
+          if (item.title.toLowerCase().includes(term)) score += 3;
+          if (item.description.toLowerCase().includes(term)) score += 1;
+        }
+        return { item, score };
+      })
+      .filter(x => x.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .map(x => x.item);
+  }
+
+  retireMemoryItem(id: string): void {
+    this.db!.run('UPDATE memory_items SET is_active = 0, updated_at = ? WHERE id = ?', [new Date().toISOString(), id]);
+    this.save();
+  }
+
+  reactivateMemoryItem(id: string): void {
+    this.db!.run('UPDATE memory_items SET is_active = 1, updated_at = ? WHERE id = ?', [new Date().toISOString(), id]);
+    this.save();
+  }
+
+  getStaleMemories(projectId: string, daysThreshold: number = 30): MemoryItem[] {
+    const cutoff = new Date(Date.now() - daysThreshold * 86400000).toISOString();
+    const result = this.db!.exec(
+      "SELECT * FROM memory_items WHERE project_id = ? AND is_active = 1 AND (last_reviewed_at IS NULL OR last_reviewed_at < ?) ORDER BY last_reviewed_at ASC",
+      [projectId, cutoff]
+    )[0];
+    return this.toObjAll(result).map((r) => this.rowToMemoryItem(r));
+  }
+
+  getMemoryDashboard(projectId: string): {
+    totalMemories: number;
+    memoriesByCategory: Record<string, number>;
+    activeMemories: number;
+    retiredMemories: number;
+    staleMemories: number;
+    totalSkills: number;
+    activeSkills: number;
+    totalDecisions: number;
+    activeDecisions: number;
+    lastWriteAt: string | null;
+    lastReviewAt: string | null;
+  } {
+    const all = this.listMemoryItems(projectId);
+    const stale = this.getStaleMemories(projectId);
+    const skills = this.listSkills(projectId);
+    const decisions = this.listDecisionRecords(projectId);
+
+    const memoriesByCategory: Record<string, number> = {};
+    for (const item of all) {
+      memoriesByCategory[item.category] = (memoriesByCategory[item.category] ?? 0) + 1;
+    }
+
+    const activeItems = all.filter(i => i.isActive);
+    const reviewDates = activeItems.map(i => i.lastReviewedAt).filter(Boolean) as string[];
+    const updateDates = all.map(i => i.updatedAt).filter(Boolean) as string[];
+
+    return {
+      totalMemories: all.length,
+      memoriesByCategory,
+      activeMemories: activeItems.length,
+      retiredMemories: all.length - activeItems.length,
+      staleMemories: stale.length,
+      totalSkills: skills.length,
+      activeSkills: skills.filter(s => s.isActive).length,
+      totalDecisions: decisions.length,
+      activeDecisions: decisions.filter(d => d.isActive).length,
+      lastWriteAt: updateDates.length > 0 ? updateDates.sort().reverse()[0] : null,
+      lastReviewAt: reviewDates.length > 0 ? reviewDates.sort().reverse()[0] : null,
+    };
+  }
+
+  private rowToMemoryItem(row: Record<string, unknown>): MemoryItem {
+    return {
+      id: row.id as string,
+      projectId: row.project_id as string,
+      category: row.category as MemoryCategory,
+      title: row.title as string,
+      scope: (row.scope as string) ?? '',
+      tags: JSON.parse((row.tags_json as string) ?? '[]') as string[],
+      description: (row.description as string) ?? '',
+      freeFormNotes: (row.free_form_notes as string) ?? null,
+      examples: JSON.parse((row.examples_json as string) ?? '[]') as string[],
+      triggerConditions: JSON.parse((row.trigger_conditions_json as string) ?? '[]') as string[],
+      freshnessNotes: (row.freshness_notes as string) ?? null,
+      sourceMaterial: (row.source_material as string) ?? null,
+      owner: (row.owner as string) ?? null,
+      reviewer: (row.reviewer as string) ?? null,
+      lastReviewedAt: (row.last_reviewed_at as string) ?? null,
+      revisionHistory: JSON.parse((row.revision_history_json as string) ?? '[]') as MemoryRevision[],
+      isActive: (row.is_active as number) === 1,
+      createdAt: row.created_at as string,
+      updatedAt: row.updated_at as string,
+    };
+  }
+
+  // ── Component 20: Skills ────────────────────────────────────────────
+
+  upsertSkill(skill: Skill): void {
+    this.db!.run(
+      'INSERT OR REPLACE INTO skills (id, project_id, title, description, category, steps_json, trigger_conditions_json, version, version_history_json, owner, reviewer, last_reviewed_at, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        skill.id, skill.projectId, skill.title, skill.description, skill.category,
+        JSON.stringify(skill.steps), JSON.stringify(skill.triggerConditions),
+        skill.version, JSON.stringify(skill.versionHistory),
+        skill.owner, skill.reviewer, skill.lastReviewedAt,
+        skill.isActive ? 1 : 0, skill.createdAt, skill.updatedAt,
+      ]
+    );
+    this.save();
+  }
+
+  getSkill(id: string): Skill | null {
+    const result = this.db!.exec('SELECT * FROM skills WHERE id = ?', [id])[0];
+    const objs = this.toObjAll(result);
+    if (!objs.length) return null;
+    return this.rowToSkill(objs[0]);
+  }
+
+  listSkills(projectId: string, activeOnly?: boolean): Skill[] {
+    let sql = 'SELECT * FROM skills WHERE project_id = ?';
+    const params: unknown[] = [projectId];
+    if (activeOnly) { sql += ' AND is_active = 1'; }
+    sql += ' ORDER BY updated_at DESC';
+    const result = this.db!.exec(sql, params)[0];
+    return this.toObjAll(result).map((r) => this.rowToSkill(r));
+  }
+
+  invokeSkill(id: string): Skill | null {
+    const skill = this.getSkill(id);
+    if (!skill) return null;
+    skill.version += 1;
+    skill.updatedAt = new Date().toISOString();
+    this.upsertSkill(skill);
+    return skill;
+  }
+
+  private rowToSkill(row: Record<string, unknown>): Skill {
+    return {
+      id: row.id as string,
+      projectId: row.project_id as string,
+      title: row.title as string,
+      description: (row.description as string) ?? '',
+      category: (row.category as MemoryCategory) ?? 'skill-runbook',
+      steps: JSON.parse((row.steps_json as string) ?? '[]') as SkillStep[],
+      triggerConditions: JSON.parse((row.trigger_conditions_json as string) ?? '[]') as string[],
+      version: (row.version as number) ?? 1,
+      versionHistory: JSON.parse((row.version_history_json as string) ?? '[]') as SkillVersionEntry[],
+      owner: (row.owner as string) ?? null,
+      reviewer: (row.reviewer as string) ?? null,
+      lastReviewedAt: (row.last_reviewed_at as string) ?? null,
+      isActive: (row.is_active as number) === 1,
+      createdAt: row.created_at as string,
+      updatedAt: row.updated_at as string,
+    };
+  }
+
+  // ── Component 20: Decision Records ──────────────────────────────────
+
+  upsertDecisionRecord(record: DecisionRecord): void {
+    this.db!.run(
+      'INSERT OR REPLACE INTO decision_records (id, project_id, decision_number, title, date, decided_by, decision, alternatives_json, rationale, consequences_json, related_files_json, tags_json, is_active, superseded_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        record.id, record.projectId, record.decisionNumber, record.title, record.date,
+        record.decidedBy, record.decision, JSON.stringify(record.alternativesConsidered),
+        record.rationale, JSON.stringify(record.consequences),
+        JSON.stringify(record.relatedFiles), JSON.stringify(record.tags),
+        record.isActive ? 1 : 0, record.supersededBy,
+        record.createdAt, record.updatedAt,
+      ]
+    );
+    this.save();
+  }
+
+  getDecisionRecord(id: string): DecisionRecord | null {
+    const result = this.db!.exec('SELECT * FROM decision_records WHERE id = ?', [id])[0];
+    const objs = this.toObjAll(result);
+    if (!objs.length) return null;
+    return this.rowToDecisionRecord(objs[0]);
+  }
+
+  listDecisionRecords(projectId: string, activeOnly?: boolean): DecisionRecord[] {
+    let sql = 'SELECT * FROM decision_records WHERE project_id = ?';
+    const params: unknown[] = [projectId];
+    if (activeOnly) { sql += ' AND is_active = 1'; }
+    sql += ' ORDER BY decision_number DESC';
+    const result = this.db!.exec(sql, params)[0];
+    return this.toObjAll(result).map((r) => this.rowToDecisionRecord(r));
+  }
+
+  getDecisionByNumber(projectId: string, number: number): DecisionRecord | null {
+    const result = this.db!.exec(
+      'SELECT * FROM decision_records WHERE project_id = ? AND decision_number = ?',
+      [projectId, number]
+    )[0];
+    const objs = this.toObjAll(result);
+    if (!objs.length) return null;
+    return this.rowToDecisionRecord(objs[0]);
+  }
+
+  supersedeDecision(id: string, supersededBy: string): void {
+    this.db!.run(
+      'UPDATE decision_records SET is_active = 0, superseded_by = ?, updated_at = ? WHERE id = ?',
+      [supersededBy, new Date().toISOString(), id]
+    );
+    this.save();
+  }
+
+  private rowToDecisionRecord(row: Record<string, unknown>): DecisionRecord {
+    return {
+      id: row.id as string,
+      projectId: row.project_id as string,
+      decisionNumber: row.decision_number as number,
+      title: row.title as string,
+      date: row.date as string,
+      decidedBy: (row.decided_by as string) ?? '',
+      decision: (row.decision as string) ?? '',
+      alternativesConsidered: JSON.parse((row.alternatives_json as string) ?? '[]') as Array<{ option: string; reason: string }>,
+      rationale: (row.rationale as string) ?? '',
+      consequences: JSON.parse((row.consequences_json as string) ?? '[]') as string[],
+      relatedFiles: JSON.parse((row.related_files_json as string) ?? '[]') as string[],
+      tags: JSON.parse((row.tags_json as string) ?? '[]') as string[],
+      isActive: (row.is_active as number) === 1,
+      supersededBy: (row.superseded_by as string) ?? null,
+      createdAt: row.created_at as string,
+      updatedAt: row.updated_at as string,
+    };
+  }
+
+  // ── Mode config update (from remote merge) ──────────────────────────
+
+  updateModeConfig(id: string, temperature: number, approvalPolicy: string, fallbackModelId: string | null): void {
+    this.db!.run(
+      'UPDATE modes SET temperature = ?, approval_policy = ?, fallback_model_id = ?, updated_at = ? WHERE id = ?',
+      [temperature, approvalPolicy, fallbackModelId, new Date().toISOString(), id]
+    );
+    this.save();
+  }
+
+  // ── DevOps Templates (from remote merge) ────────────────────────────
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  listDevOpsTemplates(): any[] {
+    const result = this.db!.exec('SELECT * FROM devops_templates ORDER BY name ASC')[0];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return this.toObjAll(result).map((r: any) => ({
+      id: r.id, name: r.name, description: r.description,
+      branchStrategy: r.branch_strategy, buildTool: r.build_tool,
+      registry: r.registry, imageName: r.image_name,
+      imageTags: JSON.parse(r.image_tags || '[]'),
+      deployTargetType: r.deploy_target_type,
+      triggerMethod: r.trigger_method,
+      requiredSecrets: JSON.parse(r.required_secrets || '[]'),
+      plainEnglishExplanation: r.plain_english_explanation,
+      isBuiltIn: r.is_built_in === 1,
+      createdAt: r.created_at, updatedAt: r.updated_at,
+    }));
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  upsertDevOpsTemplate(t: any): void {
+    const now = new Date().toISOString();
+    this.db!.run(
+      'INSERT OR REPLACE INTO devops_templates (id, name, description, branch_strategy, build_tool, registry, image_name, image_tags, deploy_target_type, trigger_method, required_secrets, plain_english_explanation, is_built_in, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [t.id, t.name, t.description, t.branchStrategy, t.buildTool, t.registry, t.imageName, JSON.stringify(t.imageTags), t.deployTargetType, t.triggerMethod, JSON.stringify(t.requiredSecrets), t.plainEnglishExplanation, t.isBuiltIn ? 1 : 0, t.createdAt || now, now]
+    );
+    this.save();
+  }
+
+  deleteDevOpsTemplate(id: string): void {
+    this.db!.run('DELETE FROM devops_templates WHERE id = ? AND is_built_in = 0', [id]);
+    this.save();
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  seedDevOpsTemplates(templates: any[]): void {
+    const existing = this.listDevOpsTemplates();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const existingIds = new Set(existing.map((t: any) => t.id));
+    for (const t of templates) {
+      if (!existingIds.has(t.id)) this.upsertDevOpsTemplate(t);
+    }
+  }
+
+  // ── SSH Targets (from remote merge) ─────────────────────────────────
+
+  listSshTargets(projectId: string | null): SshTarget[] {
+    const result = projectId
+      ? this.db!.exec('SELECT * FROM ssh_targets WHERE project_id = ? OR project_id IS NULL ORDER BY name ASC', [projectId])[0]
+      : this.db!.exec('SELECT * FROM ssh_targets ORDER BY name ASC')[0];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return this.toObjAll(result).map((r: any) => ({
+      id: r.id, userId: r.user_id, projectId: r.project_id ?? null,
+      name: r.name, hostname: r.hostname, username: r.username,
+      port: r.port, identityFile: r.identity_file ?? null, createdAt: r.created_at,
+    }));
+  }
+
+  insertSshTarget(t: SshTarget): void {
+    this.db!.run(
+      'INSERT INTO ssh_targets (id, user_id, project_id, name, hostname, username, port, identity_file, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [t.id, t.userId, t.projectId, t.name, t.hostname, t.username, t.port, t.identityFile, t.createdAt]
+    );
+    this.save();
+  }
+
+  deleteSshTarget(id: string): void {
+    this.db!.run('DELETE FROM ssh_targets WHERE id = ?', [id]);
+    this.save();
+  }
+
+  // ── MCP Connections (from remote merge) ──────────────────────────────
+
+  listMcpConnections(projectId: string | null): McpConnection[] {
+    const result = projectId
+      ? this.db!.exec('SELECT * FROM mcp_connections WHERE project_id = ? OR scope = ? ORDER BY name ASC', [projectId, 'global'])[0]
+      : this.db!.exec('SELECT * FROM mcp_connections ORDER BY name ASC')[0];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return this.toObjAll(result).map((r: any) => ({
+      id: r.id, userId: r.user_id, projectId: r.project_id ?? null,
+      name: r.name, command: r.command, args: JSON.parse(r.args || '[]'),
+      enabled: r.enabled === 1, scope: r.scope as 'global' | 'project',
+      createdAt: r.created_at, updatedAt: r.updated_at,
+    }));
+  }
+
+  insertMcpConnection(m: McpConnection): void {
+    this.db!.run(
+      'INSERT INTO mcp_connections (id, user_id, project_id, name, command, args, enabled, scope, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [m.id, m.userId, m.projectId, m.name, m.command, JSON.stringify(m.args), m.enabled ? 1 : 0, m.scope, m.createdAt, m.updatedAt]
+    );
+    this.save();
+  }
+
+  updateMcpConnection(id: string, updates: Partial<McpConnection>): void {
+    const fields: string[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const values: any[] = [];
+    if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
+    if (updates.command !== undefined) { fields.push('command = ?'); values.push(updates.command); }
+    if (updates.args !== undefined) { fields.push('args = ?'); values.push(JSON.stringify(updates.args)); }
+    if (updates.enabled !== undefined) { fields.push('enabled = ?'); values.push(updates.enabled ? 1 : 0); }
+    if (updates.scope !== undefined) { fields.push('scope = ?'); values.push(updates.scope); }
+    fields.push('updated_at = ?'); values.push(new Date().toISOString());
+    values.push(id);
+    this.db!.run(`UPDATE mcp_connections SET ${fields.join(', ')} WHERE id = ?`, values);
+    this.save();
+  }
+
+  deleteMcpConnection(id: string): void {
+    this.db!.run('DELETE FROM mcp_connections WHERE id = ?', [id]);
+    this.save();
   }
 }

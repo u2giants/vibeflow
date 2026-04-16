@@ -6,6 +6,26 @@ Every agent must update this file when work begins and when work ends.
 
 ## CURRENT SPRINT
 
+### Merge-Residue Fix — Port Remote Implementations (2026-04-16)
+- Status: Complete
+- Mode: Builder (`z-ai/glm-5.1`)
+- Conversation: Fixed all 54 TypeScript errors caused by `git merge -X ours` (commit `6565cdc`) that kept local files but added remote-only files referencing missing types/methods
+- Project: VibeFlow brownfield rebuild
+- Branch: `master`
+- Root cause: DevOps merged 28 remote commits with `-X ours`, preserving local versions of shared files but adding remote-only renderer screens (SshScreen, McpScreen, ProjectScreen, ApprovalCard) that referenced types, methods, and IPC channels only in the remote's versions of shared files
+- Approach: Ported real implementations from remote branch (parent `d40958be`) — no stubs
+- Files changed:
+  - [`apps/desktop/src/lib/shared-types/ipc.ts`](apps/desktop/src/lib/shared-types/ipc.ts) — Added `SshTarget`, `McpConnection` imports; `CreateSshTargetArgs`, `CreateMcpConnectionArgs`, `SshTargetsApi`, `McpApi` interfaces; `sshTargets` to `VibeFlowAPI`
+  - [`apps/desktop/src/lib/storage/local-db.ts`](apps/desktop/src/lib/storage/local-db.ts) — Added `SshTarget`, `McpConnection` imports; `ssh_targets`, `mcp_connections`, `devops_templates` tables; `updateModeConfig`, `listDevOpsTemplates`, `upsertDevOpsTemplate`, `deleteDevOpsTemplate`, `seedDevOpsTemplates`, `listSshTargets`, `insertSshTarget`, `deleteSshTarget`, `listMcpConnections`, `insertMcpConnection`, `updateMcpConnection`, `deleteMcpConnection` methods
+  - [`apps/desktop/src/lib/sync/sync-engine.ts`](apps/desktop/src/lib/sync/sync-engine.ts) — Added `Mode`, `ApprovalPolicy` imports; `pushMode` method
+  - [`apps/desktop/src/main/index.ts`](apps/desktop/src/main/index.ts) — Added `getCurrentUserId` helper; fixed `Account` return object to include `id`, `displayName`, `createdAt`; added `sshTargets:list`, `sshTargets:save`, `sshTargets:delete` IPC handlers
+  - [`apps/desktop/src/preload/index.ts`](apps/desktop/src/preload/index.ts) — Added `CreateSshTargetArgs` import; `sshTargets` API wiring
+  - [`apps/desktop/src/renderer/components/ApprovalCard.tsx`](apps/desktop/src/renderer/components/ApprovalCard.tsx) — Added `import { C, R } from '../theme'`; defined `risk` from `RISK[action.rollbackDifficulty]`
+  - [`apps/desktop/src/renderer/screens/ProjectScreen.tsx`](apps/desktop/src/renderer/screens/ProjectScreen.tsx) — Added `SubScreen` type and `NavButton` component (ported from remote)
+  - [`apps/desktop/src/renderer/screens/McpScreen.tsx`](apps/desktop/src/renderer/screens/McpScreen.tsx) — Added `McpScreenProps` interface accepting `projectId` and `onBack`
+- Verification: `cd apps/desktop && npx tsc --noEmit` exits with code 0, zero errors
+- No existing component work (Components 10–22) was overwritten or broken
+
 ### DevOps Push — Backup to GitHub (2026-04-16)
 - Status: Complete
 - Mode: DevOps (`qwen/qwen3.6-plus`)
@@ -1231,6 +1251,29 @@ Every agent must update this file when work begins and when work ends.
 - Constraint: Review only; no push authorized in this step
 - Outcome: Component 17 approved. Review confirmed the implementation stayed within Component 17 boundaries, did not reactivate sync, did not redesign approvals, did not add secret-value handling, did not drift into Component 21 observability automation, and did not worsen the pre-existing duplicated handler issue in [`apps/desktop/src/main/index.ts`](apps/desktop/src/main/index.ts). TypeScript verification passed.
 
+### Builder Task — Component 20 Analysis Phase (2026-04-16)
+- **Status:** Complete
+- **Mode:** Builder (`qwen/qwen3.6-plus`)
+- **Conversation:** Analysis-only work on [`rebuild/20_MEMORY_SKILLS_AND_DECISION_KNOWLEDGE.md`](rebuild/20_MEMORY_SKILLS_AND_DECISION_KNOWLEDGE.md)
+- **Project:** VibeFlow brownfield rebuild
+- **Constraint:** Analysis-only; no application code changes; no continuation of Component 20 implementation
+- **Authority:** Working order confirmed by Albert: `10, 22 (partially done), 12, 14, 11, 13, 19, 15, 16, 18, 17, 21, 20`
+- **Deliverable:** [`rebuild/20_COMPONENT_20_IMPLEMENTATION_ANALYSIS.md`](rebuild/20_COMPONENT_20_IMPLEMENTATION_ANALYSIS.md) — analysis-only implementation plan
+- **Outcome:** Produced comprehensive implementation analysis with 16 sections: scope summary, explicit non-goals, salvage/brownfield reuse map, required new types and extensions, storage changes (3 new tables, ~20 CRUD methods), runtime modules (MemoryRetriever, MemoryLifecycle), IPC/preload surface additions (3 channels, ~25 handlers), UI surfaces (MemoryPanel with 4 tabs), memory lifecycle boundaries, privacy/safety boundaries, test plan, rollback plan, risks/dependencies, 7-phase implementation plan, deferred items, and boundary analysis with Components 11, 12, 15, 18, 19, 21, 22.
+- **Key findings:**
+  - `ContextItem.type` already includes `'memory-pack'` and `'decision'` — no change needed
+  - `ContextPack.loadedMemoryPacks` already exists — reuse as-is
+  - `docs/decisions.md` (15 decisions) and `docs/idiosyncrasies.md` (10 entries) serve as seed data
+  - 3 new SQLite tables needed: `memory_items`, `skills`, `decision_records`
+  - 2 new runtime modules: `memory-retriever.ts`, `memory-lifecycle.ts`
+  - 3 new IPC channels: MemoryChannel, SkillsChannel, DecisionsChannel
+  - 1 new UI panel: MemoryPanel with 4 tabs (Memories, Skills, Decisions, Lifecycle)
+  - All changes are additive and brownfield-safe; rollback is straightforward
+  - No vector-DB or embedding infrastructure needed — retrieval is tag/trigger/keyword-based
+  - Strict privacy boundaries: no secret values, no raw credentials, no full file contents
+  - Full provenance on every item (Mode, conversation, project, revision history)
+- **Next agent:** Orchestrator to review analysis and approve or correct before Builder implementation
+
 ### Parent Orchestrator Task — Builder Prep for Component 21 (2026-04-16)
 - Status: Complete
 - Mode: Orchestrator (`openai/gpt-5.4`)
@@ -1365,3 +1408,62 @@ Every agent must update this file when work begins and when work ends.
   - [`tsc --noEmit`](apps/desktop/tsconfig.json) passes with zero errors
 
   **Current Step:** Component 21 implementation complete. TypeScript compilation verified. Ready for Reviewer-Pusher review.
+
+### Builder Task — Component 20 Implementation (2026-04-16)
+  - **Status:** Complete
+  - **Mode:** Builder (`qwen/qwen3.6-plus`)
+  - **Conversation:** Implementation of Component 20 — memory, skills, and decision knowledge
+  - **Project:** VibeFlow brownfield rebuild
+  - **Constraint:** Bounded to memory items, skills, decision records, retrieval engine, lifecycle management, privacy redaction, UI panel, seed import, and related additive types/storage/runtime/IPC/preload wiring. No vector DB, no embeddings, no orchestration engine rewrite, no cloud-sync reactivation, no auto-absorb of conversation content.
+  - **Guardrails:**
+    1. Reuse existing [`ContextItem`](apps/desktop/src/lib/shared-types/entities.ts:759) `'memory-pack' | 'decision'` union values ✅
+    2. Reuse existing [`ContextPack.loadedMemoryPacks`](apps/desktop/src/lib/shared-types/entities.ts:233) ✅
+    3. Extend, do not replace, [`ContextPackAssembler`](apps/desktop/src/lib/project-intelligence/context-pack-assembler.ts:25) ✅
+    4. Extend, do not replace, [`generateHandoffDoc()`](apps/desktop/src/lib/handoff/handoff-generator.ts:35) with proposals only ✅
+    5. Follow existing IPC/preload/channel patterns ✅
+    6. Privacy redaction guard at write path — no secrets, credentials, tokens ✅
+    7. Seed import from docs/decisions.md and docs/idiosyncrasies.md (idempotent) ✅
+    8. `tsc --noEmit` — zero new errors from Component 20 files ✅
+
+  | Step | Description | Status |
+  |---|---|---|
+  | 30.1 | Phase 1: Add MemoryItem, MemoryRevision, Skill, SkillStep, DecisionRecord, MemoryCategory, MemoryRetrievalResult, MemoryDashboard types to entities.ts | [x] |
+  | 30.2 | Phase 1: Add MemoryChannel, SkillsChannel, DecisionsChannel IPC types to ipc.ts; extend VibeFlowAPI; expand ActionType union | [x] |
+  | 30.3 | Phase 2: Add memory_items, skills, decision_records tables to local-db.ts schema | [x] |
+  | 30.4 | Phase 2: Add CRUD methods for all 3 new tables to LocalDb (~20 methods) | [x] |
+  | 30.5 | Phase 3: Create memory-retriever.ts — tag/trigger/keyword retrieval engine | [x] |
+  | 30.6 | Phase 3: Create memory-lifecycle.ts — write, evict, retire, reactivate, privacy redaction guard | [x] |
+  | 30.7 | Phase 3: Create memory/index.ts barrel export | [x] |
+  | 30.8 | Phase 4: Add ~25 IPC handlers in main/index.ts (memory:*, skills:*, decisions:*) | [x] |
+  | 30.9 | Phase 4: Add memory, skills, decisions API surfaces to preload/index.ts | [x] |
+  | 30.10 | Phase 5: Extend ContextPackAssembler to call MemoryRetriever; memory items appear as ContextItem entries | [x] |
+  | 30.11 | Phase 5: Extend handoff generator with memoryWriteProposals (proposals only, no auto-absorb) | [x] |
+  | 30.12 | Phase 6: Create MemoryPanel.tsx with 4 tabs (Memories, Skills, Decisions, Lifecycle) | [x] |
+  | 30.13 | Phase 6: Register MemoryPanel in PanelWorkspace.tsx | [x] |
+  | 30.14 | Phase 7: Create memory-seed.ts — idempotent seed from docs/decisions.md and docs/idiosyncrasies.md | [x] |
+  | 30.15 | Phase 7: Wire seed to decisions:seedFromDocs IPC handler | [x] |
+  | 30.16 | Phase 8: Add scoped unit tests for redaction guard, lifecycle, retriever | [x] |
+  | 30.17 | Smoke test: `tsc --noEmit` — zero new errors from Component 20 files | [x] |
+
+  **Files created:**
+  - [`apps/desktop/src/lib/memory/memory-retriever.ts`](apps/desktop/src/lib/memory/memory-retriever.ts) — Tag/trigger/keyword retrieval engine
+  - [`apps/desktop/src/lib/memory/memory-lifecycle.ts`](apps/desktop/src/lib/memory/memory-lifecycle.ts) — Lifecycle management + privacy redaction guard
+  - [`apps/desktop/src/lib/memory/memory-seed.ts`](apps/desktop/src/lib/memory/memory-seed.ts) — Idempotent seed import from .md docs
+  - [`apps/desktop/src/lib/memory/index.ts`](apps/desktop/src/lib/memory/index.ts) — Barrel export
+  - [`apps/desktop/src/renderer/components/panels/MemoryPanel.tsx`](apps/desktop/src/renderer/components/panels/MemoryPanel.tsx) — 4-tab UI panel
+  - [`apps/desktop/src/lib/memory/memory-lifecycle.test.cjs`](apps/desktop/src/lib/memory/memory-lifecycle.test.cjs) — Scoped unit tests
+
+  **Files modified:**
+  - [`apps/desktop/src/lib/shared-types/entities.ts`](apps/desktop/src/lib/shared-types/entities.ts) — ADDITIVE: 9 new types (MemoryCategory, MemoryRevision, MemoryItem, SkillStep, SkillVersionEntry, Skill, DecisionRecord, MemoryRetrievalResult, MemoryLifecycleAction, MemoryDashboard)
+  - [`apps/desktop/src/lib/shared-types/ipc.ts`](apps/desktop/src/lib/shared-types/ipc.ts) — ADDITIVE: MemoryChannel, SkillsChannel, DecisionsChannel interfaces; extended VibeFlowAPI; expanded ActionType (5 new action types)
+  - [`apps/desktop/src/lib/storage/local-db.ts`](apps/desktop/src/lib/storage/local-db.ts) — ADDITIVE: 3 new tables (memory_items, skills, decision_records); ~20 CRUD methods
+  - [`apps/desktop/src/lib/approval/approval-engine.ts`](apps/desktop/src/lib/approval/approval-engine.ts) — ADDITIVE: 5 new ActionType values for Component 20
+  - [`apps/desktop/src/main/index.ts`](apps/desktop/src/main/index.ts) — ADDITIVE: ~25 new IPC handlers (memory:*, skills:*, decisions:*)
+  - [`apps/desktop/src/preload/index.ts`](apps/desktop/src/preload/index.ts) — ADDITIVE: memory, skills, decisions API surfaces
+  - [`apps/desktop/src/lib/project-intelligence/context-pack-assembler.ts`](apps/desktop/src/lib/project-intelligence/context-pack-assembler.ts) — EXTENDED: MemoryRetriever integration, memory items as ContextItem entries
+  - [`apps/desktop/src/lib/handoff/handoff-generator.ts`](apps/desktop/src/lib/handoff/handoff-generator.ts) — EXTENDED: memoryWriteProposals field, proposals section in handoff doc
+  - [`apps/desktop/src/renderer/components/PanelWorkspace.tsx`](apps/desktop/src/renderer/components/PanelWorkspace.tsx) — ADDITIVE: MemoryPanel registered
+
+  **Verification:**
+  - `tsc --noEmit` — zero new errors from Component 20 files (all errors are pre-existing in codebase)
+  - Scoped tests: 15+ tests for redaction guard, lifecycle transitions, keyword extraction

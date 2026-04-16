@@ -18,6 +18,33 @@ interface ProjectScreenProps {
   hideChrome?: boolean;
 }
 
+type SubScreen = null | 'ssh' | 'devops' | 'mcp';
+
+function NavButton({ icon, label, active, onClick }: { icon: string; label: string; active?: boolean; onClick: () => void }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      title={label}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 7,
+        padding: '6px 10px', width: '100%',
+        backgroundColor: active ? C.accentBg : hover ? C.bg3 : 'transparent',
+        border: `1px solid ${active ? C.accentBg2 : 'transparent'}`,
+        borderRadius: R.md, cursor: 'pointer',
+        color: active ? C.accent : hover ? C.text2 : C.text3,
+        fontSize: 12, fontFamily: 'inherit',
+        textAlign: 'left', transition: 'all 0.12s',
+      }}
+    >
+      <span style={{ fontSize: 14 }}>{icon}</span>
+      <span>{label}</span>
+    </button>
+  );
+}
+
 export default function ProjectScreen({ project, email, currentMode, onBack, onOpenModes, hideChrome = false }: ProjectScreenProps) {
   const [conversations, setConversations] = useState<ConversationThread[]>([]);
   const [activeConv, setActiveConv] = useState<ConversationThread | null>(null);

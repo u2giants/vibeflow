@@ -1281,3 +1281,135 @@ export interface WatchDashboard {
   recentSelfHealingActions: SelfHealingAction[];
   environmentHealth: Record<string, CapabilityHealth>; // envId -> health
 }
+
+// ── Component 20: Memory, Skills, and Decision Knowledge ──
+
+/** Categories of memory items. */
+export type MemoryCategory =
+  | 'prior-fix'
+  | 'architecture-rule'
+  | 'deployment-rule'
+  | 'auth-identity'
+  | 'provider-gotcha'
+  | 'style-pattern'
+  | 'incident-postmortem'
+  | 'idiosyncrasy'
+  | 'fragile-area'
+  | 'coding-standard'
+  | 'release-rule'
+  | 'skill-runbook';
+
+/** A single revision entry in a memory item's history. */
+export interface MemoryRevision {
+  revisionNumber: number;
+  changedAt: string;
+  changedBy: string; // Mode slug or 'operator'
+  changeSummary: string;
+  conversationId: string | null;
+}
+
+/** A single memory item — a unit of retained project intelligence. */
+export interface MemoryItem {
+  id: string;
+  projectId: string;
+  category: MemoryCategory;
+  title: string;
+  scope: string; // plain English: what subsystem / area this covers
+  tags: string[]; // for trigger matching
+  description: string; // structured facts
+  freeFormNotes: string | null;
+  examples: string[]; // concrete examples of the memory in action
+  triggerConditions: string[]; // when this memory should be loaded
+  freshnessNotes: string | null; // staleness indicator
+  sourceMaterial: string | null; // where this came from (conversation ID, handoff, manual)
+  owner: string | null; // Mode slug or 'operator'
+  reviewer: string | null; // who last reviewed
+  lastReviewedAt: string | null;
+  revisionHistory: MemoryRevision[];
+  isActive: boolean; // false = retired
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A single step within a skill runbook. */
+export interface SkillStep {
+  order: number;
+  instruction: string;
+  checkCondition: string | null; // optional guard
+  fallbackAction: string | null;
+}
+
+/** A version history entry for a skill. */
+export interface SkillVersionEntry {
+  version: number;
+  changedAt: string;
+  changedBy: string;
+  changeSummary: string;
+}
+
+/** A skill — an executable runbook or structured procedure. */
+export interface Skill {
+  id: string;
+  projectId: string;
+  title: string;
+  description: string; // plain English explanation
+  category: MemoryCategory; // typically 'skill-runbook'
+  steps: SkillStep[];
+  triggerConditions: string[]; // when this skill should be suggested
+  version: number;
+  versionHistory: SkillVersionEntry[];
+  owner: string | null;
+  reviewer: string | null;
+  lastReviewedAt: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A retained decision — the structured, queryable version of docs/decisions.md entries. */
+export interface DecisionRecord {
+  id: string;
+  projectId: string;
+  decisionNumber: number; // maps to "Decision N" in docs/decisions.md
+  title: string;
+  date: string;
+  decidedBy: string; // e.g., "Orchestrator + Albert"
+  decision: string; // what was decided
+  alternativesConsidered: Array<{ option: string; reason: string }>;
+  rationale: string;
+  consequences: string[];
+  relatedFiles: string[]; // file paths referenced
+  tags: string[];
+  isActive: boolean; // false = superseded
+  supersededBy: string | null; // ID of the decision that replaced this
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Result of a memory retrieval query. */
+export interface MemoryRetrievalResult {
+  items: MemoryItem[];
+  skills: Skill[];
+  decisions: DecisionRecord[];
+  retrievalReason: string; // why these were returned
+  triggerMatch: string; // what triggered the retrieval
+  totalTokenEstimate: number; // rough token count for injection
+}
+
+/** Memory lifecycle state for batch operations. */
+export type MemoryLifecycleAction = 'write' | 'evict' | 'summarize' | 'retire' | 'reactivate';
+
+/** Memory dashboard summary. */
+export interface MemoryDashboard {
+  totalMemories: number;
+  memoriesByCategory: Record<string, number>;
+  activeMemories: number;
+  retiredMemories: number;
+  staleMemories: number; // not reviewed in >30 days
+  totalSkills: number;
+  activeSkills: number;
+  totalDecisions: number;
+  activeDecisions: number;
+  lastWriteAt: string | null;
+  lastReviewAt: string | null;
+}

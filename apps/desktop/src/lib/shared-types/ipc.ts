@@ -1,6 +1,6 @@
 /** IPC message types for Electron main ↔ renderer communication. */
 
-import type { Project, SyncStatus, Account, Mode, OpenRouterModel, ConversationThread, Message, ProjectDevOpsConfig, DeployRun, PlanRecord, RoleAssignment, OrchestrationState, Capability, CapabilityHealth, CapabilityInvocationLog, McpServerConfig, McpToolInfo, McpInvocationResult, ProjectIndex, FileRecord, SymbolRecord, ReferenceEdge, RouteRecord, ApiEndpointRecord, JobRecord, ServiceNode, ServiceEdge, ConfigVariableRecord, ContextPackEnriched, ContextItem, ContextWarning, ContextDashboard, DetectedStack, ImpactAnalysis, EvidenceItem, WorkspaceRun, PatchProposal, FileEdit, SemanticChangeGroup, Checkpoint, ChangeSet, DuplicateWarning, PatternReuseSuggestion, AuditRecord, RollbackPlan, RuntimeExecution, BrowserSession, EvidenceRecord, BeforeAfterComparison, VerificationRun, VerificationCheck, VerificationBundle, AcceptanceCriteria, SecretRecord, MigrationPlan, MigrationRiskClass, MigrationPreview, DatabaseSchemaInfo, MigrationHistoryEntry, Environment, DeployWorkflow, DeployStep, DriftReport, ServiceControlPlane, Incident, WatchSession, AnomalyEvent, SelfHealingAction, WatchDashboard } from './entities';
+import type { Project, SyncStatus, Account, Mode, OpenRouterModel, ConversationThread, Message, ProjectDevOpsConfig, DeployRun, SshTarget, McpConnection, PlanRecord, RoleAssignment, OrchestrationState, Capability, CapabilityHealth, CapabilityInvocationLog, McpServerConfig, McpToolInfo, McpInvocationResult, ProjectIndex, FileRecord, SymbolRecord, ReferenceEdge, RouteRecord, ApiEndpointRecord, JobRecord, ServiceNode, ServiceEdge, ConfigVariableRecord, ContextPackEnriched, ContextItem, ContextWarning, ContextDashboard, DetectedStack, ImpactAnalysis, EvidenceItem, WorkspaceRun, PatchProposal, FileEdit, SemanticChangeGroup, Checkpoint, ChangeSet, DuplicateWarning, PatternReuseSuggestion, AuditRecord, RollbackPlan, RuntimeExecution, BrowserSession, EvidenceRecord, BeforeAfterComparison, VerificationRun, VerificationCheck, VerificationBundle, AcceptanceCriteria, SecretRecord, MigrationPlan, MigrationRiskClass, MigrationPreview, DatabaseSchemaInfo, MigrationHistoryEntry, Environment, DeployWorkflow, DeployStep, DriftReport, ServiceControlPlane, Incident, WatchSession, AnomalyEvent, SelfHealingAction, WatchDashboard, MemoryItem, MemoryCategory, MemoryRetrievalResult, MemoryDashboard, Skill, DecisionRecord } from './entities';
 
 // ── Auth IPC ──────────────────────────────────────────────────────
 
@@ -360,7 +360,13 @@ export type ActionType =
   | 'watch:stop'
   | 'self-heal:restart'
   | 'self-heal:rerun-check'
-  | 'self-heal:disable-probe';
+  | 'self-heal:disable-probe'
+  // Component 20: memory and decision actions
+  | 'memory:write'
+  | 'memory:retire'
+  | 'memory:summarize'
+  | 'skill:invoke'
+  | 'decision:record';
 
 export interface ActionRequest {
   id: string;
@@ -468,6 +474,41 @@ export interface UpdaterChannel {
   onDownloadProgress: (callback: (progress: { percent: number }) => void) => void;
   onUpdateDownloaded: (callback: (info: { version: string }) => void) => void;
   removeListeners: () => void;
+}
+
+// ── SSH Targets IPC ────────────────────────────────────────────────
+
+export interface CreateSshTargetArgs {
+  projectId: string | null;
+  name: string;
+  hostname: string;
+  username: string;
+  port: number;
+  identityFile: string | null;
+}
+
+export interface SshTargetsApi {
+  list: (projectId: string | null) => Promise<SshTarget[]>;
+  save: (args: CreateSshTargetArgs) => Promise<SshTarget>;
+  delete: (id: string) => Promise<{ success: boolean }>;
+}
+
+// ── MCP Connections IPC (remote-style) ──────────────────────────────
+
+export interface CreateMcpConnectionArgs {
+  projectId: string | null;
+  name: string;
+  command: string;
+  args: string[];
+  enabled: boolean;
+  scope: 'global' | 'project';
+}
+
+export interface McpApi {
+  list: (projectId: string | null) => Promise<McpConnection[]>;
+  create: (args: CreateMcpConnectionArgs) => Promise<McpConnection>;
+  update: (id: string, updates: Partial<CreateMcpConnectionArgs>) => Promise<{ success: boolean }>;
+  delete: (id: string) => Promise<{ success: boolean }>;
 }
 
 // ── Orchestrator IPC ────────────────────────────────────────────────
@@ -808,6 +849,45 @@ export interface SelfHealingChannel {
   removeListeners: () => void;
 }
 
+// ── Component 20: Memory IPC ──────────────────────────────────────
+
+export interface MemoryChannel {
+  list: (projectId: string, filters?: { category?: MemoryCategory; activeOnly?: boolean }) => Promise<MemoryItem[]>;
+  get: (id: string) => Promise<MemoryItem | null>;
+  search: (projectId: string, query: { tags?: string[]; category?: MemoryCategory; triggerMatch?: string }) => Promise<MemoryRetrievalResult>;
+  create: (item: Omit<MemoryItem, 'id' | 'createdAt' | 'updatedAt'>) => Promise<MemoryItem>;
+  update: (id: string, updates: Partial<MemoryItem>) => Promise<MemoryItem>;
+  retire: (id: string, reason: string) => Promise<{ success: boolean }>;
+  reactivate: (id: string) => Promise<{ success: boolean }>;
+  getStale: (projectId: string, daysThreshold?: number) => Promise<MemoryItem[]>;
+  getDashboard: (projectId: string) => Promise<MemoryDashboard>;
+  evictStale: (projectId: string, cutoffDate: string) => Promise<number>;
+  summarizeGroup: (projectId: string, category: MemoryCategory) => Promise<MemoryItem>;
+}
+
+// ── Component 20: Skills IPC ──────────────────────────────────────
+
+export interface SkillsChannel {
+  list: (projectId: string, activeOnly?: boolean) => Promise<Skill[]>;
+  get: (id: string) => Promise<Skill | null>;
+  create: (skill: Omit<Skill, 'id' | 'createdAt' | 'updatedAt' | 'version'>) => Promise<Skill>;
+  update: (id: string, updates: Partial<Skill>) => Promise<Skill>;
+  invoke: (id: string) => Promise<Skill>;
+  retire: (id: string) => Promise<{ success: boolean }>;
+}
+
+// ── Component 20: Decisions IPC ───────────────────────────────────
+
+export interface DecisionsChannel {
+  list: (projectId: string, activeOnly?: boolean) => Promise<DecisionRecord[]>;
+  get: (id: string) => Promise<DecisionRecord | null>;
+  getByNumber: (projectId: string, number: number) => Promise<DecisionRecord | null>;
+  create: (record: Omit<DecisionRecord, 'id' | 'createdAt' | 'updatedAt'>) => Promise<DecisionRecord>;
+  update: (id: string, updates: Partial<DecisionRecord>) => Promise<DecisionRecord>;
+  supersede: (id: string, supersededBy: string) => Promise<{ success: boolean }>;
+  seedFromDocs: (projectId: string) => Promise<{ decisions: number; memories: number }>;
+}
+
 // ── Full window API ──────────────────────────────────────────────
 
 export interface VibeFlowAPI {
@@ -854,4 +934,10 @@ export interface VibeFlowAPI {
   anomaly: AnomalyChannel;
   incident: IncidentChannel;
   selfHealing: SelfHealingChannel;
+  // Component 20: Memory, Skills, Decisions
+  memory: MemoryChannel;
+  skills: SkillsChannel;
+  decisions: DecisionsChannel;
+  // SSH Targets (from remote merge)
+  sshTargets: SshTargetsApi;
 }

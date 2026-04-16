@@ -6,10 +6,11 @@
 import type {
   ContextPackEnriched, ContextItem, ContextWarning,
   FileRecord, SymbolRecord, RouteRecord, ServiceNode,
-  ConfigVariableRecord,
+  ConfigVariableRecord, MemoryItem, Skill, DecisionRecord,
 } from '../shared-types';
 import type { LocalDb } from '../storage/local-db';
 import { ImpactAnalyzer } from './impact-analyzer';
+import { MemoryRetriever } from '../memory/memory-retriever';
 
 export interface ContextPackOptions {
   tokenBudget?: number;
@@ -18,6 +19,12 @@ export interface ContextPackOptions {
   includeRoutes?: boolean;
   includeServices?: boolean;
   includeConfig?: boolean;
+  /** Include memory retrieval results in the context pack. */
+  includeMemory?: boolean;
+  /** Mission title for memory retrieval matching. */
+  missionTitle?: string;
+  /** Operator request text for memory retrieval matching. */
+  operatorRequest?: string;
 }
 
 const DEFAULT_TOKEN_BUDGET = 100_000;
@@ -169,6 +176,49 @@ export class ContextPackAssembler {
       });
     }
 
+    // ── Component 20: Memory retrieval ──
+    if (options?.includeMemory !== false && options?.missionTitle) {
+      const retriever = new MemoryRetriever(this.db, this.projectId);
+      const retrievalResult = retriever.retrieveForMission(
+        missionId,
+        options.missionTitle,
+        options.operatorRequest ?? ''
+      );
+
+      // Add memory items as ContextItem entries
+      for (const mem of retrievalResult.items) {
+        const staleness = this.getMemoryStaleness(mem);
+        items.push({
+          id: `item-${missionId}-mem-${mem.id}`,
+          contextPackId: '',
+          type: 'memory-pack',
+          referenceId: mem.id,
+          title: mem.title,
+          summary: mem.description.slice(0, 200) + (mem.description.length > 200 ? '...' : ''),
+          inclusionReason: `Memory retrieval: ${retrievalResult.retrievalReason}`,
+          source: 'auto',
+          freshness: staleness,
+          pinned: false,
+        });
+      }
+
+      // Add decisions as ContextItem entries
+      for (const dec of retrievalResult.decisions) {
+        items.push({
+          id: `item-${missionId}-dec-${dec.id}`,
+          contextPackId: '',
+          type: 'decision',
+          referenceId: dec.id,
+          title: `Decision ${dec.decisionNumber}: ${dec.title}`,
+          summary: dec.decision.slice(0, 200) + (dec.decision.length > 200 ? '...' : ''),
+          inclusionReason: `Decision knowledge: matched tags for mission`,
+          source: 'auto',
+          freshness: dec.isActive ? 'fresh' : 'stale',
+          pinned: false,
+        });
+      }
+    }
+
     // Estimate token usage (rough: ~100 tokens per item)
     const tokenUsage = items.length * 100;
     if (tokenUsage > tokenBudget) {
@@ -278,5 +328,13 @@ export class ContextPackAssembler {
       tokenBudget: DEFAULT_TOKEN_BUDGET,
       retrievalSource: 'local-index',
     };
+  }
+
+  /** Determine memory freshness based on last reviewed date. */
+  private getMemoryStaleness(mem: MemoryItem): 'fresh' | 'stale' | 'unknown' {
+    if (!mem.lastReviewedAt) return 'unknown';
+    const daysSinceReview = (Date.now() - new Date(mem.lastReviewedAt).getTime()) / 86400000;
+    if (daysSinceReview > 30) return 'stale';
+    return 'fresh';
   }
 }

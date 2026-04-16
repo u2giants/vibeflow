@@ -14,7 +14,12 @@ const HEALTH_COLORS: Record<string, string> = {
 
 type McpScreenView = 'list' | 'add' | 'edit';
 
-export default function McpScreen() {
+interface McpScreenProps {
+  projectId?: string | null;
+  onBack?: () => void;
+}
+
+export default function McpScreen({ projectId = null, onBack }: McpScreenProps) {
   const [servers, setServers] = useState<McpServerConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<McpScreenView>('list');
