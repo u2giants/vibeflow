@@ -1,0 +1,88 @@
+name: Build & Release
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Bump patch version
+        shell: bash
+        run: |
+          cd apps/desktop
+          npm version patch --no-git-tag-version
+          VERSION=$(node -e "console.log(require('./package.json').version)")
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Commit version bump
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add apps/desktop/package.json
+          git commit -m "chore: bump version to ${{ env.VERSION }} [skip ci]"
+          git push
+
+      - name: Install desktop dependencies
+        working-directory: apps/desktop
+        run: npm install
+
+      - name: Write .env for packaged build
+        shell: bash
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          echo "VITE_SUPABASE_URL=$VITE_SUPABASE_URL" > apps/desktop/.env
+          echo "VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY" >> apps/desktop/.env
+
+      - name: Inject build metadata
+        env:
+          RELEASE_CHANNEL: stable
+        run: node scripts/inject-build-metadata.js
+
+      - name: Build
+        working-directory: apps/desktop
+        run: npx electron-vite build
+
+      - name: Package (.exe)
+        working-directory: apps/desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: npx electron-builder --publish never
+
+      - name: Publish to "Latest Build" release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-build
+          name: "Latest Build"
+          prerelease: true
+          body: |
+            Auto-built from the latest code on master.
+            Version: ${{ env.VERSION }}
+            Commit: ${{ github.sha }}
+
+            **Download VibeFlow-Setup.exe below and run it to install.**
+          files: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/latest.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

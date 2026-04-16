@@ -113,13 +113,15 @@ export class LocalDb {
       fs.mkdirSync(dir, { recursive: true });
     }
 
-    // Initialize sql.js
-    // __dirname in bundled main process is apps/desktop/out/main
-    // node_modules is at repo root: D:\repos\vibeflow\node_modules
-    // Need to go up 4 levels: out/main -> out -> desktop -> apps -> vibeflow
-    const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
+    // Initialize sql.js — locate the .wasm file correctly in both dev and packaged builds.
+    // In dev:       __dirname = apps/desktop/out/main  → 4 levels up = repo root
+    // In packaged:  __dirname = …/app.asar/out/main   → 2 levels up = asar root (node_modules lives there)
+    const isPackaged = __dirname.includes('app.asar');
+    const wasmRoot = isPackaged
+      ? path.resolve(__dirname, '..', '..')
+      : path.resolve(__dirname, '..', '..', '..', '..');
     this.sqlJsModule = await initSqlJs({
-      locateFile: (file: string) => path.join(repoRoot, 'node_modules', 'sql.js', 'dist', file),
+      locateFile: (file: string) => path.join(wasmRoot, 'node_modules', 'sql.js', 'dist', file),
     });
 
     // Load existing database or create new one
@@ -983,6 +985,14 @@ export class LocalDb {
     for (const mode of modes) {
       this.upsertMode({ ...mode, createdAt: now, updatedAt: now } as Mode);
     }
+  }
+
+  migrateDefaultModelId(oldId: string, newId: string): void {
+    this.db!.run(
+      'UPDATE modes SET model_id = ?, updated_at = ? WHERE model_id = ? AND is_built_in = 1',
+      [newId, new Date().toISOString(), oldId]
+    );
+    this.save();
   }
 
   private rowToMode(row: ModeRow): Mode {

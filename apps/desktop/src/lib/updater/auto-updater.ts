@@ -11,6 +11,7 @@ export function initAutoUpdater(mainWindow: BrowserWindow): void {
   // Configure for GitHub Releases
   autoUpdater.autoDownload = false; // Don't auto-download — let user decide
   autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.allowPrerelease = true; // Our "Latest Build" releases are pre-releases
 
   autoUpdater.on('checking-for-update', () => {
     console.log('[updater] Checking for updates...');

@@ -1,12 +1,14 @@
 appId: app.vibeflow.desktop
+electronVersion: "33.4.11"
 productName: VibeFlow
 directories:
   output: release
   buildResources: build
 files:
-  - dist/**/*
+  - out/**/*
   - node_modules/**/*
   - package.json
+  - .env
 npmRebuild: true
 nativeRebuilder: sequential
 asarUnpack:
@@ -26,4 +28,4 @@ publish:
   provider: github
   owner: u2giants
   repo: vibeflow
-  releaseType: release
+  releaseType: prerelease

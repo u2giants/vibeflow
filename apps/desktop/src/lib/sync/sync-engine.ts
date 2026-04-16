@@ -97,14 +97,8 @@ export class SyncEngine {
 
   async syncAll(): Promise<void> {
     this.setStatus('syncing');
-
-    // Sync projects
     await this.syncProjects();
-
-    // Sync conversations
     await this.syncConversations();
-
-    // Sync messages
     await this.syncMessages();
 
     // Sync new domain objects

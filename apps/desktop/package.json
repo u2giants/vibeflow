@@ -1,6 +1,6 @@
 {
   "name": "@vibeflow/desktop",
-  "version": "0.1.0",
+  "version": "0.1.5",
   "private": true,
   "main": "out/main/index.js",
   "scripts": {
@@ -26,7 +26,7 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
-    "electron": "^33.2.0",
+    "electron": "33.4.11",
     "electron-builder": "^25.1.8",
     "electron-vite": "^2.3.0",
     "playwright": "^1.49.0",

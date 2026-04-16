@@ -1,12 +1,12 @@
-/** ProjectScreen — project wrapper with conversation list sidebar. */
-
 import { useState, useEffect } from 'react';
 import type { Project, ConversationThread, Mode } from '../../lib/shared-types';
 import ConversationScreen from './ConversationScreen';
 import SshScreen from './SshScreen';
 import DevOpsScreen from './DevOpsScreen';
+import McpScreen from './McpScreen';
 import TopBar from '../components/TopBar';
 import BottomBar from '../components/BottomBar';
+import { C, R } from '../theme';
 
 interface ProjectScreenProps {
   project: Project;
@@ -20,184 +20,174 @@ interface ProjectScreenProps {
 
 export default function ProjectScreen({ project, email, currentMode, onBack, onOpenModes, hideChrome = false }: ProjectScreenProps) {
   const [conversations, setConversations] = useState<ConversationThread[]>([]);
-  const [activeConversation, setActiveConversation] = useState<ConversationThread | null>(null);
+  const [activeConv, setActiveConv] = useState<ConversationThread | null>(null);
   const [openRouterConnected, setOpenRouterConnected] = useState(false);
-  const [showSsh, setShowSsh] = useState(false);
-  const [showDevOps, setShowDevOps] = useState(false);
+  const [sub, setSub] = useState<SubScreen>(null);
+
+  const refreshOpenRouterStatus = async () => {
+    const { hasKey } = await window.vibeflow.openrouter.getApiKey();
+    if (hasKey) {
+      const test = await window.vibeflow.openrouter.testConnection();
+      setOpenRouterConnected(test.success);
+    } else {
+      setOpenRouterConnected(false);
+    }
+  };
+
+  useEffect(() => { refreshOpenRouterStatus(); }, []);
 
   useEffect(() => {
-    window.vibeflow.openrouter.getApiKey().then((r) => setOpenRouterConnected(r.hasKey));
-  }, []);
-
-  useEffect(() => {
-    window.vibeflow.conversations.list(project.id).then((convs) => {
+    window.vibeflow.conversations.list(project.id).then(convs => {
       setConversations(convs);
-      if (convs.length > 0 && !activeConversation) {
-        setActiveConversation(convs[0]);
-      }
+      if (convs.length > 0 && !activeConv) setActiveConv(convs[0]);
     });
   }, [project.id]);
 
-  const handleNewConversation = async () => {
+  const newConversation = async () => {
     const conv = await window.vibeflow.conversations.create({
       projectId: project.id,
-      title: `Conversation ${conversations.length + 1}`,
+      title: `Chat ${conversations.length + 1}`,
     });
     setConversations(prev => [conv, ...prev]);
-    setActiveConversation(conv);
+    setActiveConv(conv);
+    setSub(null);
   };
+
+  const hue = (project.name.charCodeAt(0) * 37 + project.name.charCodeAt(Math.min(1, project.name.length - 1)) * 13) % 360;
+  const projColor = project.isSelfMaintenance ? C.yellow : `hsl(${hue},60%,65%)`;
+  const projBg = project.isSelfMaintenance ? C.yellowBg : `hsla(${hue},60%,60%,0.12)`;
+  const initials = project.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       {!hideChrome && <TopBar email={email} />}
 
-      {/* Self-maintenance banner */}
       {project.isSelfMaintenance && (
         <div style={{
-          padding: '8px 16px',
-          backgroundColor: '#fff3cd',
-          color: '#856404',
-          borderBottom: '1px solid #ffc107',
-          fontSize: 13,
-          fontWeight: 500,
+          padding: '6px 16px', flexShrink: 0,
+          backgroundColor: C.yellowBg, borderBottom: `1px solid ${C.yellowBd}`,
+          color: C.yellow, fontSize: 12, fontWeight: 500,
+          display: 'flex', alignItems: 'center', gap: 6,
         }}>
-          🔧 Self-Maintenance Mode — You are working on VibeFlow itself. All file changes require your approval.
+          <span>⚡</span> Self-Maintenance Mode — changes to VibeFlow source require approval
         </div>
       )}
 
-      {/* Main content area */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
-        {/* Conversation sidebar */}
+        {/* Sidebar */}
         <div style={{
-          width: 220,
-          backgroundColor: '#0d1117',
-          borderRight: '1px solid #30363d',
-          display: 'flex',
-          flexDirection: 'column',
+          width: 220, flexShrink: 0,
+          backgroundColor: C.bg0,
+          borderRight: `1px solid ${C.border}`,
+          display: 'flex', flexDirection: 'column',
         }}>
-          {/* Back button and project name */}
-          <div style={{ padding: 12, borderBottom: '1px solid #30363d' }}>
-            <button
-              onClick={onBack}
-              style={{
-                padding: '4px 8px',
-                backgroundColor: 'transparent',
-                color: '#8b949e',
-                border: '1px solid #30363d',
-                borderRadius: 4,
-                cursor: 'pointer',
-                fontSize: 12,
-                marginBottom: 8,
-                width: '100%',
-              }}
-            >
-              ← Back to Projects
+          {/* Project header */}
+          <div style={{ padding: '12px 12px 8px', borderBottom: `1px solid ${C.border}` }}>
+            <button onClick={onBack} style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              padding: '5px 8px', width: '100%',
+              backgroundColor: 'transparent', border: `1px solid ${C.border}`,
+              borderRadius: R.md, cursor: 'pointer',
+              color: C.text3, fontSize: 11, fontFamily: 'inherit', marginBottom: 10,
+            }}>
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              All projects
             </button>
-            <div style={{ fontSize: 14, color: '#c9d1d9', fontWeight: 600 }}>
-              {project.isSelfMaintenance ? '🔧 ' : ''}{project.name}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+              <div style={{
+                width: 30, height: 30, borderRadius: R.md,
+                backgroundColor: projBg, color: projColor,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: project.isSelfMaintenance ? 14 : 11, fontWeight: 700, flexShrink: 0,
+              }}>
+                {project.isSelfMaintenance ? '⚡' : initials}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ color: C.text1, fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {project.name}
+                </div>
+              </div>
             </div>
-            <button
-              onClick={() => setShowSsh(true)}
-              style={{
-                marginTop: 8,
-                padding: '4px 8px',
-                backgroundColor: '#1a2332',
-                color: '#58a6ff',
-                border: '1px solid #30363d',
-                borderRadius: 4,
-                cursor: 'pointer',
-                fontSize: 12,
-                width: '100%',
-              }}
-            >
-              🔑 SSH
-            </button>
-            <button
-              onClick={() => setShowDevOps(true)}
-              style={{
-                marginTop: 4,
-                padding: '4px 8px',
-                backgroundColor: '#1a2332',
-                color: '#58a6ff',
-                border: '1px solid #30363d',
-                borderRadius: 4,
-                cursor: 'pointer',
-                fontSize: 12,
-                width: '100%',
-              }}
-            >
-              ⚙️ DevOps
-            </button>
+
+            {/* Sub-nav */}
+            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <NavButton icon="🔑" label="SSH" active={sub === 'ssh'} onClick={() => setSub(sub === 'ssh' ? null : 'ssh')} />
+              <NavButton icon="⚙️" label="DevOps" active={sub === 'devops'} onClick={() => setSub(sub === 'devops' ? null : 'devops')} />
+              <NavButton icon="🔌" label="MCP" active={sub === 'mcp'} onClick={() => setSub(sub === 'mcp' ? null : 'mcp')} />
+              <NavButton icon="🎛" label="Modes" active={false} onClick={onOpenModes} />
+            </div>
           </div>
 
           {/* Conversation list */}
-          <div style={{ flex: 1, overflow: 'auto', padding: 8 }}>
-            <div style={{ fontSize: 11, color: '#484f58', textTransform: 'uppercase', padding: '4px 8px' }}>
+          <div style={{ flex: 1, overflow: 'auto', padding: '8px 8px 4px' }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: C.text3, letterSpacing: '0.08em', textTransform: 'uppercase', padding: '4px 6px', marginBottom: 2 }}>
               Conversations
             </div>
-            {conversations.map((conv) => (
+            {conversations.map(conv => (
               <div
                 key={conv.id}
-                onClick={() => setActiveConversation(conv)}
+                onClick={() => { setActiveConv(conv); setSub(null); }}
                 style={{
-                  padding: '8px 12px',
-                  marginBottom: 2,
-                  borderRadius: 4,
-                  cursor: 'pointer',
-                  fontSize: 13,
-                  color: activeConversation?.id === conv.id ? '#fff' : '#8b949e',
-                  backgroundColor: activeConversation?.id === conv.id ? '#238636' : 'transparent',
+                  padding: '7px 10px', borderRadius: R.md, cursor: 'pointer',
+                  fontSize: 12, marginBottom: 1,
+                  color: activeConv?.id === conv.id && !sub ? C.text1 : C.text3,
+                  backgroundColor: activeConv?.id === conv.id && !sub ? C.bg4 : 'transparent',
+                  fontWeight: activeConv?.id === conv.id && !sub ? 500 : 400,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  transition: 'background-color 0.1s',
                 }}
               >
-                {conv.title}
+                💬 {conv.title}
               </div>
             ))}
+            {conversations.length === 0 && (
+              <div style={{ padding: '8px 6px', color: C.text3, fontSize: 11 }}>
+                No conversations yet
+              </div>
+            )}
           </div>
 
-          {/* New conversation button */}
-          <div style={{ padding: 8, borderTop: '1px solid #30363d' }}>
-            <button
-              onClick={handleNewConversation}
-              style={{
-                width: '100%',
-                padding: '8px 12px',
-                backgroundColor: '#238636',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 4,
-                cursor: 'pointer',
-                fontSize: 13,
-              }}
-            >
-              + New Conversation
-            </button>
+          {/* New conversation */}
+          <div style={{ padding: 8, borderTop: `1px solid ${C.border}` }}>
+            <button onClick={newConversation} style={{
+              width: '100%', padding: '8px 10px',
+              backgroundColor: C.accent, color: '#fff',
+              border: 'none', borderRadius: R.md, cursor: 'pointer',
+              fontSize: 12, fontWeight: 500, fontFamily: 'inherit',
+            }}>+ New Conversation</button>
           </div>
         </div>
 
-        {/* Main conversation area */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          {showDevOps ? (
-            <DevOpsScreen projectId={project.id} onBack={() => setShowDevOps(false)} />
-          ) : showSsh ? (
-            <SshScreen onBack={() => setShowSsh(false)} />
-          ) : activeConversation ? (
+        {/* Main area */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
+          {sub === 'devops' ? (
+            <DevOpsScreen projectId={project.id} onBack={() => setSub(null)} />
+          ) : sub === 'mcp' ? (
+            <McpScreen projectId={project.id} onBack={() => setSub(null)} />
+          ) : sub === 'ssh' ? (
+            <SshScreen onBack={() => setSub(null)} projectId={project.id} />
+          ) : activeConv ? (
             <ConversationScreen
-              conversation={activeConversation}
+              conversation={activeConv}
               currentMode={currentMode}
-              onNewConversation={handleNewConversation}
+              onNewConversation={newConversation}
               isSelfMaintenance={project.isSelfMaintenance}
             />
           ) : (
             <div style={{
-              flex: 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: '#161b22',
-              color: '#8b949e',
-              fontSize: 16,
+              flex: 1, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center',
+              backgroundColor: C.bg1, color: C.text3, gap: 12,
             }}>
-              Select or create a conversation to start
+              <div style={{ fontSize: 40 }}>💬</div>
+              <div style={{ fontSize: 14, fontWeight: 500, color: C.text2 }}>No conversation selected</div>
+              <button onClick={newConversation} style={{
+                padding: '8px 20px', backgroundColor: C.accent, color: '#fff',
+                border: 'none', borderRadius: R.lg, cursor: 'pointer',
+                fontSize: 13, fontWeight: 500, fontFamily: 'inherit',
+              }}>Start a conversation</button>
             </div>
           )}
         </div>

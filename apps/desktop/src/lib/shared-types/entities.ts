@@ -120,6 +120,35 @@ export interface OpenRouterModel {
   supportsTools: boolean;
 }
 
+// ── SSH Targets ─────────────────────────────────────────────────────
+
+export interface SshTarget {
+  id: string;
+  userId: string;
+  projectId: string | null;
+  name: string;
+  hostname: string;
+  username: string;
+  port: number;
+  identityFile: string | null;
+  createdAt: string;
+}
+
+// ── MCP Connections ──────────────────────────────────────────────────
+
+export interface McpConnection {
+  id: string;
+  userId: string;
+  projectId: string | null;
+  name: string;
+  command: string;
+  args: string[];
+  enabled: boolean;
+  scope: 'global' | 'project';
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ── DevOps ─────────────────────────────────────────────────────
 
 export interface ProjectDevOpsConfig {

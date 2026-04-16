@@ -9,13 +9,17 @@
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 // In dev: repo root is 4 levels up from out/main/index.js → apps/desktop/out/main
-// In packaged: use app.getAppPath() instead (handled below after app is ready)
-dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
+// In packaged: __dirname is inside app.asar/out/main, so ../../.env = app.asar/.env
+const isPackaged = __dirname.includes('app.asar');
+const envPath = isPackaged
+  ? path.resolve(__dirname, '../../.env')
+  : path.resolve(__dirname, '../../../../.env');
+dotenv.config({ path: envPath });
 
 // Electron must be imported via require to work correctly with electron-vite externalization
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const electron = require('electron');
-const { app, BrowserWindow, ipcMain, shell } = electron;
+const { app, BrowserWindow, ipcMain, shell, dialog } = electron;
 type IpcMainInvokeEvent = import('electron').IpcMainInvokeEvent;
 import * as http from 'http';
 import * as url from 'url';
@@ -29,9 +33,12 @@ import type {
   CreateProjectArgs,
   UpdateModeSoulArgs,
   UpdateModeModelArgs,
+  UpdateModeConfigArgs,
   CreateConversationArgs,
   SendMessageArgs,
   Message,
+  CreateSshTargetArgs,
+  CreateMcpConnectionArgs,
 } from '../lib/shared-types';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { runOrchestrator } from '../lib/orchestrator/orchestrator';
@@ -81,6 +88,7 @@ import type { WatchStartSessionArgs, SelfHealingExecuteArgs, Incident, AnomalyEv
 const KEYTAR_SERVICE = 'vibeflow';
 const KEYTAR_OPENROUTER_KEY = 'openrouter-api-key';
 const KEYTAR_GITHUB_TOKEN = 'github-token';
+const KEYTAR_VIBEFLOW_REPO_PATH = 'vibeflow-repo-path';
 const KEYTAR_COOLIFY_KEY = 'coolify-api-key';
 
 let mainWindow: InstanceType<typeof BrowserWindow> | null = null;
@@ -399,6 +407,17 @@ app.whenReady().then(async () => {
     }
   );
 
+  ipcMain.handle(
+    'auth:signInWithEmail',
+    async (_event: IpcMainInvokeEvent, email: string, password: string): Promise<AuthSignInResult> => {
+      const client = getSupabaseClient();
+      if (!client) return { success: false, error: 'Supabase not configured.' };
+      const { data, error } = await client.auth.signInWithPassword({ email, password });
+      if (error) return { success: false, error: error.message };
+      return { success: true, account: { email: data.user?.email ?? email } };
+    }
+  );
+
   ipcMain.handle('auth:signOut', async (): Promise<void> => {
     const client = getSupabaseClient();
     if (client) {
@@ -420,7 +439,6 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('projects:list', async (): Promise<unknown[]> => {
     if (!localDb) return [];
-    // TODO: Get userId from session
     return localDb.listProjects('');
   });
 
@@ -429,9 +447,10 @@ app.whenReady().then(async () => {
     async (_event: IpcMainInvokeEvent, args: CreateProjectArgs): Promise<unknown> => {
       if (!localDb) throw new Error('Local DB not initialized');
 
+      const userId = await getCurrentUserId();
       const project = {
         id: crypto.randomUUID(),
-        userId: '', // TODO: Get from session
+        userId,
         name: args.name,
         description: args.description ?? null,
         isSelfMaintenance: false,
@@ -442,7 +461,12 @@ app.whenReady().then(async () => {
 
       localDb.insertProject(project);
 
-      // TODO: Sync to Supabase cloud
+      if (syncEngine) {
+        syncEngine.pushProject(project).catch(err =>
+          console.warn('[main] pushProject failed (non-fatal):', err)
+        );
+      }
+
       return project;
     }
   );
@@ -452,13 +476,23 @@ app.whenReady().then(async () => {
     return localDb.getSelfMaintenanceProject();
   });
 
-  ipcMain.handle('projects:getVibeFlowRepoPath', async (): Promise<string> => {
-    // In dev mode: __dirname is apps/desktop/out/main, repo root is 4 levels up
-    // In packaged mode: use app.getAppPath()
+  ipcMain.handle('projects:getVibeFlowRepoPath', async (): Promise<string | null> => {
     if (app.isPackaged) {
-      return app.getAppPath();
+      return await keytar.getPassword(KEYTAR_SERVICE, KEYTAR_VIBEFLOW_REPO_PATH) ?? null;
     }
     return path.resolve(__dirname, '../../../..');
+  });
+
+  ipcMain.handle('projects:pickVibeFlowRepoPath', async (): Promise<string | null> => {
+    const result = await dialog.showOpenDialog({
+      title: 'Select VibeFlow source code folder',
+      message: 'Choose the folder where you cloned the VibeFlow repository',
+      properties: ['openDirectory'],
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    const repoPath = result.filePaths[0];
+    await keytar.setPassword(KEYTAR_SERVICE, KEYTAR_VIBEFLOW_REPO_PATH, repoPath);
+    return repoPath;
   });
 
   ipcMain.handle('projects:createSelfMaintenance', async (): Promise<unknown> => {
@@ -474,6 +508,7 @@ app.whenReady().then(async () => {
         const evidenceEngine = new EvidenceCaptureEngine(localDb);
         watchEngine = new WatchEngine(localDb, driftDetector, evidenceEngine, mainWindow);
         localDb.seedDefaultModes(DEFAULT_MODES);
+        localDb.migrateDefaultModelId('anthropic/claude-sonnet-4-5', 'anthropic/claude-sonnet-4-6');
         console.log('[main] LocalDb lazy-initialized in createSelfMaintenance');
       } catch (err) {
         console.error('[main] LocalDb lazy-init failed:', err);
@@ -528,6 +563,7 @@ app.whenReady().then(async () => {
     await localDb.init();
     console.log('[main] Local SQLite DB initialized at', dbPath);
     localDb.seedDefaultModes(DEFAULT_MODES);
+    localDb.migrateDefaultModelId('anthropic/claude-sonnet-4-5', 'anthropic/claude-sonnet-4-6');
     console.log('[main] Default modes seeded');
 
     // Initialize capability registry with builtin capabilities
@@ -571,6 +607,12 @@ app.whenReady().then(async () => {
     async (_event: IpcMainInvokeEvent, args: UpdateModeSoulArgs) => {
       if (!localDb) throw new Error('DB not initialized');
       localDb.updateModeSoul(args.modeId, args.soul);
+      const updatedMode = localDb.listModes().find(m => m.id === args.modeId);
+      if (syncEngine && updatedMode) {
+        syncEngine.pushMode(updatedMode).catch(err =>
+          console.warn('[main] pushMode failed (non-fatal):', err)
+        );
+      }
       return { success: true };
     }
   );
@@ -580,6 +622,32 @@ app.whenReady().then(async () => {
     async (_event: IpcMainInvokeEvent, args: UpdateModeModelArgs) => {
       if (!localDb) throw new Error('DB not initialized');
       localDb.updateModeModel(args.modeId, args.modelId);
+      const updatedMode = localDb.listModes().find(m => m.id === args.modeId);
+      if (syncEngine && updatedMode) {
+        syncEngine.pushMode(updatedMode).catch(err =>
+          console.warn('[main] pushMode failed (non-fatal):', err)
+        );
+      }
+      return { success: true };
+    }
+  );
+
+  ipcMain.handle(
+    'modes:updateConfig',
+    async (_event: IpcMainInvokeEvent, args: UpdateModeConfigArgs) => {
+      if (!localDb) throw new Error('DB not initialized');
+      const existing = localDb.listModes().find(m => m.id === args.modeId);
+      if (!existing) throw new Error('Mode not found');
+      const temperature = args.temperature ?? existing.temperature;
+      const approvalPolicy = args.approvalPolicy ?? existing.approvalPolicy;
+      const fallbackModelId = args.fallbackModelId !== undefined ? args.fallbackModelId : existing.fallbackModelId;
+      localDb.updateModeConfig(args.modeId, temperature, approvalPolicy, fallbackModelId);
+      const updatedMode = localDb.listModes().find(m => m.id === args.modeId);
+      if (syncEngine && updatedMode) {
+        syncEngine.pushMode(updatedMode).catch(err =>
+          console.warn('[main] pushMode failed (non-fatal):', err)
+        );
+      }
       return { success: true };
     }
   );
@@ -642,10 +710,11 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('conversations:create', async (_event, args: CreateConversationArgs) => {
     if (!localDb) throw new Error('DB not initialized');
+    const userId = await getCurrentUserId();
     const conv = {
       id: crypto.randomUUID(),
       projectId: args.projectId,
-      userId: '', // TODO: Get from session
+      userId,
       title: args.title,
       runState: 'idle' as const,
       ownerDeviceId: null,
@@ -655,6 +724,13 @@ app.whenReady().then(async () => {
       updatedAt: new Date().toISOString(),
     };
     localDb.createConversation(conv);
+
+    if (syncEngine) {
+      syncEngine.pushConversation(conv).catch(err =>
+        console.warn('[main] pushConversation failed (non-fatal):', err)
+      );
+    }
+
     return conv;
   });
 
@@ -678,20 +754,35 @@ app.whenReady().then(async () => {
     };
     localDb.insertMessage(userMsg);
 
+    if (syncEngine) {
+      syncEngine.pushMessage(userMsg).catch(err =>
+        console.warn('[main] pushMessage (user) failed (non-fatal):', err)
+      );
+    }
+
     // Get conversation history
     const history = localDb.listMessages(args.conversationId);
 
-    // Get Orchestrator mode
-    const orchestratorMode = localDb.listModes().find(m => m.slug === 'orchestrator');
-    if (!orchestratorMode) throw new Error('Orchestrator mode not found');
+    // Resolve mode — use modeId from args if provided, otherwise default to orchestrator
+    const allModes = localDb.listModes();
+    const requestedMode = args.modeId
+      ? allModes.find(m => m.id === args.modeId) ?? allModes.find(m => m.slug === 'orchestrator')
+      : allModes.find(m => m.slug === 'orchestrator');
+    if (!requestedMode) throw new Error('No mode found');
 
     // Get API key
     const apiKey = await keytar.getPassword(KEYTAR_SERVICE, KEYTAR_OPENROUTER_KEY);
     if (!apiKey) throw new Error('OpenRouter API key not set');
 
-    // Stream response
+    const sendExecEvent = (text: string, type: 'info' | 'delegation' | 'specialist' | 'error') => {
+      event.sender.send('conversations:executionEvent', { conversationId: args.conversationId, text, type });
+    };
+
+    sendExecEvent(`Running ${requestedMode.name}...`, 'info');
+
+    // Stream orchestrator response
     let fullContent = '';
-    await runOrchestrator(history, orchestratorMode, apiKey, {
+    await runOrchestrator(history, requestedMode, apiKey, {
       onToken: (token) => {
         event.sender.send('conversations:streamToken', { conversationId: args.conversationId, token });
       },
@@ -703,17 +794,92 @@ app.whenReady().then(async () => {
       },
     });
 
-    // Save assistant message
+    // Parse delegation tags: <delegate mode="slug">task description</delegate>
+    const delegationPattern = /<delegate\s+mode="([^"]+)">([\s\S]*?)<\/delegate>/gi;
+    const delegations: Array<{ modeSlug: string; task: string }> = [];
+    let match: RegExpExecArray | null;
+    while ((match = delegationPattern.exec(fullContent)) !== null) {
+      delegations.push({ modeSlug: match[1], task: match[2].trim() });
+    }
+
+    // If delegations found, run each specialist
+    if (delegations.length > 0) {
+      for (const delegation of delegations) {
+        const specialistMode = allModes.find(m => m.slug === delegation.modeSlug);
+        if (!specialistMode) {
+          sendExecEvent(`Unknown mode: ${delegation.modeSlug}`, 'error');
+          continue;
+        }
+
+        sendExecEvent(`Delegating to ${specialistMode.name}: ${delegation.task.slice(0, 80)}${delegation.task.length > 80 ? '...' : ''}`, 'delegation');
+
+        // Build specialist history: include original conversation + orchestrator's delegation
+        const specialistMessages: Message[] = [
+          ...history,
+          {
+            id: crypto.randomUUID(),
+            conversationId: args.conversationId,
+            role: 'assistant',
+            content: `I am delegating this task to you: ${delegation.task}`,
+            modeId: requestedMode.id,
+            modelId: requestedMode.modelId,
+            createdAt: new Date().toISOString(),
+          }
+        ];
+
+        let specialistContent = '';
+        await runOrchestrator(specialistMessages, specialistMode, apiKey, {
+          onToken: (token) => {
+            // Stream specialist tokens too
+            event.sender.send('conversations:streamToken', { conversationId: args.conversationId, token });
+          },
+          onDone: (content) => {
+            specialistContent = content;
+          },
+          onError: (error) => {
+            sendExecEvent(`${specialistMode.name} error: ${error}`, 'error');
+          },
+        });
+
+        if (specialistContent) {
+          sendExecEvent(`${specialistMode.name} completed`, 'specialist');
+          // Save specialist response as assistant message
+          const specialistMsg: Message = {
+            id: crypto.randomUUID(),
+            conversationId: args.conversationId,
+            role: 'assistant',
+            content: `**[${specialistMode.name}]** ${specialistContent}`,
+            modeId: specialistMode.id,
+            modelId: specialistMode.modelId,
+            createdAt: new Date().toISOString(),
+          };
+          localDb.insertMessage(specialistMsg);
+          if (syncEngine) {
+            syncEngine.pushMessage(specialistMsg).catch(err =>
+              console.warn('[main] pushMessage (specialist) failed (non-fatal):', err)
+            );
+          }
+        }
+      }
+    }
+
+    // Save orchestrator/primary assistant message
     const assistantMsg: Message = {
       id: crypto.randomUUID(),
       conversationId: args.conversationId,
       role: 'assistant',
       content: fullContent,
-      modeId: orchestratorMode.id,
-      modelId: orchestratorMode.modelId,
+      modeId: requestedMode.id,
+      modelId: requestedMode.modelId,
       createdAt: new Date().toISOString(),
     };
     localDb.insertMessage(assistantMsg);
+
+    if (syncEngine) {
+      syncEngine.pushMessage(assistantMsg).catch(err =>
+        console.warn('[main] pushMessage (assistant) failed (non-fatal):', err)
+      );
+    }
 
     event.sender.send('conversations:streamDone', { conversationId: args.conversationId });
     return assistantMsg;
@@ -1082,7 +1248,32 @@ app.whenReady().then(async () => {
 
   // ── DevOps IPC Handlers ──────────────────────────────────────────
 
-  ipcMain.handle('devops:listTemplates', () => BUILT_IN_TEMPLATES);
+  ipcMain.handle('devops:listTemplates', () =>
+    localDb ? localDb.listDevOpsTemplates() : BUILT_IN_TEMPLATES
+  );
+
+  ipcMain.handle('devops:createTemplate', (_event, template: any) => {
+    if (!localDb) throw new Error('DB not initialized');
+    const t = {
+      ...template,
+      id: template.id ?? crypto.randomUUID(),
+      isBuiltIn: false,
+    };
+    localDb.upsertDevOpsTemplate(t);
+    return t;
+  });
+
+  ipcMain.handle('devops:updateTemplate', (_event, template: any) => {
+    if (!localDb) throw new Error('DB not initialized');
+    localDb.upsertDevOpsTemplate(template);
+    return { success: true };
+  });
+
+  ipcMain.handle('devops:deleteTemplate', (_event, id: string) => {
+    if (!localDb) throw new Error('DB not initialized');
+    localDb.deleteDevOpsTemplate(id);
+    return { success: true };
+  });
 
   ipcMain.handle('devops:getProjectConfig', (_event, projectId: string) => {
     return localDb?.getProjectDevOpsConfig(projectId) ?? null;

@@ -10,6 +10,7 @@ import { SyncStatus } from '../lib/shared-types';
 const api: VibeFlowAPI = {
   auth: {
     signInWithGitHub: () => ipcRenderer.invoke('auth:signInWithGitHub'),
+    signInWithEmail: (email: string, password: string) => ipcRenderer.invoke('auth:signInWithEmail', email, password),
     signOut: () => ipcRenderer.invoke('auth:signOut'),
     getSession: () => ipcRenderer.invoke('auth:getSession'),
   },
@@ -19,6 +20,7 @@ const api: VibeFlowAPI = {
     getSelfMaintenance: () => ipcRenderer.invoke('projects:getSelfMaintenance'),
     createSelfMaintenance: () => ipcRenderer.invoke('projects:createSelfMaintenance'),
     getVibeFlowRepoPath: () => ipcRenderer.invoke('projects:getVibeFlowRepoPath'),
+    pickVibeFlowRepoPath: () => ipcRenderer.invoke('projects:pickVibeFlowRepoPath'),
   },
   buildMetadata: {
     get: () => ipcRenderer.invoke('buildMetadata:get'),
@@ -40,6 +42,7 @@ const api: VibeFlowAPI = {
     list: () => ipcRenderer.invoke('modes:list'),
     updateSoul: (args) => ipcRenderer.invoke('modes:updateSoul', args),
     updateModel: (args) => ipcRenderer.invoke('modes:updateModel', args),
+    updateConfig: (args: UpdateModeConfigArgs) => ipcRenderer.invoke('modes:updateConfig', args),
   },
   openrouter: {
     setApiKey: (key: string) => ipcRenderer.invoke('openrouter:setApiKey', key),
@@ -64,10 +67,15 @@ const api: VibeFlowAPI = {
       ipcRenderer.removeAllListeners('conversations:streamError');
       ipcRenderer.on('conversations:streamError', (_event, data) => callback(data));
     },
+    onExecutionEvent: (callback: (data: ExecutionEventData) => void) => {
+      ipcRenderer.removeAllListeners('conversations:executionEvent');
+      ipcRenderer.on('conversations:executionEvent', (_event, data) => callback(data));
+    },
     removeStreamListeners: () => {
       ipcRenderer.removeAllListeners('conversations:streamToken');
       ipcRenderer.removeAllListeners('conversations:streamDone');
       ipcRenderer.removeAllListeners('conversations:streamError');
+      ipcRenderer.removeAllListeners('conversations:executionEvent');
     },
   },
   sync: {
@@ -115,6 +123,9 @@ const api: VibeFlowAPI = {
   },
   devops: {
     listTemplates: () => ipcRenderer.invoke('devops:listTemplates'),
+    createTemplate: (template: any) => ipcRenderer.invoke('devops:createTemplate', template),
+    updateTemplate: (template: any) => ipcRenderer.invoke('devops:updateTemplate', template),
+    deleteTemplate: (id: string) => ipcRenderer.invoke('devops:deleteTemplate', id),
     getProjectConfig: (projectId: string) => ipcRenderer.invoke('devops:getProjectConfig', projectId),
     saveProjectConfig: (config: ProjectDevOpsConfig) => ipcRenderer.invoke('devops:saveProjectConfig', config),
     setGitHubToken: (token: string) => ipcRenderer.invoke('devops:setGitHubToken', token),

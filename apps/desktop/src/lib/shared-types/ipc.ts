@@ -12,6 +12,7 @@ export interface AuthSignInResult {
 
 export interface AuthChannel {
   signInWithGitHub: () => Promise<AuthSignInResult>;
+  signInWithEmail: (email: string, password: string) => Promise<AuthSignInResult>;
   signOut: () => Promise<void>;
   getSession: () => Promise<{ email: string | null }>;
 }
@@ -28,7 +29,8 @@ export interface ProjectsChannel {
   create: (args: CreateProjectArgs) => Promise<Project>;
   getSelfMaintenance: () => Promise<Project | null>;
   createSelfMaintenance: () => Promise<Project>;
-  getVibeFlowRepoPath: () => Promise<string>;
+  getVibeFlowRepoPath: () => Promise<string | null>;
+  pickVibeFlowRepoPath: () => Promise<string | null>;
 }
 
 // ── Build Metadata IPC ────────────────────────────────────────────
@@ -56,10 +58,18 @@ export interface UpdateModeModelArgs {
   modelId: string;
 }
 
+export interface UpdateModeConfigArgs {
+  modeId: string;
+  temperature?: number;
+  approvalPolicy?: string;
+  fallbackModelId?: string | null;
+}
+
 export interface ModesChannel {
   list: () => Promise<Mode[]>;
   updateSoul: (args: UpdateModeSoulArgs) => Promise<{ success: boolean }>;
   updateModel: (args: UpdateModeModelArgs) => Promise<{ success: boolean }>;
+  updateConfig: (args: UpdateModeConfigArgs) => Promise<{ success: boolean }>;
 }
 
 // ── OpenRouter IPC ────────────────────────────────────────────────
@@ -98,6 +108,12 @@ export interface StreamErrorData {
   error: string;
 }
 
+export interface ExecutionEventData {
+  conversationId: string;
+  text: string;
+  type: 'info' | 'delegation' | 'specialist' | 'error';
+}
+
 export interface ConversationsChannel {
   list: (projectId: string) => Promise<ConversationThread[]>;
   create: (args: CreateConversationArgs) => Promise<ConversationThread>;
@@ -106,6 +122,7 @@ export interface ConversationsChannel {
   onStreamToken: (callback: (data: StreamTokenData) => void) => void;
   onStreamDone: (callback: (data: StreamDoneData) => void) => void;
   onStreamError: (callback: (data: StreamErrorData) => void) => void;
+  onExecutionEvent: (callback: (data: ExecutionEventData) => void) => void;
   removeStreamListeners: () => void;
 }
 
@@ -205,6 +222,9 @@ export interface SshConnectionTestResult {
 
 export type DevOpsChannel =
   | 'devops:listTemplates'
+  | 'devops:createTemplate'
+  | 'devops:updateTemplate'
+  | 'devops:deleteTemplate'
   | 'devops:getProjectConfig'
   | 'devops:saveProjectConfig'
   | 'devops:setGitHubToken'
@@ -245,6 +265,9 @@ export interface HealthCheckResult {
 
 export interface DevOpsApi {
   listTemplates: () => Promise<any[]>;
+  createTemplate: (template: any) => Promise<any>;
+  updateTemplate: (template: any) => Promise<{ success: boolean }>;
+  deleteTemplate: (id: string) => Promise<{ success: boolean }>;
   getProjectConfig: (projectId: string) => Promise<ProjectDevOpsConfig | null>;
   saveProjectConfig: (config: ProjectDevOpsConfig) => Promise<{ success: boolean }>;
   setGitHubToken: (token: string) => Promise<{ success: boolean }>;
