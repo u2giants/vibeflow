@@ -6,6 +6,18 @@ Every agent must update this file when work begins and when work ends.
 
 ## CURRENT SPRINT
 
+### DevOps Push — Component 20 + Merge-Residue Fix (2026-04-16)
+- Status: Complete
+- Mode: DevOps (`z-ai/glm-5.1`)
+- Conversation: Pushed all approved, unpushed work to github.com/u2giants/vibeflow for backup
+- Project: VibeFlow brownfield rebuild
+- Branch: `master`
+- Remote: `origin` → `git@github.com:u2giants/vibeflow.git`
+- Commit pushed: `56ebb1e` — feat: Component 20 (memory/skills/decisions) + merge-residue fixes + console.log removal (23 files, ~3,400 insertions)
+- Rebase note: Remote had one new commit (`7c2686e chore: bump version to 0.1.7 [skip ci]`) not in local; pulled with `--rebase` (clean, no conflicts), then pushed. No force-push used.
+- Final status: `git status` reports "Your branch is up to date with 'origin/master'", working tree clean
+- Scope: Component 20 new files (memory-lifecycle, memory-retriever, memory-seed, MemoryPanel, test), merge-residue fixes (ipc, local-db, sync-engine, main, preload, ApprovalCard, ProjectScreen, McpScreen), console.log removal, CURRENT_TASK.md updates
+
 ### Merge-Residue Fix — Port Remote Implementations (2026-04-16)
 - Status: Complete
 - Mode: Builder (`z-ai/glm-5.1`)
