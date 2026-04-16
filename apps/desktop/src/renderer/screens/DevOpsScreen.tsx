@@ -140,6 +140,9 @@ export default function DevOpsScreen({ projectId, onBack }: DevOpsScreenProps) {
           startedAt: new Date().toISOString(),
           completedAt: null,
           error: null,
+          environmentId: null,
+          evidenceIds: [],
+          healthVerdict: null,
         };
         window.vibeflow.devops.listDeployRuns(projectId).then(setDeployRuns);
       }

@@ -4,7 +4,7 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
-import type { VibeFlowAPI, CreateConversationArgs, SendMessageArgs, StreamTokenData, StreamDoneData, StreamErrorData, TerminalRunArgs, GitCommitArgs, GitPushArgs, SshHost, ProjectDevOpsConfig, ActionRequest, HumanDecisionArgs, GenerateHandoffArgs, DecomposeMissionArgs, AssignRoleArgs, McpServerConfig, CapabilityHealth, ContextPackOptions, ContextPackUpdates, CreateWorkspaceRunArgs, ApplyPatchArgs, CommitWorkspaceArgs } from '../lib/shared-types';
+import type { VibeFlowAPI, CreateConversationArgs, SendMessageArgs, StreamTokenData, StreamDoneData, StreamErrorData, TerminalRunArgs, GitCommitArgs, GitPushArgs, SshHost, ProjectDevOpsConfig, ActionRequest, HumanDecisionArgs, GenerateHandoffArgs, DecomposeMissionArgs, AssignRoleArgs, McpServerConfig, CapabilityHealth, ContextPackOptions, ContextPackUpdates, CreateWorkspaceRunArgs, ApplyPatchArgs, CommitWorkspaceArgs, AuditHistoryFilter, RuntimeStartArgs, BrowserSessionArgs, SecretRecord, MigrationPlan, MigrationRiskClass, Environment, DeployWorkflow, DriftReport, DeployInitiateArgs, WatchStartSessionArgs, SelfHealingExecuteArgs } from '../lib/shared-types';
 import { SyncStatus } from '../lib/shared-types';
 
 const api: VibeFlowAPI = {
@@ -160,7 +160,7 @@ const api: VibeFlowAPI = {
       ipcRenderer.removeAllListeners('updater:update-downloaded');
     },
   },
-  // Component 12: Orchestrator IPC (stub — wired in Phase 4)
+  // Component 12: Orchestrator IPC
   orchestrator: {
     decomposeMission: (args: DecomposeMissionArgs) => ipcRenderer.invoke('orchestrator:decomposeMission', args),
     assignRole: (args: AssignRoleArgs) => ipcRenderer.invoke('orchestrator:assignRole', args),
@@ -230,6 +230,138 @@ const api: VibeFlowAPI = {
     cleanupWorkspace: (workspaceRunId: string) => ipcRenderer.invoke('changeEngine:cleanupWorkspace', workspaceRunId),
     listWorkspaceRuns: (missionId?: string) => ipcRenderer.invoke('changeEngine:listWorkspaceRuns', missionId),
     listCheckpoints: (workspaceRunId: string) => ipcRenderer.invoke('changeEngine:listCheckpoints', workspaceRunId),
+  },
+  // Component 15: Runtime Execution, Browser Automation, Evidence
+  runtime: {
+    start: (args: RuntimeStartArgs) => ipcRenderer.invoke('runtime:start', args),
+    stop: (executionId: string) => ipcRenderer.invoke('runtime:stop', executionId),
+    getStatus: (executionId: string) => ipcRenderer.invoke('runtime:getStatus', executionId),
+    getExecutions: (missionId: string) => ipcRenderer.invoke('runtime:getExecutions', missionId),
+    getLogs: (executionId: string) => ipcRenderer.invoke('runtime:getLogs', executionId),
+  },
+  browser: {
+    startSession: (args: BrowserSessionArgs) => ipcRenderer.invoke('browser:startSession', args),
+    navigate: (sessionId: string, url: string) => ipcRenderer.invoke('browser:navigate', sessionId, url),
+    click: (sessionId: string, selector: string) => ipcRenderer.invoke('browser:click', sessionId, selector),
+    fillForm: (sessionId: string, fields: Record<string, string>) => ipcRenderer.invoke('browser:fillForm', sessionId, fields),
+    uploadFile: (sessionId: string, selector: string, filePath: string) => ipcRenderer.invoke('browser:uploadFile', sessionId, selector, filePath),
+    screenshot: (sessionId: string, name: string) => ipcRenderer.invoke('browser:screenshot', sessionId, name),
+    getConsoleLogs: (sessionId: string) => ipcRenderer.invoke('browser:getConsoleLogs', sessionId),
+    getNetworkTraces: (sessionId: string) => ipcRenderer.invoke('browser:getNetworkTraces', sessionId),
+    getDomSnapshot: (sessionId: string, selector: string) => ipcRenderer.invoke('browser:getDomSnapshot', sessionId, selector),
+    closeSession: (sessionId: string) => ipcRenderer.invoke('browser:closeSession', sessionId),
+  },
+  evidence: {
+    getForMission: (missionId: string) => ipcRenderer.invoke('evidence:getForMission', missionId),
+    getForWorkspaceRun: (workspaceRunId: string) => ipcRenderer.invoke('evidence:getForWorkspaceRun', workspaceRunId),
+    compareBeforeAfter: (beforeId: string, afterId: string) => ipcRenderer.invoke('evidence:compareBeforeAfter', beforeId, afterId),
+  },
+  // Component 16: Verification and Acceptance
+  verification: {
+    run: (args) => ipcRenderer.invoke('verification:run', args),
+    getRun: (id: string) => ipcRenderer.invoke('verification:getRun', id),
+    getRunsForMission: (missionId: string) => ipcRenderer.invoke('verification:getRunsForMission', missionId),
+    getBundles: () => ipcRenderer.invoke('verification:getBundles'),
+  },
+  acceptance: {
+    generate: (args) => ipcRenderer.invoke('acceptance:generate', args),
+    get: (missionId: string) => ipcRenderer.invoke('acceptance:get', missionId),
+  },
+  // Component 19: Audit and Rollback
+  audit: {
+    getHistory: (filter?: AuditHistoryFilter) => ipcRenderer.invoke('audit:getHistory', filter),
+    getRecord: (id: string) => ipcRenderer.invoke('audit:getRecord', id),
+    getCheckpoints: (missionId: string) => ipcRenderer.invoke('audit:getCheckpoints', missionId),
+  },
+  rollback: {
+    preview: (checkpointId: string) => ipcRenderer.invoke('rollback:preview', checkpointId),
+    initiate: (checkpointId: string) => ipcRenderer.invoke('rollback:initiate', checkpointId),
+    getStatus: (checkpointId: string) => ipcRenderer.invoke('rollback:getStatus', checkpointId),
+  },
+  // Component 18: Secrets and Migration
+  secrets: {
+    list: (projectId: string) => ipcRenderer.invoke('secrets:list', projectId),
+    get: (id: string) => ipcRenderer.invoke('secrets:get', id),
+    upsert: (record: Omit<SecretRecord, 'createdAt' | 'updatedAt'>) => ipcRenderer.invoke('secrets:upsert', record),
+    delete: (id: string) => ipcRenderer.invoke('secrets:delete', id),
+    getMissingForEnvironment: (projectId: string, environmentId: string) => ipcRenderer.invoke('secrets:getMissingForEnvironment', projectId, environmentId),
+    getChangedSinceLastDeploy: (projectId: string) => ipcRenderer.invoke('secrets:getChangedSinceLastDeploy', projectId),
+    verify: (id: string) => ipcRenderer.invoke('secrets:verify', id),
+    getInventorySummary: (projectId: string) => ipcRenderer.invoke('secrets:getInventorySummary', projectId),
+  },
+  migration: {
+    createPlan: (plan: Omit<MigrationPlan, 'id' | 'createdAt' | 'updatedAt'>) => ipcRenderer.invoke('migration:createPlan', plan),
+    getPlan: (id: string) => ipcRenderer.invoke('migration:getPlan', id),
+    listPlans: (projectId: string) => ipcRenderer.invoke('migration:listPlans', projectId),
+    generatePreview: (planId: string) => ipcRenderer.invoke('migration:generatePreview', planId),
+    classifyRisk: (sql: string) => ipcRenderer.invoke('migration:classifyRisk', sql),
+    getSchemaInfo: (projectId: string) => ipcRenderer.invoke('migration:getSchemaInfo', projectId),
+    requireCheckpoint: (planId: string) => ipcRenderer.invoke('migration:requireCheckpoint', planId),
+    listHistory: (projectId: string) => ipcRenderer.invoke('migration:listHistory', projectId),
+  },
+  // Component 17: Deploy, Environment, Drift
+  deploy: {
+    initiate: (args: DeployInitiateArgs) => ipcRenderer.invoke('deploy:initiate', args),
+    getStatus: (workflowId: string) => ipcRenderer.invoke('deploy:getStatus', workflowId),
+    getHistory: (projectId: string) => ipcRenderer.invoke('deploy:getHistory', projectId),
+    rollback: (workflowId: string) => ipcRenderer.invoke('deploy:rollback', workflowId),
+  },
+  environment: {
+    list: (projectId: string) => ipcRenderer.invoke('environment:list', projectId),
+    get: (id: string) => ipcRenderer.invoke('environment:get', id),
+    create: (env: Omit<Environment, 'id'>) => ipcRenderer.invoke('environment:create', env),
+    update: (id: string, updates: Partial<Environment>) => ipcRenderer.invoke('environment:update', id, updates),
+    delete: (id: string) => ipcRenderer.invoke('environment:delete', id),
+    createPreview: (projectId: string, branch: string) => ipcRenderer.invoke('environment:createPreview', projectId, branch),
+    destroyPreview: (id: string) => ipcRenderer.invoke('environment:destroyPreview', id),
+    promote: (fromEnvId: string, toEnvId: string, candidateId: string) => ipcRenderer.invoke('environment:promote', fromEnvId, toEnvId, candidateId),
+  },
+  drift: {
+    detect: (projectId: string) => ipcRenderer.invoke('drift:detect', projectId),
+    getReports: (projectId: string) => ipcRenderer.invoke('drift:getReports', projectId),
+    resolve: (reportId: string) => ipcRenderer.invoke('drift:resolve', reportId),
+  },
+  // Component 21: Watch, Anomaly, Incident, Self-Healing
+  watch: {
+    startSession: (args: WatchStartSessionArgs) => ipcRenderer.invoke('watch:startSession', args),
+    stopSession: (id: string) => ipcRenderer.invoke('watch:stopSession', id),
+    getSession: (id: string) => ipcRenderer.invoke('watch:getSession', id),
+    listSessions: (projectId: string) => ipcRenderer.invoke('watch:listSessions', projectId),
+    getDashboard: (projectId: string) => ipcRenderer.invoke('watch:getDashboard', projectId),
+    onSessionStarted: (cb) => { ipcRenderer.removeAllListeners('watch:sessionStarted'); ipcRenderer.on('watch:sessionStarted', (_e, d) => cb(d)); },
+    onSessionCompleted: (cb) => { ipcRenderer.removeAllListeners('watch:sessionCompleted'); ipcRenderer.on('watch:sessionCompleted', (_e, d) => cb(d)); },
+    onAnomalyDetected: (cb) => { ipcRenderer.removeAllListeners('watch:anomalyDetected'); ipcRenderer.on('watch:anomalyDetected', (_e, d) => cb(d)); },
+    removeListeners: () => {
+      ipcRenderer.removeAllListeners('watch:sessionStarted');
+      ipcRenderer.removeAllListeners('watch:sessionCompleted');
+      ipcRenderer.removeAllListeners('watch:anomalyDetected');
+    },
+  },
+  anomaly: {
+    list: (projectId: string) => ipcRenderer.invoke('anomaly:list', projectId),
+    acknowledge: (id: string, acknowledgedBy: string) => ipcRenderer.invoke('anomaly:acknowledge', id, acknowledgedBy),
+  },
+  incident: {
+    list: (projectId: string) => ipcRenderer.invoke('incident:list', projectId),
+    get: (id: string) => ipcRenderer.invoke('incident:get', id),
+    resolve: (id: string) => ipcRenderer.invoke('incident:resolve', id),
+    dismiss: (id: string) => ipcRenderer.invoke('incident:dismiss', id),
+    getRecommendation: (id: string) => ipcRenderer.invoke('incident:getRecommendation', id),
+    onOpened: (cb) => { ipcRenderer.removeAllListeners('incident:opened'); ipcRenderer.on('incident:opened', (_e, d) => cb(d)); },
+    removeListeners: () => { ipcRenderer.removeAllListeners('incident:opened'); },
+  },
+  selfHealing: {
+    list: (projectId: string) => ipcRenderer.invoke('selfHealing:list', projectId),
+    execute: (args: SelfHealingExecuteArgs) => ipcRenderer.invoke('selfHealing:execute', args),
+    getStatus: (id: string) => ipcRenderer.invoke('selfHealing:getStatus', id),
+    onActionStarted: (cb) => { ipcRenderer.removeAllListeners('selfHealing:actionStarted'); ipcRenderer.on('selfHealing:actionStarted', (_e, d) => cb(d)); },
+    onActionCompleted: (cb) => { ipcRenderer.removeAllListeners('selfHealing:actionCompleted'); ipcRenderer.on('selfHealing:actionCompleted', (_e, d) => cb(d)); },
+    onApprovalRequired: (cb) => { ipcRenderer.removeAllListeners('selfHealing:approvalRequired'); ipcRenderer.on('selfHealing:approvalRequired', (_e, d) => cb(d)); },
+    removeListeners: () => {
+      ipcRenderer.removeAllListeners('selfHealing:actionStarted');
+      ipcRenderer.removeAllListeners('selfHealing:actionCompleted');
+      ipcRenderer.removeAllListeners('selfHealing:approvalRequired');
+    },
   },
 };
 

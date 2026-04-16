@@ -1,12 +1,14 @@
 /** ApprovalCard — modal overlay for Tier 3 human approval. */
 
-import type { ActionRequest } from '../../lib/shared-types';
+import type { ActionRequest, RiskClass } from '../../lib/shared-types';
 
 interface ApprovalCardProps {
   action: ActionRequest;
   onApprove: () => void;
   onReject: () => void;
   onAskMore: () => void;
+  /** Component 19: Optional risk class display. */
+  riskClass?: RiskClass;
 }
 
 const ROLLBACK_COLORS: Record<string, string> = {
@@ -15,7 +17,26 @@ const ROLLBACK_COLORS: Record<string, string> = {
   impossible: '#dc3545',
 };
 
-export default function ApprovalCard({ action, onApprove, onReject, onAskMore }: ApprovalCardProps) {
+/** Component 19: Color-coded risk class badges. */
+const RISK_CLASS_COLORS: Record<RiskClass, string> = {
+  'informational': '#6b7280',
+  'low': '#28a745',
+  'medium': '#ffc107',
+  'high': '#fd7e14',
+  'destructive': '#dc3545',
+  'privileged-production': '#e83e8c',
+};
+
+const RISK_CLASS_LABELS: Record<RiskClass, string> = {
+  'informational': 'Informational',
+  'low': 'Low Risk',
+  'medium': 'Medium Risk',
+  'high': 'High Risk',
+  'destructive': 'Destructive',
+  'privileged-production': 'Privileged Production',
+};
+
+export default function ApprovalCard({ action, onApprove, onReject, onAskMore, riskClass }: ApprovalCardProps) {
   return (
     <div
       style={{
@@ -91,6 +112,26 @@ export default function ApprovalCard({ action, onApprove, onReject, onAskMore }:
             {action.requestingModeId} mode ({action.requestingModelId})
           </span>
         </div>
+
+        {/* Component 19: Risk class badge */}
+        {riskClass && (
+          <div style={{ marginBottom: 12 }}>
+            <strong style={{ color: '#8b949e', fontSize: 12 }}>Risk Level:</strong>
+            <span
+              style={{
+                marginLeft: 8,
+                padding: '2px 8px',
+                borderRadius: 4,
+                backgroundColor: RISK_CLASS_COLORS[riskClass] + '22',
+                color: RISK_CLASS_COLORS[riskClass],
+                fontSize: 12,
+                fontWeight: 600,
+              }}
+            >
+              {RISK_CLASS_LABELS[riskClass]}
+            </span>
+          </div>
+        )}
 
         <div
           style={{

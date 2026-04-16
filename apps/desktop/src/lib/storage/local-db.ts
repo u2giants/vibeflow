@@ -13,12 +13,18 @@ import type {
   Capability, CapabilityHealth, CapabilityClass, CapabilityPermission, CapabilityAction, CapabilityInvocationLog,
   Incident, IncidentSeverity,
   DeployCandidate,
-  Environment, EnvironmentType,
+  Environment, EnvironmentType, EnvironmentProtection, MutabilityRule,
   McpServerConfig, McpToolInfo,
   ProjectIndex, FileRecord, SymbolRecord, ReferenceEdge, RouteRecord, ApiEndpointRecord, JobRecord,
   ServiceNode, ServiceEdge, ConfigVariableRecord,
   ContextPackEnriched, ContextItem, ContextWarning,
   WorkspaceRun, FileEdit, SemanticChangeGroup, Checkpoint, ChangeSet, DuplicateWarning, PatternReuseSuggestion,
+  AuditRecord, RiskClass,
+  RuntimeExecution, BrowserSession, EvidenceRecord,
+  VerificationRun, VerificationCheck, VerificationBundle, AcceptanceCriteria,
+  SecretRecord, MigrationPlan, MigrationRiskClass, MigrationPreview, DatabaseSchemaInfo, MigrationHistoryEntry,
+  DeployWorkflow, DeployStep, DriftReport,
+  WatchSession, WatchProbe, AnomalyEvent, SelfHealingAction,
 } from '../shared-types';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -540,7 +546,334 @@ export class LocalDb {
         existing_pattern TEXT,
         reuse_suggestion_json TEXT
       );
+
+      /* ── Component 19: Audit records table ── */
+      CREATE TABLE IF NOT EXISTS audit_records (
+        id TEXT PRIMARY KEY,
+        mission_id TEXT,
+        plan_step_id TEXT,
+        role_slug TEXT,
+        capability_id TEXT,
+        action_type TEXT NOT NULL,
+        parameters_json TEXT NOT NULL DEFAULT '{}',
+        environment TEXT,
+        risk_class TEXT NOT NULL,
+        risk_score INTEGER NOT NULL DEFAULT 0,
+        risk_dimensions_json TEXT NOT NULL DEFAULT '[]',
+        evidence_completeness TEXT NOT NULL DEFAULT 'missing',
+        reversibility TEXT NOT NULL DEFAULT 'reversible',
+        evidence_summary TEXT,
+        approval_chain_json TEXT NOT NULL DEFAULT '[]',
+        result TEXT NOT NULL,
+        checkpoint_id TEXT,
+        rollback_plan_json TEXT,
+        initiated_by TEXT NOT NULL DEFAULT 'system',
+        initiated_at TEXT NOT NULL,
+        completed_at TEXT,
+        duration_ms INTEGER
+      );
+
+      /* ── Component 15: Runtime Execution, Browser Automation, Evidence Capture ── */
+
+      CREATE TABLE IF NOT EXISTS runtime_executions (
+        id TEXT PRIMARY KEY,
+        workspace_run_id TEXT NOT NULL,
+        mission_id TEXT NOT NULL,
+        plan_step_id TEXT,
+        command TEXT NOT NULL,
+        cwd TEXT NOT NULL,
+        status TEXT NOT NULL,
+        exit_code INTEGER,
+        stdout TEXT,
+        stderr TEXT,
+        duration_ms INTEGER,
+        started_at TEXT NOT NULL,
+        completed_at TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS browser_sessions (
+        id TEXT PRIMARY KEY,
+        workspace_run_id TEXT NOT NULL,
+        mission_id TEXT NOT NULL,
+        plan_step_id TEXT,
+        base_url TEXT NOT NULL,
+        status TEXT NOT NULL,
+        screenshots_json TEXT DEFAULT '[]',
+        console_logs TEXT,
+        network_traces TEXT,
+        started_at TEXT NOT NULL,
+        closed_at TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS evidence_records (
+        id TEXT PRIMARY KEY,
+        mission_id TEXT NOT NULL,
+        workspace_run_id TEXT NOT NULL,
+        plan_step_id TEXT,
+        changeset_id TEXT,
+        environment_id TEXT,
+        capability_invocation_id TEXT,
+        type TEXT NOT NULL,
+        status TEXT NOT NULL,
+        title TEXT NOT NULL,
+        detail TEXT,
+        artifact_path TEXT,
+        timestamp TEXT NOT NULL
+      );
+
+      /* ── Component 16: Verification and Acceptance System ── */
+
+      CREATE TABLE IF NOT EXISTS verification_runs (
+        id TEXT PRIMARY KEY,
+        mission_id TEXT NOT NULL,
+        workspace_run_id TEXT,
+        changeset_id TEXT,
+        candidate_id TEXT,
+        bundle_id TEXT NOT NULL,
+        overall_status TEXT NOT NULL DEFAULT 'running',
+        checks_json TEXT NOT NULL DEFAULT '[]',
+        missing_required_checks_json TEXT NOT NULL DEFAULT '[]',
+        flake_suspicions_json TEXT NOT NULL DEFAULT '[]',
+        risk_impact TEXT NOT NULL DEFAULT 'low',
+        started_at TEXT NOT NULL,
+        completed_at TEXT,
+        verdict TEXT,
+        verdict_reason TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS verification_checks (
+        id TEXT PRIMARY KEY,
+        verification_run_id TEXT NOT NULL,
+        layer TEXT NOT NULL,
+        check_name TEXT NOT NULL,
+        status TEXT NOT NULL,
+        detail TEXT,
+        evidence_item_ids_json TEXT NOT NULL DEFAULT '[]',
+        duration_ms INTEGER,
+        started_at TEXT NOT NULL,
+        completed_at TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS verification_bundles (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        risk_class TEXT NOT NULL,
+        required_layers_json TEXT NOT NULL DEFAULT '[]',
+        description TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS acceptance_criteria (
+        id TEXT PRIMARY KEY,
+        mission_id TEXT NOT NULL UNIQUE,
+        intended_behavior_json TEXT NOT NULL DEFAULT '[]',
+        non_goals_json TEXT NOT NULL DEFAULT '[]',
+        paths_that_must_still_work_json TEXT NOT NULL DEFAULT '[]',
+        comparison_targets_json TEXT NOT NULL DEFAULT '[]',
+        regression_thresholds_json TEXT NOT NULL DEFAULT '[]',
+        rollback_conditions_json TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      /* ── Component 18: Secrets, Configuration, Database, and Migration Safety ── */
+
+      CREATE TABLE IF NOT EXISTS secret_records (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        key_name TEXT NOT NULL,
+        category TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        required_environments_json TEXT NOT NULL DEFAULT '[]',
+        sensitivity_level TEXT NOT NULL DEFAULT 'internal',
+        source_of_truth TEXT NOT NULL DEFAULT '',
+        rotation_notes TEXT DEFAULT '',
+        approval_rules TEXT DEFAULT '',
+        code_references_json TEXT NOT NULL DEFAULT '[]',
+        stored_in_keytar INTEGER NOT NULL DEFAULT 0,
+        last_verified_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS migration_plans (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        mission_id TEXT,
+        risk_class TEXT NOT NULL,
+        description TEXT NOT NULL,
+        affected_tables_json TEXT NOT NULL DEFAULT '[]',
+        estimated_blast_radius TEXT NOT NULL DEFAULT 'low',
+        forward_compatible INTEGER NOT NULL DEFAULT 1,
+        backward_compatible INTEGER NOT NULL DEFAULT 1,
+        requires_checkpoint INTEGER NOT NULL DEFAULT 0,
+        checkpoint_id TEXT,
+        safeguards_json TEXT NOT NULL DEFAULT '[]',
+        ordering_requirement TEXT NOT NULL DEFAULT 'schema-first',
+        approval_required INTEGER NOT NULL DEFAULT 0,
+        rollback_constraints TEXT DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'draft',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS migration_history (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        plan_id TEXT NOT NULL,
+        migration_name TEXT NOT NULL,
+        risk_class TEXT NOT NULL,
+        applied_at TEXT NOT NULL,
+        applied_by TEXT NOT NULL DEFAULT 'system',
+        success INTEGER NOT NULL DEFAULT 0,
+        error TEXT,
+        rollback_executed INTEGER NOT NULL DEFAULT 0
+      );
+
+      /* ── Component 17: Deploy Workflows and Drift Reports ── */
+
+      CREATE TABLE IF NOT EXISTS deploy_workflows (
+        id TEXT PRIMARY KEY,
+        candidate_id TEXT NOT NULL,
+        environment_id TEXT NOT NULL,
+        steps_json TEXT NOT NULL DEFAULT '[]',
+        status TEXT NOT NULL DEFAULT 'pending',
+        verdict TEXT,
+        verdict_reason TEXT,
+        evidence_ids_json TEXT DEFAULT '[]',
+        started_at TEXT NOT NULL,
+        completed_at TEXT,
+        rollback_offered INTEGER DEFAULT 0
+      );
+
+      CREATE TABLE IF NOT EXISTS drift_reports (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        environment_id TEXT NOT NULL,
+        drift_type TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        description TEXT NOT NULL,
+        detected_at TEXT NOT NULL,
+        resolved INTEGER DEFAULT 0
+      );
+
+      /* ── Component 21: Watch sessions, anomaly events, self-healing actions ── */
+
+      CREATE TABLE IF NOT EXISTS watch_sessions (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        environment_id TEXT NOT NULL,
+        deploy_workflow_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'active',
+        started_at TEXT NOT NULL,
+        completed_at TEXT,
+        elevated_evidence INTEGER DEFAULT 1,
+        anomaly_threshold TEXT NOT NULL DEFAULT 'elevated',
+        regression_baseline TEXT,
+        probes_json TEXT DEFAULT '[]'
+      );
+
+      CREATE TABLE IF NOT EXISTS anomaly_events (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        environment_id TEXT NOT NULL,
+        watch_session_id TEXT,
+        anomaly_type TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        description TEXT NOT NULL,
+        correlated_deploy_workflow_id TEXT,
+        correlated_change_ids_json TEXT DEFAULT '[]',
+        evidence_ids_json TEXT DEFAULT '[]',
+        detected_at TEXT NOT NULL,
+        acknowledged INTEGER DEFAULT 0,
+        acknowledged_at TEXT,
+        acknowledged_by TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS self_healing_actions (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        environment_id TEXT NOT NULL,
+        anomaly_event_id TEXT,
+        incident_id TEXT,
+        action_type TEXT NOT NULL,
+        automatic INTEGER DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'pending',
+        approval_required INTEGER DEFAULT 0,
+        approval_result TEXT,
+        result TEXT,
+        executed_at TEXT,
+        audit_record_id TEXT
+      );
     `);
+
+    // ── Component 17: Brownfield migration for environments table ──
+    // Add new columns to existing environments table (safe to run multiple times via try/catch)
+    const envColumns = [
+      { name: 'host', sql: 'TEXT' },
+      { name: 'deploy_mechanism', sql: 'TEXT' },
+      { name: 'required_secrets_json', sql: "TEXT DEFAULT '[]'" },
+      { name: 'linked_service_ids_json', sql: "TEXT DEFAULT '[]'" },
+      { name: 'health_endpoint', sql: 'TEXT' },
+      { name: 'protections_json', sql: "TEXT DEFAULT '[]'" },
+      { name: 'rollback_method', sql: 'TEXT' },
+      { name: 'mutability_rules_json', sql: "TEXT DEFAULT '[]'" },
+    ];
+    for (const col of envColumns) {
+      try {
+        this.db!.run(`ALTER TABLE environments ADD COLUMN ${col.name} ${col.sql}`);
+      } catch {
+        // Column already exists — safe to skip
+      }
+    }
+
+    // ── Component 17: Brownfield migration for deploy_candidates table ──
+    const dcColumns = [
+      { name: 'evidence_ids_json', sql: "TEXT DEFAULT '[]'" },
+      { name: 'verification_run_id', sql: 'TEXT' },
+      { name: 'rollback_checkpoint_id', sql: 'TEXT' },
+    ];
+    for (const col of dcColumns) {
+      try {
+        this.db!.run(`ALTER TABLE deploy_candidates ADD COLUMN ${col.name} ${col.sql}`);
+      } catch {
+        // Column already exists — safe to skip
+      }
+    }
+
+    // ── Component 17: Brownfield migration for deploy_runs table ──
+    const drColumns = [
+      { name: 'environment_id', sql: 'TEXT' },
+      { name: 'evidence_ids_json', sql: "TEXT DEFAULT '[]'" },
+      { name: 'health_verdict', sql: 'TEXT' },
+    ];
+    for (const col of drColumns) {
+      try {
+        this.db!.run(`ALTER TABLE deploy_runs ADD COLUMN ${col.name} ${col.sql}`);
+      } catch {
+        // Column already exists — safe to skip
+      }
+    }
+
+    // ── Component 21: Brownfield migration for incidents table ──
+    const incidentColumns = [
+      { name: 'environment_id', sql: 'TEXT' },
+      { name: 'deploy_workflow_id', sql: 'TEXT' },
+      { name: 'evidence_ids_json', sql: "TEXT DEFAULT '[]'" },
+      { name: 'correlated_change_ids_json', sql: "TEXT DEFAULT '[]'" },
+      { name: 'recommended_action', sql: 'TEXT' },
+      { name: 'self_healing_attempted', sql: 'INTEGER DEFAULT 0' },
+      { name: 'self_healing_result', sql: 'TEXT' },
+      { name: 'watch_mode_active', sql: 'INTEGER DEFAULT 0' },
+    ];
+    for (const col of incidentColumns) {
+      try {
+        this.db!.run(`ALTER TABLE incidents ADD COLUMN ${col.name} ${col.sql}`);
+      } catch {
+        // Column already exists — safe to skip
+      }
+    }
+
+    this.save();
   }
 
   close(): void {
@@ -1107,8 +1440,16 @@ export class LocalDb {
 
   insertIncident(incident: Incident): void {
     this.db!.run(
-      'INSERT OR REPLACE INTO incidents (id, project_id, title, severity, description, status, detected_at, resolved_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [incident.id, incident.projectId, incident.title, incident.severity, incident.description, incident.status, incident.detectedAt, incident.resolvedAt]
+      'INSERT OR REPLACE INTO incidents (id, project_id, title, severity, description, status, detected_at, resolved_at, environment_id, deploy_workflow_id, evidence_ids_json, correlated_change_ids_json, recommended_action, self_healing_attempted, self_healing_result, watch_mode_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        incident.id, incident.projectId, incident.title, incident.severity,
+        incident.description, incident.status, incident.detectedAt, incident.resolvedAt,
+        incident.environmentId, incident.deployWorkflowId,
+        JSON.stringify(incident.evidenceIds ?? []),
+        JSON.stringify(incident.correlatedChangeIds ?? []),
+        incident.recommendedAction, incident.selfHealingAttempted ? 1 : 0,
+        incident.selfHealingResult, incident.watchModeActive ? 1 : 0,
+      ]
     );
     this.save();
   }
@@ -1121,6 +1462,41 @@ export class LocalDb {
     if (updates.description !== undefined) { fields.push('description = ?'); values.push(updates.description); }
     if (updates.status !== undefined) { fields.push('status = ?'); values.push(updates.status); }
     if (updates.resolvedAt !== undefined) { fields.push('resolved_at = ?'); values.push(updates.resolvedAt); }
+    if (updates.environmentId !== undefined) { fields.push('environment_id = ?'); values.push(updates.environmentId); }
+    if (updates.deployWorkflowId !== undefined) { fields.push('deploy_workflow_id = ?'); values.push(updates.deployWorkflowId); }
+    if (updates.evidenceIds !== undefined) { fields.push('evidence_ids_json = ?'); values.push(JSON.stringify(updates.evidenceIds)); }
+    if (updates.correlatedChangeIds !== undefined) { fields.push('correlated_change_ids_json = ?'); values.push(JSON.stringify(updates.correlatedChangeIds)); }
+    if (updates.recommendedAction !== undefined) { fields.push('recommended_action = ?'); values.push(updates.recommendedAction); }
+    if (updates.selfHealingAttempted !== undefined) { fields.push('self_healing_attempted = ?'); values.push(updates.selfHealingAttempted ? 1 : 0); }
+    if (updates.selfHealingResult !== undefined) { fields.push('self_healing_result = ?'); values.push(updates.selfHealingResult); }
+    if (updates.watchModeActive !== undefined) { fields.push('watch_mode_active = ?'); values.push(updates.watchModeActive ? 1 : 0); }
+    values.push(id);
+    this.db!.run(`UPDATE incidents SET ${fields.join(', ')} WHERE id = ?`, values);
+    this.save();
+  }
+
+  /** Update extended incident fields (Component 21). */
+  updateIncidentWatchFields(id: string, updates: {
+    environmentId?: string | null;
+    deployWorkflowId?: string | null;
+    evidenceIds?: string[];
+    correlatedChangeIds?: string[];
+    recommendedAction?: string | null;
+    selfHealingAttempted?: boolean;
+    selfHealingResult?: string | null;
+    watchModeActive?: boolean;
+  }): void {
+    const fields: string[] = [];
+    const values: unknown[] = [];
+    if (updates.environmentId !== undefined) { fields.push('environment_id = ?'); values.push(updates.environmentId); }
+    if (updates.deployWorkflowId !== undefined) { fields.push('deploy_workflow_id = ?'); values.push(updates.deployWorkflowId); }
+    if (updates.evidenceIds !== undefined) { fields.push('evidence_ids_json = ?'); values.push(JSON.stringify(updates.evidenceIds)); }
+    if (updates.correlatedChangeIds !== undefined) { fields.push('correlated_change_ids_json = ?'); values.push(JSON.stringify(updates.correlatedChangeIds)); }
+    if (updates.recommendedAction !== undefined) { fields.push('recommended_action = ?'); values.push(updates.recommendedAction); }
+    if (updates.selfHealingAttempted !== undefined) { fields.push('self_healing_attempted = ?'); values.push(updates.selfHealingAttempted ? 1 : 0); }
+    if (updates.selfHealingResult !== undefined) { fields.push('self_healing_result = ?'); values.push(updates.selfHealingResult); }
+    if (updates.watchModeActive !== undefined) { fields.push('watch_mode_active = ?'); values.push(updates.watchModeActive ? 1 : 0); }
+    if (fields.length === 0) return;
     values.push(id);
     this.db!.run(`UPDATE incidents SET ${fields.join(', ')} WHERE id = ?`, values);
     this.save();
@@ -1136,6 +1512,15 @@ export class LocalDb {
       status: (row.status as Incident['status']) ?? 'open',
       detectedAt: row.detected_at as string,
       resolvedAt: (row.resolved_at as string) ?? null,
+      // Component 21 fields
+      environmentId: (row.environment_id as string) ?? null,
+      deployWorkflowId: (row.deploy_workflow_id as string) ?? null,
+      evidenceIds: JSON.parse((row.evidence_ids_json as string) ?? '[]') as string[],
+      correlatedChangeIds: JSON.parse((row.correlated_change_ids_json as string) ?? '[]') as string[],
+      recommendedAction: (row.recommended_action as string) ?? null,
+      selfHealingAttempted: (row.self_healing_attempted as number) === 1,
+      selfHealingResult: (row.self_healing_result as string) ?? null,
+      watchModeActive: (row.watch_mode_active as number) === 1,
     };
   }
 
@@ -1148,8 +1533,8 @@ export class LocalDb {
 
   upsertDeployCandidate(candidate: DeployCandidate): void {
     this.db!.run(
-      'INSERT OR REPLACE INTO deploy_candidates (id, project_id, environment_id, commit_sha, version, status, deployed_at, deployed_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [candidate.id, candidate.projectId, candidate.environmentId, candidate.commitSha, candidate.version, candidate.status, candidate.deployedAt, candidate.deployedBy]
+      'INSERT OR REPLACE INTO deploy_candidates (id, project_id, environment_id, commit_sha, version, status, deployed_at, deployed_by, evidence_ids_json, verification_run_id, rollback_checkpoint_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [candidate.id, candidate.projectId, candidate.environmentId, candidate.commitSha, candidate.version, candidate.status, candidate.deployedAt, candidate.deployedBy, JSON.stringify(candidate.evidenceIds ?? []), candidate.verificationRunId, candidate.rollbackCheckpointId]
     );
     this.save();
   }
@@ -1164,6 +1549,9 @@ export class LocalDb {
       status: (row.status as DeployCandidate['status']) ?? 'pending',
       deployedAt: (row.deployed_at as string) ?? null,
       deployedBy: (row.deployed_by as string) ?? '',
+      evidenceIds: JSON.parse((row.evidence_ids_json as string) ?? '[]') as string[],
+      verificationRunId: (row.verification_run_id as string) ?? null,
+      rollbackCheckpointId: (row.rollback_checkpoint_id as string) ?? null,
     };
   }
 
@@ -1183,8 +1571,12 @@ export class LocalDb {
 
   upsertEnvironment(env: Environment): void {
     this.db!.run(
-      'INSERT OR REPLACE INTO environments (id, project_id, name, type, current_version, secrets_complete, service_health, branch_mapping) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [env.id, env.projectId, env.name, env.type, env.currentVersion, env.secretsComplete ? 1 : 0, env.serviceHealth, env.branchMapping]
+      'INSERT OR REPLACE INTO environments (id, project_id, name, type, current_version, secrets_complete, service_health, branch_mapping, host, deploy_mechanism, required_secrets_json, linked_service_ids_json, health_endpoint, protections_json, rollback_method, mutability_rules_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        env.id, env.projectId, env.name, env.type, env.currentVersion, env.secretsComplete ? 1 : 0, env.serviceHealth, env.branchMapping,
+        env.host, env.deployMechanism, JSON.stringify(env.requiredSecrets ?? []), JSON.stringify(env.linkedServiceIds ?? []),
+        env.healthEndpoint, JSON.stringify(env.protections ?? []), env.rollbackMethod, JSON.stringify(env.mutabilityRules ?? []),
+      ]
     );
     this.save();
   }
@@ -1199,6 +1591,14 @@ export class LocalDb {
       secretsComplete: (row.secrets_complete as number) === 1,
       serviceHealth: (row.service_health as CapabilityHealth) ?? 'unknown',
       branchMapping: (row.branch_mapping as string) ?? null,
+      host: (row.host as string) ?? null,
+      deployMechanism: (row.deploy_mechanism as string) ?? null,
+      requiredSecrets: JSON.parse((row.required_secrets_json as string) ?? '[]') as string[],
+      linkedServiceIds: JSON.parse((row.linked_service_ids_json as string) ?? '[]') as string[],
+      healthEndpoint: (row.health_endpoint as string) ?? null,
+      protections: JSON.parse((row.protections_json as string) ?? '[]') as EnvironmentProtection[],
+      rollbackMethod: (row.rollback_method as string) ?? null,
+      mutabilityRules: JSON.parse((row.mutability_rules_json as string) ?? '[]') as MutabilityRule[],
     };
   }
 
@@ -1752,5 +2152,862 @@ export class LocalDb {
       existingPattern: (row.existing_pattern as string) ?? null,
       reuseSuggestion: reuseJson ? JSON.parse(reuseJson) as PatternReuseSuggestion : null,
     };
+  }
+
+  // ── Component 19: Audit Records ────────────────────────────────────
+
+  insertAuditRecord(record: AuditRecord): void {
+    this.db!.run(
+      'INSERT INTO audit_records (id, mission_id, plan_step_id, role_slug, capability_id, action_type, parameters_json, environment, risk_class, risk_score, risk_dimensions_json, evidence_completeness, reversibility, evidence_summary, approval_chain_json, result, checkpoint_id, rollback_plan_json, initiated_by, initiated_at, completed_at, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        record.id,
+        record.missionId,
+        record.planStepId,
+        record.roleSlug,
+        record.capabilityId,
+        record.actionType,
+        JSON.stringify(record.parameters),
+        record.environment,
+        record.riskAssessment.riskClass,
+        record.riskAssessment.overallScore,
+        JSON.stringify(record.riskAssessment.dimensions),
+        record.riskAssessment.evidenceCompleteness,
+        record.riskAssessment.reversibility,
+        record.evidenceSummary,
+        JSON.stringify(record.approvalChain),
+        record.result,
+        record.checkpointId,
+        record.rollbackPlan ? JSON.stringify(record.rollbackPlan) : null,
+        record.initiatedBy,
+        record.initiatedAt,
+        record.completedAt,
+        record.durationMs,
+      ]
+    );
+    this.save();
+  }
+
+  getAuditRecord(id: string): AuditRecord | null {
+    const result = this.db!.exec('SELECT * FROM audit_records WHERE id = ?', [id])[0];
+    const objs = this.toObjAll(result);
+    if (!objs.length) return null;
+    return this.rowToAuditRecord(objs[0]);
+  }
+
+  listAuditRecords(filter?: { missionId?: string; limit?: number }): AuditRecord[] {
+    let sql = 'SELECT * FROM audit_records';
+    const params: unknown[] = [];
+    if (filter?.missionId) {
+      sql += ' WHERE mission_id = ?';
+      params.push(filter.missionId);
+    }
+    sql += ' ORDER BY initiated_at DESC';
+    if (filter?.limit) {
+      sql += ' LIMIT ?';
+      params.push(filter.limit);
+    }
+    const result = this.db!.exec(sql, params)[0];
+    return this.toObjAll(result).map((r) => this.rowToAuditRecord(r));
+  }
+
+  listAuditRecordsByRiskClass(riskClass: RiskClass): AuditRecord[] {
+    const result = this.db!.exec(
+      'SELECT * FROM audit_records WHERE risk_class = ? ORDER BY initiated_at DESC',
+      [riskClass]
+    )[0];
+    return this.toObjAll(result).map((r) => this.rowToAuditRecord(r));
+  }
+
+  updateAuditResult(id: string, result: string, completedAt: string | null, durationMs: number | null): void {
+    this.db!.run(
+      'UPDATE audit_records SET result = ?, completed_at = ?, duration_ms = ? WHERE id = ?',
+      [result, completedAt, durationMs, id]
+    );
+    this.save();
+  }
+
+  linkCheckpointToAudit(auditId: string, checkpointId: string): void {
+    this.db!.run(
+      'UPDATE audit_records SET checkpoint_id = ? WHERE id = ?',
+      [checkpointId, auditId]
+    );
+    this.save();
+  }
+
+  getCheckpointsForMission(missionId: string): Checkpoint[] {
+    // Join audit_records with checkpoints via checkpoint_id
+    const result = this.db!.exec(
+      `SELECT c.* FROM checkpoints c
+       INNER JOIN audit_records a ON a.checkpoint_id = c.id
+       WHERE a.mission_id = ?
+       ORDER BY c.created_at DESC`,
+      [missionId]
+    )[0];
+    return this.toObjAll(result).map((r) => this.rowToCheckpoint(r));
+  }
+
+  private rowToAuditRecord(row: Record<string, unknown>): AuditRecord {
+    return {
+      id: row.id as string,
+      missionId: (row.mission_id as string) ?? null,
+      planStepId: (row.plan_step_id as string) ?? null,
+      roleSlug: (row.role_slug as string) ?? null,
+      capabilityId: (row.capability_id as string) ?? null,
+      actionType: row.action_type as string,
+      parameters: JSON.parse((row.parameters_json as string) ?? '{}') as Record<string, unknown>,
+      environment: (row.environment as string) ?? null,
+      riskAssessment: {
+        riskClass: row.risk_class as RiskClass,
+        overallScore: (row.risk_score as number) ?? 0,
+        dimensions: JSON.parse((row.risk_dimensions_json as string) ?? '[]'),
+        evidenceCompleteness: (row.evidence_completeness as 'complete' | 'partial' | 'missing') ?? 'missing',
+        reversibility: (row.reversibility as 'reversible' | 'partially-reversible' | 'irreversible') ?? 'reversible',
+      },
+      evidenceSummary: (row.evidence_summary as string) ?? null,
+      approvalChain: JSON.parse((row.approval_chain_json as string) ?? '[]'),
+      result: row.result as AuditRecord['result'],
+      checkpointId: (row.checkpoint_id as string) ?? null,
+      rollbackPlan: row.rollback_plan_json ? JSON.parse(row.rollback_plan_json as string) : null,
+      initiatedBy: (row.initiated_by as string) ?? 'system',
+      initiatedAt: row.initiated_at as string,
+      completedAt: (row.completed_at as string) ?? null,
+      durationMs: (row.duration_ms as number) ?? null,
+    };
+  }
+
+  // ── Component 15: Runtime Executions ────────────────────────────────────
+
+  upsertRuntimeExecution(exec: RuntimeExecution): void {
+    this.db!.run(
+      'INSERT OR REPLACE INTO runtime_executions (id, workspace_run_id, mission_id, plan_step_id, command, cwd, status, exit_code, stdout, stderr, duration_ms, started_at, completed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        exec.id, exec.workspaceRunId, exec.missionId, exec.planStepId,
+        exec.command, exec.cwd, exec.status, exec.exitCode,
+        exec.stdout, exec.stderr, exec.durationMs, exec.startedAt, exec.completedAt,
+      ]
+    );
+    this.save();
+  }
+
+  getRuntimeExecution(id: string): RuntimeExecution | null {
+    const result = this.db!.exec('SELECT * FROM runtime_executions WHERE id = ?', [id])[0];
+    const objs = this.toObjAll(result);
+    if (!objs.length) return null;
+    return this.rowToRuntimeExecution(objs[0]);
+  }
+
+  listRuntimeExecutions(missionId: string): RuntimeExecution[] {
+    const result = this.db!.exec(
+      'SELECT * FROM runtime_executions WHERE mission_id = ? ORDER BY started_at DESC',
+      [missionId]
+    )[0];
+    return this.toObjAll(result).map((r) => this.rowToRuntimeExecution(r));
+  }
+
+  private rowToRuntimeExecution(row: Record<string, unknown>): RuntimeExecution {
+    return {
+      id: row.id as string,
+      workspaceRunId: row.workspace_run_id as string,
+      missionId: row.mission_id as string,
+      planStepId: (row.plan_step_id as string) ?? null,
+      command: row.command as string,
+      cwd: row.cwd as string,
+      status: row.status as RuntimeExecution['status'],
+      exitCode: (row.exit_code as number) ?? null,
+      stdout: (row.stdout as string) ?? '',
+      stderr: (row.stderr as string) ?? '',
+      durationMs: (row.duration_ms as number) ?? 0,
+      startedAt: row.started_at as string,
+      completedAt: (row.completed_at as string) ?? null,
+    };
+  }
+
+  // ── Component 15: Browser Sessions ──────────────────────────────────────
+
+  upsertBrowserSession(session: BrowserSession): void {
+    this.db!.run(
+      'INSERT OR REPLACE INTO browser_sessions (id, workspace_run_id, mission_id, plan_step_id, base_url, status, screenshots_json, console_logs, network_traces, started_at, closed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        session.id, session.workspaceRunId, session.missionId, session.planStepId,
+        session.baseUrl, session.status, JSON.stringify(session.screenshots),
+        session.consoleLogs, session.networkTraces, session.startedAt, session.closedAt,
+      ]
+    );
+    this.save();
+  }
+
+  getBrowserSession(id: string): BrowserSession | null {
+    const result = this.db!.exec('SELECT * FROM browser_sessions WHERE id = ?', [id])[0];
+    const objs = this.toObjAll(result);
+    if (!objs.length) return null;
+    return this.rowToBrowserSession(objs[0]);
+  }
+
+  listBrowserSessions(missionId: string): BrowserSession[] {
+    const result = this.db!.exec(
+      'SELECT * FROM browser_sessions WHERE mission_id = ? ORDER BY started_at DESC',
+      [missionId]
+    )[0];
+    return this.toObjAll(result).map((r) => this.rowToBrowserSession(r));
+  }
+
+  private rowToBrowserSession(row: Record<string, unknown>): BrowserSession {
+    return {
+      id: row.id as string,
+      workspaceRunId: row.workspace_run_id as string,
+      missionId: row.mission_id as string,
+      planStepId: (row.plan_step_id as string) ?? null,
+      baseUrl: row.base_url as string,
+      status: row.status as BrowserSession['status'],
+      screenshots: JSON.parse((row.screenshots_json as string) ?? '[]') as string[],
+      consoleLogs: (row.console_logs as string) ?? '',
+      networkTraces: (row.network_traces as string) ?? '',
+      startedAt: row.started_at as string,
+      closedAt: (row.closed_at as string) ?? null,
+    };
+  }
+
+  // ── Component 15: Evidence Records ──────────────────────────────────────
+
+  upsertEvidenceRecord(record: EvidenceRecord): void {
+    this.db!.run(
+      'INSERT OR REPLACE INTO evidence_records (id, mission_id, workspace_run_id, plan_step_id, changeset_id, environment_id, capability_invocation_id, type, status, title, detail, artifact_path, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        record.id, record.missionId, record.workspaceRunId, record.planStepId,
+        record.changesetId, record.environmentId, record.capabilityInvocationId,
+        record.type, record.status, record.title, record.detail,
+        record.artifactPath, record.timestamp,
+      ]
+    );
+    this.save();
+  }
+
+  getEvidenceRecord(id: string): EvidenceRecord | null {
+    const result = this.db!.exec('SELECT * FROM evidence_records WHERE id = ?', [id])[0];
+    const objs = this.toObjAll(result);
+    if (!objs.length) return null;
+    return this.rowToEvidenceRecord(objs[0]);
+  }
+
+  listEvidenceRecordsByMission(missionId: string): EvidenceRecord[] {
+    const result = this.db!.exec(
+      'SELECT * FROM evidence_records WHERE mission_id = ? ORDER BY timestamp DESC',
+      [missionId]
+    )[0];
+    return this.toObjAll(result).map((r) => this.rowToEvidenceRecord(r));
+  }
+
+  listEvidenceRecordsByWorkspaceRun(workspaceRunId: string): EvidenceRecord[] {
+    const result = this.db!.exec(
+      'SELECT * FROM evidence_records WHERE workspace_run_id = ? ORDER BY timestamp DESC',
+      [workspaceRunId]
+    )[0];
+    return this.toObjAll(result).map((r) => this.rowToEvidenceRecord(r));
+  }
+
+  private rowToEvidenceRecord(row: Record<string, unknown>): EvidenceRecord {
+    return {
+      id: row.id as string,
+      missionId: row.mission_id as string,
+      workspaceRunId: row.workspace_run_id as string,
+      planStepId: (row.plan_step_id as string) ?? null,
+      changesetId: (row.changeset_id as string) ?? null,
+      environmentId: (row.environment_id as string) ?? null,
+      capabilityInvocationId: (row.capability_invocation_id as string) ?? null,
+      type: row.type as EvidenceItemType,
+      status: row.status as EvidenceRecord['status'],
+      title: row.title as string,
+      detail: (row.detail as string) ?? null,
+      artifactPath: (row.artifact_path as string) ?? null,
+      timestamp: row.timestamp as string,
+    };
+  }
+
+  // ── Component 16: Verification Runs ──────────────────────────────────────
+
+  upsertVerificationRun(run: VerificationRun): void {
+    this.db!.run(
+      'INSERT OR REPLACE INTO verification_runs (id, mission_id, workspace_run_id, changeset_id, candidate_id, bundle_id, overall_status, checks_json, missing_required_checks_json, flake_suspicions_json, risk_impact, started_at, completed_at, verdict, verdict_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        run.id, run.missionId, run.workspaceRunId, run.changesetId, run.candidateId,
+        run.bundleId, run.overallStatus, JSON.stringify(run.checks),
+        JSON.stringify(run.missingRequiredChecks), JSON.stringify(run.flakeSuspicions),
+        run.riskImpact, run.startedAt, run.completedAt, run.verdict, run.verdictReason,
+      ]
+    );
+    this.save();
+  }
+
+  getVerificationRun(id: string): VerificationRun | null {
+    const result = this.db!.exec('SELECT * FROM verification_runs WHERE id = ?', [id])[0];
+    const objs = this.toObjAll(result);
+    if (!objs.length) return null;
+    return this.rowToVerificationRun(objs[0]);
+  }
+
+  listVerificationRunsByMission(missionId: string): VerificationRun[] {
+    const result = this.db!.exec(
+      'SELECT * FROM verification_runs WHERE mission_id = ? ORDER BY started_at DESC',
+      [missionId]
+    )[0];
+    return this.toObjAll(result).map((r) => this.rowToVerificationRun(r));
+  }
+
+  private rowToVerificationRun(row: Record<string, unknown>): VerificationRun {
+    return {
+      id: row.id as string,
+      missionId: row.mission_id as string,
+      workspaceRunId: (row.workspace_run_id as string) ?? null,
+      changesetId: (row.changeset_id as string) ?? null,
+      candidateId: (row.candidate_id as string) ?? null,
+      bundleId: row.bundle_id as string,
+      overallStatus: row.overall_status as VerificationRun['overallStatus'],
+      checks: JSON.parse((row.checks_json as string) ?? '[]') as VerificationCheck[],
+      missingRequiredChecks: JSON.parse((row.missing_required_checks_json as string) ?? '[]') as string[],
+      flakeSuspicions: JSON.parse((row.flake_suspicions_json as string) ?? '[]') as string[],
+      riskImpact: row.risk_impact as VerificationRun['riskImpact'],
+      startedAt: row.started_at as string,
+      completedAt: (row.completed_at as string) ?? null,
+      verdict: (row.verdict as VerificationRun['verdict']) ?? null,
+      verdictReason: (row.verdict_reason as string) ?? null,
+    };
+  }
+
+  // ── Component 16: Verification Checks ──────────────────────────────────────
+
+  upsertVerificationCheck(check: VerificationCheck): void {
+    this.db!.run(
+      'INSERT OR REPLACE INTO verification_checks (id, verification_run_id, layer, check_name, status, detail, evidence_item_ids_json, duration_ms, started_at, completed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        check.id, check.verificationRunId, check.layer, check.checkName,
+        check.status, check.detail, JSON.stringify(check.evidenceItemIds),
+        check.durationMs, check.startedAt, check.completedAt,
+      ]
+    );
+    this.save();
+  }
+
+  listVerificationChecksByRun(runId: string): VerificationCheck[] {
+    const result = this.db!.exec(
+      'SELECT * FROM verification_checks WHERE verification_run_id = ? ORDER BY started_at ASC',
+      [runId]
+    )[0];
+    return this.toObjAll(result).map((r) => this.rowToVerificationCheck(r));
+  }
+
+  private rowToVerificationCheck(row: Record<string, unknown>): VerificationCheck {
+    return {
+      id: row.id as string,
+      verificationRunId: row.verification_run_id as string,
+      layer: row.layer as VerificationCheck['layer'],
+      checkName: row.check_name as string,
+      status: row.status as VerificationCheck['status'],
+      detail: (row.detail as string) ?? null,
+      evidenceItemIds: JSON.parse((row.evidence_item_ids_json as string) ?? '[]') as string[],
+      durationMs: (row.duration_ms as number) ?? null,
+      startedAt: row.started_at as string,
+      completedAt: (row.completed_at as string) ?? null,
+    };
+  }
+
+  // ── Component 16: Verification Bundles ──────────────────────────────────────
+
+  upsertVerificationBundle(bundle: VerificationBundle): void {
+    this.db!.run(
+      'INSERT OR REPLACE INTO verification_bundles (id, name, risk_class, required_layers_json, description) VALUES (?, ?, ?, ?, ?)',
+      [bundle.id, bundle.name, bundle.riskClass, JSON.stringify(bundle.requiredLayers), bundle.description]
+    );
+    this.save();
+  }
+
+  listVerificationBundles(): VerificationBundle[] {
+    const result = this.db!.exec('SELECT * FROM verification_bundles ORDER BY risk_class ASC')[0];
+    return this.toObjAll(result).map((r) => this.rowToVerificationBundle(r));
+  }
+
+  getVerificationBundle(id: string): VerificationBundle | null {
+    const result = this.db!.exec('SELECT * FROM verification_bundles WHERE id = ?', [id])[0];
+    const objs = this.toObjAll(result);
+    if (!objs.length) return null;
+    return this.rowToVerificationBundle(objs[0]);
+  }
+
+  private rowToVerificationBundle(row: Record<string, unknown>): VerificationBundle {
+    return {
+      id: row.id as string,
+      name: row.name as string,
+      riskClass: row.risk_class as VerificationBundle['riskClass'],
+      requiredLayers: JSON.parse((row.required_layers_json as string) ?? '[]') as VerificationBundle['requiredLayers'],
+      description: row.description as string,
+    };
+  }
+
+  // ── Component 16: Acceptance Criteria ──────────────────────────────────────
+
+  upsertAcceptanceCriteria(criteria: AcceptanceCriteria): void {
+    this.db!.run(
+      'INSERT OR REPLACE INTO acceptance_criteria (id, mission_id, intended_behavior_json, non_goals_json, paths_that_must_still_work_json, comparison_targets_json, regression_thresholds_json, rollback_conditions_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        criteria.id, criteria.missionId,
+        JSON.stringify(criteria.intendedBehavior), JSON.stringify(criteria.nonGoals),
+        JSON.stringify(criteria.pathsThatMustStillWork), JSON.stringify(criteria.comparisonTargets),
+        JSON.stringify(criteria.regressionThresholds), JSON.stringify(criteria.rollbackConditions),
+        criteria.createdAt, criteria.updatedAt,
+      ]
+    );
+    this.save();
+  }
+
+  getAcceptanceCriteria(missionId: string): AcceptanceCriteria | null {
+    const result = this.db!.exec('SELECT * FROM acceptance_criteria WHERE mission_id = ?', [missionId])[0];
+    const objs = this.toObjAll(result);
+    if (!objs.length) return null;
+    return this.rowToAcceptanceCriteria(objs[0]);
+  }
+
+  private rowToAcceptanceCriteria(row: Record<string, unknown>): AcceptanceCriteria {
+    return {
+      id: row.id as string,
+      missionId: row.mission_id as string,
+      intendedBehavior: JSON.parse((row.intended_behavior_json as string) ?? '[]') as string[],
+      nonGoals: JSON.parse((row.non_goals_json as string) ?? '[]') as string[],
+      pathsThatMustStillWork: JSON.parse((row.paths_that_must_still_work_json as string) ?? '[]') as string[],
+      comparisonTargets: JSON.parse((row.comparison_targets_json as string) ?? '[]') as string[],
+      regressionThresholds: JSON.parse((row.regression_thresholds_json as string) ?? '[]') as string[],
+      rollbackConditions: JSON.parse((row.rollback_conditions_json as string) ?? '[]') as string[],
+      createdAt: row.created_at as string,
+      updatedAt: row.updated_at as string,
+    };
+  }
+
+  // ── Component 18: Secrets Records ──────────────────────────────────────
+
+  upsertSecretRecord(rec: SecretRecord): void {
+    this.db!.run(
+      'INSERT OR REPLACE INTO secret_records (id, project_id, key_name, category, description, required_environments_json, sensitivity_level, source_of_truth, rotation_notes, approval_rules, code_references_json, stored_in_keytar, last_verified_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        rec.id, rec.projectId, rec.keyName, rec.category, rec.description,
+        JSON.stringify(rec.requiredEnvironments), rec.sensitivityLevel, rec.sourceOfTruth,
+        rec.rotationNotes, rec.approvalRulesForChanges, JSON.stringify(rec.codeReferences),
+        rec.storedInKeytar ? 1 : 0, rec.lastVerifiedAt, rec.createdAt, rec.updatedAt,
+      ]
+    );
+    this.save();
+  }
+
+  listSecretRecords(projectId: string): SecretRecord[] {
+    const result = this.db!.exec('SELECT * FROM secret_records WHERE project_id = ?', [projectId])[0];
+    return this.toObjAll(result).map((r) => this.rowToSecretRecord(r));
+  }
+
+  getSecretRecord(id: string): SecretRecord | null {
+    const result = this.db!.exec('SELECT * FROM secret_records WHERE id = ?', [id])[0];
+    const objs = this.toObjAll(result);
+    if (!objs.length) return null;
+    return this.rowToSecretRecord(objs[0]);
+  }
+
+  deleteSecretRecord(id: string): void {
+    this.db!.run('DELETE FROM secret_records WHERE id = ?', [id]);
+    this.save();
+  }
+
+  getMissingSecretsForEnvironment(projectId: string, environmentId: string): SecretRecord[] {
+    // For now, return all secrets for the project — future: filter by required_environments
+    const all = this.listSecretRecords(projectId);
+    // In a real implementation, we'd cross-reference with environment config
+    return all.filter(s => s.requiredEnvironments.includes(environmentId));
+  }
+
+  getChangedSecretsSinceLastDeploy(projectId: string): SecretRecord[] {
+    // Return secrets that have been recently verified or modified
+    const all = this.listSecretRecords(projectId);
+    return all.filter(s => s.lastVerifiedAt !== null);
+  }
+
+  verifySecret(id: string): { success: boolean; error?: string } {
+    try {
+      // Update last_verified_at timestamp
+      this.db!.run(
+        'UPDATE secret_records SET last_verified_at = ?, updated_at = ? WHERE id = ?',
+        [new Date().toISOString(), new Date().toISOString(), id]
+      );
+      this.save();
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  }
+
+  getSecretInventorySummary(projectId: string): { total: number; missing: number; verified: number } {
+    const all = this.listSecretRecords(projectId);
+    return {
+      total: all.length,
+      missing: all.filter(s => !s.storedInKeytar).length,
+      verified: all.filter(s => s.lastVerifiedAt !== null).length,
+    };
+  }
+
+  private rowToSecretRecord(row: Record<string, unknown>): SecretRecord {
+    return {
+      id: row.id as string,
+      projectId: row.project_id as string,
+      keyName: row.key_name as string,
+      category: row.category as string,
+      description: (row.description as string) ?? '',
+      requiredEnvironments: JSON.parse((row.required_environments_json as string) ?? '[]') as string[],
+      sensitivityLevel: (row.sensitivity_level as SecretRecord['sensitivityLevel']) ?? 'internal',
+      sourceOfTruth: (row.source_of_truth as string) ?? '',
+      rotationNotes: (row.rotation_notes as string) ?? '',
+      approvalRulesForChanges: (row.approval_rules as string) ?? '',
+      codeReferences: JSON.parse((row.code_references_json as string) ?? '[]') as string[],
+      storedInKeytar: (row.stored_in_keytar as number) !== 0,
+      lastVerifiedAt: (row.last_verified_at as string) ?? null,
+      createdAt: row.created_at as string,
+      updatedAt: row.updated_at as string,
+    };
+  }
+
+  // ── Component 18: Migration Plans ──────────────────────────────────────
+
+  upsertMigrationPlan(plan: MigrationPlan): void {
+    this.db!.run(
+      'INSERT OR REPLACE INTO migration_plans (id, project_id, mission_id, risk_class, description, affected_tables_json, estimated_blast_radius, forward_compatible, backward_compatible, requires_checkpoint, checkpoint_id, safeguards_json, ordering_requirement, approval_required, rollback_constraints, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        plan.id, plan.projectId, plan.missionId, plan.riskClass, plan.description,
+        JSON.stringify(plan.affectedTables), plan.estimatedBlastRadius,
+        plan.forwardCompatible ? 1 : 0, plan.backwardCompatible ? 1 : 0,
+        plan.requiresCheckpoint ? 1 : 0, plan.checkpointId,
+        JSON.stringify(plan.safeguards), plan.orderingRequirement,
+        plan.approvalRequired ? 1 : 0, plan.rollbackConstraints,
+        plan.status, plan.createdAt, plan.updatedAt,
+      ]
+    );
+    this.save();
+  }
+
+  getMigrationPlan(id: string): MigrationPlan | null {
+    const result = this.db!.exec('SELECT * FROM migration_plans WHERE id = ?', [id])[0];
+    const objs = this.toObjAll(result);
+    if (!objs.length) return null;
+    return this.rowToMigrationPlan(objs[0]);
+  }
+
+  listMigrationPlans(projectId: string): MigrationPlan[] {
+    const result = this.db!.exec('SELECT * FROM migration_plans WHERE project_id = ? ORDER BY created_at DESC', [projectId])[0];
+    return this.toObjAll(result).map((r) => this.rowToMigrationPlan(r));
+  }
+
+  private rowToMigrationPlan(row: Record<string, unknown>): MigrationPlan {
+    return {
+      id: row.id as string,
+      projectId: row.project_id as string,
+      missionId: (row.mission_id as string) ?? null,
+      riskClass: row.risk_class as MigrationRiskClass,
+      description: row.description as string,
+      affectedTables: JSON.parse((row.affected_tables_json as string) ?? '[]') as string[],
+      estimatedBlastRadius: (row.estimated_blast_radius as MigrationPlan['estimatedBlastRadius']) ?? 'low',
+      forwardCompatible: (row.forward_compatible as number) !== 0,
+      backwardCompatible: (row.backward_compatible as number) !== 0,
+      requiresCheckpoint: (row.requires_checkpoint as number) !== 0,
+      checkpointId: (row.checkpoint_id as string) ?? null,
+      safeguards: JSON.parse((row.safeguards_json as string) ?? '[]') as MigrationPlan['safeguards'],
+      orderingRequirement: (row.ordering_requirement as MigrationPlan['orderingRequirement']) ?? 'schema-first',
+      approvalRequired: (row.approval_required as number) !== 0,
+      rollbackConstraints: (row.rollback_constraints as string) ?? '',
+      status: (row.status as MigrationPlan['status']) ?? 'draft',
+      createdAt: row.created_at as string,
+      updatedAt: row.updated_at as string,
+    };
+  }
+
+  // ── Component 18: Migration History ──────────────────────────────────────
+
+  insertMigrationHistoryEntry(entry: MigrationHistoryEntry): void {
+    this.db!.run(
+      'INSERT INTO migration_history (id, project_id, plan_id, migration_name, risk_class, applied_at, applied_by, success, error, rollback_executed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        entry.id, entry.projectId, entry.planId, entry.migrationName,
+        entry.riskClass, entry.appliedAt, entry.appliedBy,
+        entry.success ? 1 : 0, entry.error, entry.rollbackExecuted ? 1 : 0,
+      ]
+    );
+    this.save();
+  }
+
+  listMigrationHistory(projectId: string): MigrationHistoryEntry[] {
+    const result = this.db!.exec('SELECT * FROM migration_history WHERE project_id = ? ORDER BY applied_at DESC', [projectId])[0];
+    return this.toObjAll(result).map((r) => this.rowToMigrationHistoryEntry(r));
+  }
+
+  private rowToMigrationHistoryEntry(row: Record<string, unknown>): MigrationHistoryEntry {
+    return {
+      id: row.id as string,
+      projectId: row.project_id as string,
+      planId: row.plan_id as string,
+      migrationName: row.migration_name as string,
+      riskClass: row.risk_class as MigrationRiskClass,
+      appliedAt: row.applied_at as string,
+      appliedBy: (row.applied_by as string) ?? 'system',
+      success: (row.success as number) !== 0,
+      error: (row.error as string) ?? null,
+      rollbackExecuted: (row.rollback_executed as number) !== 0,
+    };
+  }
+
+  // ── Component 17: Deploy Workflows ──────────────────────────────────────
+
+  upsertDeployWorkflow(wf: DeployWorkflow): void {
+    this.db!.run(
+      'INSERT OR REPLACE INTO deploy_workflows (id, candidate_id, environment_id, steps_json, status, verdict, verdict_reason, evidence_ids_json, started_at, completed_at, rollback_offered) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        wf.id, wf.candidateId, wf.environmentId, JSON.stringify(wf.steps),
+        wf.status, wf.verdict, wf.verdictReason, JSON.stringify(wf.evidenceIds),
+        wf.startedAt, wf.completedAt, wf.rollbackOffered ? 1 : 0,
+      ]
+    );
+    this.save();
+  }
+
+  getDeployWorkflow(id: string): DeployWorkflow | null {
+    const result = this.db!.exec('SELECT * FROM deploy_workflows WHERE id = ?', [id])[0];
+    const objs = this.toObjAll(result);
+    if (!objs.length) return null;
+    return this.rowToDeployWorkflow(objs[0]);
+  }
+
+  listDeployWorkflows(projectId: string): DeployWorkflow[] {
+    // Join via environment_id to filter by project
+    const result = this.db!.exec(
+      'SELECT dw.* FROM deploy_workflows dw INNER JOIN environments e ON dw.environment_id = e.id WHERE e.project_id = ? ORDER BY dw.started_at DESC',
+      [projectId]
+    )[0];
+    return this.toObjAll(result).map((r) => this.rowToDeployWorkflow(r));
+  }
+
+  updateDeployWorkflowStatus(id: string, status: DeployWorkflow['status'], verdict?: string | null, verdictReason?: string | null, completedAt?: string | null, rollbackOffered?: boolean): void {
+    this.db!.run(
+      'UPDATE deploy_workflows SET status = ?, verdict = ?, verdict_reason = ?, completed_at = ?, rollback_offered = ? WHERE id = ?',
+      [status, verdict ?? null, verdictReason ?? null, completedAt ?? null, rollbackOffered ? 1 : 0, id]
+    );
+    this.save();
+  }
+
+  private rowToDeployWorkflow(row: Record<string, unknown>): DeployWorkflow {
+    return {
+      id: row.id as string,
+      candidateId: row.candidate_id as string,
+      environmentId: row.environment_id as string,
+      steps: JSON.parse((row.steps_json as string) ?? '[]') as DeployStep[],
+      status: (row.status as DeployWorkflow['status']) ?? 'pending',
+      verdict: (row.verdict as DeployWorkflow['verdict']) ?? null,
+      verdictReason: (row.verdict_reason as string) ?? null,
+      evidenceIds: JSON.parse((row.evidence_ids_json as string) ?? '[]') as string[],
+      startedAt: row.started_at as string,
+      completedAt: (row.completed_at as string) ?? null,
+      rollbackOffered: (row.rollback_offered as number) === 1,
+    };
+  }
+
+  // ── Component 17: Drift Reports ─────────────────────────────────────────
+
+  insertDriftReport(report: DriftReport): void {
+    this.db!.run(
+      'INSERT OR REPLACE INTO drift_reports (id, project_id, environment_id, drift_type, severity, description, detected_at, resolved) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        report.id, report.projectId, report.environmentId, report.driftType,
+        report.severity, report.description, report.detectedAt, report.resolved ? 1 : 0,
+      ]
+    );
+    this.save();
+  }
+
+  listDriftReports(projectId: string): DriftReport[] {
+    const result = this.db!.exec('SELECT * FROM drift_reports WHERE project_id = ? ORDER BY detected_at DESC', [projectId])[0];
+    return this.toObjAll(result).map((r) => this.rowToDriftReport(r));
+  }
+
+  resolveDriftReport(id: string): void {
+    this.db!.run('UPDATE drift_reports SET resolved = 1 WHERE id = ?', [id]);
+    this.save();
+  }
+
+  private rowToDriftReport(row: Record<string, unknown>): DriftReport {
+    return {
+      id: row.id as string,
+      projectId: row.project_id as string,
+      environmentId: row.environment_id as string,
+      driftType: row.drift_type as DriftReport['driftType'],
+      severity: row.severity as DriftReport['severity'],
+      description: row.description as string,
+      detectedAt: row.detected_at as string,
+      resolved: (row.resolved as number) === 1,
+    };
+  }
+
+  // ── Component 21: Watch Sessions ──────────────────────────────────────
+
+  upsertWatchSession(session: WatchSession): void {
+    this.db!.run(
+      'INSERT OR REPLACE INTO watch_sessions (id, project_id, environment_id, deploy_workflow_id, status, started_at, completed_at, elevated_evidence, anomaly_threshold, regression_baseline, probes_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        session.id, session.projectId, session.environmentId, session.deployWorkflowId,
+        session.status, session.startedAt, session.completedAt,
+        session.elevatedEvidence ? 1 : 0, session.anomalyThreshold,
+        session.regressionBaseline, JSON.stringify(session.probes),
+      ]
+    );
+    this.save();
+  }
+
+  getWatchSession(id: string): WatchSession | null {
+    const result = this.db!.exec('SELECT * FROM watch_sessions WHERE id = ?', [id])[0];
+    const objs = this.toObjAll(result);
+    if (!objs.length) return null;
+    return this.rowToWatchSession(objs[0]);
+  }
+
+  listWatchSessions(projectId: string): WatchSession[] {
+    const result = this.db!.exec('SELECT * FROM watch_sessions WHERE project_id = ? ORDER BY started_at DESC', [projectId])[0];
+    return this.toObjAll(result).map((r) => this.rowToWatchSession(r));
+  }
+
+  listActiveWatchSessions(projectId: string): WatchSession[] {
+    const result = this.db!.exec("SELECT * FROM watch_sessions WHERE project_id = ? AND status = 'active' ORDER BY started_at DESC", [projectId])[0];
+    return this.toObjAll(result).map((r) => this.rowToWatchSession(r));
+  }
+
+  completeWatchSession(id: string): void {
+    this.db!.run(
+      'UPDATE watch_sessions SET status = ?, completed_at = ? WHERE id = ?',
+      ['completed', new Date().toISOString(), id]
+    );
+    this.save();
+  }
+
+  private rowToWatchSession(row: Record<string, unknown>): WatchSession {
+    return {
+      id: row.id as string,
+      projectId: row.project_id as string,
+      environmentId: row.environment_id as string,
+      deployWorkflowId: row.deploy_workflow_id as string,
+      status: (row.status as WatchSession['status']) ?? 'active',
+      startedAt: row.started_at as string,
+      completedAt: (row.completed_at as string) ?? null,
+      elevatedEvidence: (row.elevated_evidence as number) !== 0,
+      anomalyThreshold: (row.anomaly_threshold as WatchSession['anomalyThreshold']) ?? 'elevated',
+      regressionBaseline: (row.regression_baseline as string) ?? null,
+      probes: JSON.parse((row.probes_json as string) ?? '[]') as WatchProbe[],
+    };
+  }
+
+  // ── Component 21: Anomaly Events ──────────────────────────────────────
+
+  insertAnomalyEvent(event: AnomalyEvent): void {
+    this.db!.run(
+      'INSERT OR REPLACE INTO anomaly_events (id, project_id, environment_id, watch_session_id, anomaly_type, severity, description, correlated_deploy_workflow_id, correlated_change_ids_json, evidence_ids_json, detected_at, acknowledged, acknowledged_at, acknowledged_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        event.id, event.projectId, event.environmentId, event.watchSessionId,
+        event.anomalyType, event.severity, event.description,
+        event.correlatedDeployWorkflowId, JSON.stringify(event.correlatedChangeIds),
+        JSON.stringify(event.evidenceIds), event.detectedAt,
+        event.acknowledged ? 1 : 0, event.acknowledgedAt, event.acknowledgedBy,
+      ]
+    );
+    this.save();
+  }
+
+  listAnomalyEvents(projectId: string): AnomalyEvent[] {
+    const result = this.db!.exec('SELECT * FROM anomaly_events WHERE project_id = ? ORDER BY detected_at DESC', [projectId])[0];
+    return this.toObjAll(result).map((r) => this.rowToAnomalyEvent(r));
+  }
+
+  acknowledgeAnomaly(id: string, acknowledgedBy: string): void {
+    this.db!.run(
+      'UPDATE anomaly_events SET acknowledged = 1, acknowledged_at = ?, acknowledged_by = ? WHERE id = ?',
+      [new Date().toISOString(), acknowledgedBy, id]
+    );
+    this.save();
+  }
+
+  private rowToAnomalyEvent(row: Record<string, unknown>): AnomalyEvent {
+    return {
+      id: row.id as string,
+      projectId: row.project_id as string,
+      environmentId: row.environment_id as string,
+      watchSessionId: (row.watch_session_id as string) ?? null,
+      anomalyType: row.anomaly_type as AnomalyEvent['anomalyType'],
+      severity: (row.severity as IncidentSeverity) ?? 'low',
+      description: row.description as string,
+      correlatedDeployWorkflowId: (row.correlated_deploy_workflow_id as string) ?? null,
+      correlatedChangeIds: JSON.parse((row.correlated_change_ids_json as string) ?? '[]') as string[],
+      evidenceIds: JSON.parse((row.evidence_ids_json as string) ?? '[]') as string[],
+      detectedAt: row.detected_at as string,
+      acknowledged: (row.acknowledged as number) === 1,
+      acknowledgedAt: (row.acknowledged_at as string) ?? null,
+      acknowledgedBy: (row.acknowledged_by as string) ?? null,
+    };
+  }
+
+  // ── Component 21: Self-Healing Actions ────────────────────────────────
+
+  upsertSelfHealingAction(action: SelfHealingAction): void {
+    this.db!.run(
+      'INSERT OR REPLACE INTO self_healing_actions (id, project_id, environment_id, anomaly_event_id, incident_id, action_type, automatic, status, approval_required, approval_result, result, executed_at, audit_record_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        action.id, action.projectId, action.environmentId,
+        action.anomalyEventId, action.incidentId, action.actionType,
+        action.automatic ? 1 : 0, action.status,
+        action.approvalRequired ? 1 : 0, action.approvalResult,
+        action.result, action.executedAt, action.auditRecordId,
+      ]
+    );
+    this.save();
+  }
+
+  listSelfHealingActions(projectId: string): SelfHealingAction[] {
+    const result = this.db!.exec('SELECT * FROM self_healing_actions WHERE project_id = ? ORDER BY executed_at DESC', [projectId])[0];
+    return this.toObjAll(result).map((r) => this.rowToSelfHealingAction(r));
+  }
+
+  updateSelfHealingStatus(id: string, status: SelfHealingAction['status'], result: string | null): void {
+    this.db!.run(
+      'UPDATE self_healing_actions SET status = ?, result = ?, executed_at = ? WHERE id = ?',
+      [status, result, new Date().toISOString(), id]
+    );
+    this.save();
+  }
+
+  private rowToSelfHealingAction(row: Record<string, unknown>): SelfHealingAction {
+    return {
+      id: row.id as string,
+      projectId: row.project_id as string,
+      environmentId: row.environment_id as string,
+      anomalyEventId: (row.anomaly_event_id as string) ?? null,
+      incidentId: (row.incident_id as string) ?? null,
+      actionType: row.action_type as SelfHealingAction['actionType'],
+      automatic: (row.automatic as number) === 1,
+      status: (row.status as SelfHealingAction['status']) ?? 'pending',
+      approvalRequired: (row.approval_required as number) === 1,
+      approvalResult: (row.approval_result as string) ?? null,
+      result: (row.result as string) ?? null,
+      executedAt: (row.executed_at as string) ?? null,
+      auditRecordId: (row.audit_record_id as string) ?? null,
+    };
+  }
+
+  // ── Component 21: Watch Dashboard (aggregate query) ───────────────────
+
+  getWatchDashboard(projectId: string): {
+    activeSessions: WatchSession[];
+    recentAnomalies: AnomalyEvent[];
+    openIncidents: Incident[];
+    recentSelfHealingActions: SelfHealingAction[];
+  } {
+    const activeSessions = this.listActiveWatchSessions(projectId);
+    const recentAnomalies = this.listAnomalyEvents(projectId).slice(0, 20);
+    const openIncidents = this.listIncidents(projectId).filter((i) => i.status === 'open' || i.status === 'investigating');
+    const recentSelfHealingActions = this.listSelfHealingActions(projectId).slice(0, 20);
+    return { activeSessions, recentAnomalies, openIncidents, recentSelfHealingActions };
   }
 }

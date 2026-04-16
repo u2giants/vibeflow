@@ -1,22 +1,52 @@
 # VibeFlow — Owner Dashboard
 
-Last updated: 2026-04-14 (Component 13: Change Engine Complete)
+Last updated: 2026-04-16 (Component 17: Environments, Deployments, and Service Control Plane Complete)
 
 ---
 
 ## Current Sprint
 
-**Sprint 20 — Component 13: Change Engine and Code Operations**
-Status: ✅ Complete — Change engine implemented with isolated workspaces, semantic grouping, validity checks, and ChangePanel UI
+**Sprint 28 — Component 17: Environments, Deployments, and Service Control Plane**
+Status: ✅ Complete — Explicit environment objects, deploy workflow tracking, drift detection, service control plane linkage, and guarded deploy/rollback flow
 
 **What was done:**
-- Added 8 new shared types for change engine (WorkspaceRun, FileEdit, ChangeSet, etc.)
-- Created 7 new change-engine modules (workspace manager, patch applier, validity pipeline, semantic grouper, duplicate detector, checkpoint manager, main orchestrator)
-- Added 5 new SQLite tables for persistence (workspace_runs, file_edits, checkpoints, semantic_change_groups, change_sets, duplicate_warnings)
-- Wired IPC handlers in main process and preload script for all change engine operations
-- Replaced ChangePanel placeholder with real UI showing semantic change groups, blast radius, verification status, and raw diff drill-down
-- Worktree support with branch fallback for Windows compatibility
-- Immediate validity checks: syntax, typecheck, lint, dependency integrity
+- Turned environments into richer tracked objects with host/platform, deploy mechanism, required secrets, linked services, protections, rollback method, and mutability rules
+- Added deploy workflow tracking so the app can record candidate selection, safety checks, approval gating, rollout progress, health checks, verdicts, and rollback offers
+- Added a service control plane view so environments can be linked to the services they depend on
+- Added drift detection for missing secrets, version mismatch, config drift, schema mismatch, and provider-auth drift
+- Upgraded the environment UI so it is no longer a placeholder and now reflects real environment and deploy state
+- Reused the existing approval, verification, checkpoint, secrets, and health-check systems instead of inventing parallel versions
+- TypeScript compilation passes with zero errors
+- Reviewer-Pusher approved the work before any push
+
+**Previous Sprint:**
+**Sprint 27 — Component 16: Verification and Acceptance System**
+Status: ✅ Complete — Layered verification engine, acceptance criteria generation, risk-based verification bundles, and Verification/Acceptance panel UI
+
+**What was done:**
+- Built layered verification engine that checks code changes across 5 levels: instant validity (syntax/typecheck/lint), impacted tests, browser acceptance flows, policy/safety checks, and deploy-specific checks
+- Verification bundles automatically select the right checks based on risk level (low/medium/high/destructive)
+- Acceptance criteria generator creates explicit "what must work" checklists for each mission
+- Verification panel shows all verification runs with pass/fail/warning status and plain-English verdicts (promote/block/needs-review)
+- Acceptance panel shows intended behavior, non-goals, paths that must still work, and rollback conditions
+- 19 scoped unit tests for bundle selection, verdict logic, test discovery, and data structures — all passing
+- TypeScript compilation passes with zero errors
+- No drift into Component 17 (deploy execution), Component 18 (secrets management), or Component 21 (post-deploy monitoring)
+
+**Previous Sprint:**
+**Sprint 26 — Component 19: Approval, Risk, Audit, and Rollback**
+Status: ✅ Complete — Risk classification engine, persistent audit history, checkpoint-linked rollback, and Audit panel UI
+
+**What was done:**
+- Expanded approval system from 3 tiers to 6 risk classes (informational, low, medium, high, destructive, privileged-production)
+- Risk scoring considers subsystem, environment, data risk, blast radius, reversibility, and evidence completeness
+- All approval decisions now persist to SQLite audit history (survives app restarts)
+- Audit records link to checkpoints for rollback recovery
+- New Audit panel shows audit history with color-coded risk badges, checkpoint list, and rollback options
+- Rollback preview shows what will/won't be reversed before executing
+- Approval cards now display risk level alongside rollback difficulty
+- 21 unit tests for risk assessment engine — all passing
+- Backward compatible: existing 3-tier approval flow continues to work
 
 **Previous Sprint:**
 Sprint 19 — Documentation Hardening & Handoff Package — ✅ Complete
@@ -67,7 +97,7 @@ Each Mode has its own "soul" (detailed instructions) that you can edit, and you 
 OpenRouter is the service that provides the AI models (like Claude, Gemini, etc.). You need an API key from OpenRouter to use AI features. The key is stored securely in your Windows Credential Manager — never in plain text.
 
 **Next step:**
-- MVP is complete! All 10 milestones are done. Future work will be driven by user feedback and feature requests.
+- Move to the next planned rebuild component after Component 17: post-deploy monitoring / incident-watch work, while keeping packaging fixes and cloud-sync reactivation as separate follow-up tracks
 
 ---
 

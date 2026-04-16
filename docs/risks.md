@@ -1,114 +1,176 @@
 # VibeFlow — Risks
 
-Last updated: 2026-04-11
+Last updated: 2026-04-14
+
+This file documents real, current risks to the project. Each risk includes likelihood, impact, current status, and mitigation.
 
 ---
 
-## R1 — Supabase Realtime reliability for lease/heartbeat
+## R1 — Cloud Sync Is Currently Disabled (Offline State)
+
+**Likelihood:** Certain (it is disabled right now)
+**Impact:** High
+**Status:** 🔴 Active risk
+
+**Description:** Cloud sync was intentionally disabled in the main process to stabilize the app after the `better-sqlite3` → `sql.js` migration. The app works fully in local-only mode, but:
+- No multi-device sync
+- No cloud backup of data
+- If the local SQLite file is lost or corrupted, all data is lost
+- The sync indicator permanently shows 🔴 Offline
+
+**Mitigation:**
+- The sync engine code is fully implemented and preserved (501 lines in [`sync-engine.ts`](../apps/desktop/src/lib/sync/sync-engine.ts))
+- Re-enabling requires: running the Supabase migration SQL, adapting the sync engine for sql.js API, and testing with two devices
+- In the meantime, the local SQLite file should be backed up periodically
+- See [`docs/what-is-left.md`](what-is-left.md) for the re-enablement plan
+
+---
+
+## R2 — Local Database Fragility
 
 **Likelihood:** Medium
 **Impact:** High
+**Status:** ⚠️ Active risk
+
+**Description:** The app uses `sql.js` which loads the entire database into memory and periodically flushes to disk. This means:
+- If the app crashes before a flush, recent changes may be lost
+- The database file lives in the Electron user data directory — if this directory is deleted or corrupted, all data is lost
+- There is no automatic backup mechanism
+- `sql.js` is slower than `better-sqlite3` for large datasets because it operates in JavaScript, not native C++
+
+**Mitigation:**
+- The database is flushed to disk after every write operation (not just periodically)
+- The database file is small for typical usage (projects, conversations, modes)
+- A future improvement could add automatic local backups
+- When sync is re-enabled, Supabase will serve as a cloud backup
+
+---
+
+## R3 — Packaging / Installer Not Verified by Albert
+
+**Likelihood:** Medium
+**Impact:** High
+**Status:** ⚠️ Active risk
+
+**Description:** The app has only been tested via `pnpm dev` (development mode). The full packaging pipeline (`electron-builder` → NSIS installer → installed app) has not been tested by Albert on his actual machine. Potential issues:
+- `sql.js` WASM file may not be bundled correctly
+- keytar native module may not work in packaged builds
+- Auto-updater may not work without a real GitHub Release
+- File paths (especially the relative path to `docs/idiosyncrasies.md` for handoff) may break in packaged builds
+- The `.env` file loading path may not resolve correctly in packaged builds
+
+**Mitigation:**
+- `electron-builder.yml` is configured with GitHub Releases publish target
+- CI/CD workflows exist (`.github/workflows/release.yml`) for automated builds
+- Testing the packaged build is a critical next step
+- The `BUILD_METADATA` module has a try/catch fallback for missing generated.ts
+
+---
+
+## R4 — Auto-Update Only Partially Verified
+
+**Likelihood:** Medium
+**Impact:** Medium
+**Status:** ⚠️ Active risk
+
+**Description:** The auto-updater code exists and is configured for GitHub Releases, but:
+- No real GitHub Release has been published yet
+- The update flow (check → download → install → restart) has not been tested end-to-end
+- `electron-updater` can fail due to Windows UAC, antivirus, or enterprise policies
+- The `UpdateBanner.tsx` component exists but has only been tested with mock data
+
+**Mitigation:**
+- `autoDownload = false` — user decides when to download (safe default)
+- Only runs in packaged builds (`app.isPackaged` check) — won't interfere with development
+- Non-fatal error handling — app never crashes on updater failures
+- A manual download fallback (link to GitHub Releases) should be added
+
+---
+
+## R5 — Multi-Device Sync Not Proven in Practice
+
+**Likelihood:** Medium
+**Impact:** High
+**Status:** ⚠️ Active risk
+
+**Description:** The sync architecture (lease/heartbeat, Realtime subscriptions, conflict resolution) was designed and implemented but has never been tested with two real devices because sync is disabled. Potential issues:
+- Supabase Realtime may have latency or reliability issues for the 15-second heartbeat
+- Conflict resolution (last-write-wins) may cause unexpected data loss
+- The lease takeover flow may have edge cases
+- The Supabase migration SQL has not been run
+
+**Mitigation:**
+- The sync engine is fully implemented and ready to test
+- The lease/heartbeat model uses a generous 45-second stale threshold (3 missed heartbeats)
+- Conflict strategy is documented in [`docs/cloud-sync.md`](cloud-sync.md)
+- Albert confirmed he has a second Windows device for testing
+
+---
+
+## R6 — UI Layout Regressions Risk
+
+**Likelihood:** Medium
+**Impact:** Medium
+**Status:** ⚠️ Active risk
+
+**Description:** Multiple flex/overflow layout bugs were fixed across Sprints 15–18:
+- Nested flex children defaulting to `min-height: auto` causing overflow
+- Missing `overflow: hidden` on containers
+- Default browser margin on `body` causing `100vh` overflow
+- Left sidebar missing `minWidth` constraint
+
+These fixes are fragile — any CSS change to the layout containers could re-introduce the bugs. The fixes are spread across multiple files:
+- [`apps/desktop/src/renderer/index.html`](../apps/desktop/src/renderer/index.html) (global CSS reset)
+- [`apps/desktop/src/renderer/App.tsx`](../apps/desktop/src/renderer/App.tsx)
+- [`apps/desktop/src/renderer/screens/ModesScreen.tsx`](../apps/desktop/src/renderer/screens/ModesScreen.tsx)
+- [`apps/desktop/src/renderer/screens/ProjectScreen.tsx`](../apps/desktop/src/renderer/screens/ProjectScreen.tsx)
+
+**Mitigation:**
+- The global CSS reset in `index.html` sets `html, body, #root` to `margin: 0; height: 100%; overflow: hidden`
+- All outer wrappers use `height: '100%'` instead of `height: '100vh'`
+- Key containers have `minHeight: 0` to allow flex shrinking
+- Any future layout changes should be tested on the Modes screen (most complex layout)
+
+---
+
+## R7 — Supabase Realtime Reliability for Lease/Heartbeat
+
+**Likelihood:** Medium
+**Impact:** High
+**Status:** ⚠️ Theoretical (not yet tested)
+
 **Description:** Supabase Realtime Broadcast channels may have latency or reliability issues when used for the 15-second heartbeat that keeps conversation ownership alive. If heartbeats are delayed or dropped, runs may be incorrectly marked as stale.
+
 **Mitigation:**
 - Use a generous stale threshold (45 seconds = 3 missed heartbeats)
-- Test thoroughly in Milestone 4 with two real devices
 - Design the stale/recoverable state to be safe and non-destructive
-- If Realtime proves unreliable for this, implement a lightweight Supabase Edge Function for lease management
+- If Realtime proves unreliable, implement a lightweight Supabase Edge Function for lease management
 
 ---
 
-## R2 — Electron + React + Vite monorepo setup complexity
-
-**Likelihood:** Medium
-**Impact:** Medium
-**Description:** Setting up a pnpm monorepo with Electron + Vite + multiple TypeScript packages can have tricky configuration issues (module resolution, IPC typing, build order, etc.) that slow early iteration.
-**Mitigation:**
-- Use electron-vite as the base template for apps/desktop
-- Keep packages minimal at first (shared-types and storage only in Milestone 1)
-- Document any setup quirks in idiosyncrasies.md immediately
-- Builder should test the dev mode startup before adding complexity
-
----
-
-## R3 — OpenRouter API changes pricing/metadata format
+## R8 — OpenRouter API Changes
 
 **Likelihood:** Low
-**Impact:** Low
-**Description:** OpenRouter may change its API format for model listing, pricing, or metadata, breaking the model picker.
+**Impact:** Medium
+**Status:** ⚠️ Theoretical
+
+**Description:** OpenRouter may change its API format for model listing, pricing, or metadata. The `/api/v1/models/user` endpoint is not officially documented as prominently as `/api/v1/models`.
+
 **Mitigation:**
 - Abstract the OpenRouter client behind a provider interface
-- Pin to a specific API version if available
 - The model picker is a UI feature — a format change is a small fix, not a rewrite
+- Monitor OpenRouter changelog for breaking changes
 
 ---
 
-## R4 — keytar (OS-secure storage) has Windows-specific quirks
-
-**Likelihood:** Medium
-**Impact:** Medium
-**Description:** keytar uses the Windows Credential Manager. It can have issues with certain Windows configurations, enterprise policies, or after Windows updates.
-**Mitigation:**
-- Test keytar in Milestone 1 on Albert's actual machine
-- Document any quirks in idiosyncrasies.md
-- Design a fallback: if keytar fails, offer encrypted local file storage with a user passphrase
-- Never store secrets in plain text as a fallback
-
----
-
-## R5 — Roo-inspired reimplementation takes longer than expected
-
-**Likelihood:** Medium
-**Impact:** Medium
-**Description:** Building the Mode system, Orchestrator routing, and tool execution from scratch (rather than using Roo as a base) requires more upfront implementation work.
-**Mitigation:**
-- Start with a minimal Mode system (just Orchestrator + one specialist Mode) in Milestone 2
-- Expand incrementally — don't try to build all 6 Modes perfectly at once
-- Keep the Mode system simple and readable; avoid over-engineering
-
----
-
-## R6 — Supabase free tier limits hit during development
-
-**Likelihood:** Low
-**Impact:** Low
-**Description:** If using Supabase free tier, database size, API call limits, or Realtime connection limits may be hit during development.
-**Mitigation:**
-- Use Supabase Pro from the start for a real product
-- Monitor usage in the Supabase dashboard
-- Free tier is fine for early development; upgrade before Milestone 4 sync testing
-
----
-
-## R7 — Two-device sync testing requires two physical machines
-
-**Likelihood:** Low (Albert confirmed he has a second device)
-**Impact:** Medium
-**Description:** Milestone 4 requires testing on two devices simultaneously. If the second device is unavailable, sync testing is blocked.
-**Mitigation:**
-- Albert confirmed he has a second Windows device
-- As a fallback, use a Windows VM on the same machine
-- Design sync tests to be partially simulatable with two browser tabs (for Supabase Realtime testing)
-
----
-
-## R8 — Coolify API changes or becomes unavailable
-
-**Likelihood:** Low
-**Impact:** Medium
-**Description:** Coolify's API may change between versions, breaking the DevOps integration.
-**Mitigation:**
-- Abstract the Coolify client behind a deploy-target interface
-- Coolify is one implementation of a deploy target — others can be added
-- Pin to a specific Coolify API version in the client
-- Document the Coolify API version used in idiosyncrasies.md
-
----
-
-## R9 — Self-maintenance mode creates risk of AI breaking the IDE
+## R9 — Self-Maintenance Mode Risk
 
 **Likelihood:** Medium
 **Impact:** High
+**Status:** ⚠️ Mitigated but real
+
 **Description:** When the IDE is used to work on itself, an AI error could break the IDE's own source files, making it unable to run.
+
 **Mitigation:**
 - All changes to IDE source files require human approval (Tier 3)
 - Self-maintenance mode is clearly labeled and separated from user project work
@@ -117,38 +179,36 @@ Last updated: 2026-04-11
 
 ---
 
-## R10 — electron-updater auto-update fails on some Windows configurations
+## R10 — Main Process File Size
 
-**Likelihood:** Low-Medium
+**Likelihood:** Low
 **Impact:** Medium
-**Description:** Auto-update via electron-updater can fail due to Windows UAC, antivirus software, or enterprise policies.
+**Status:** ⚠️ Technical debt
+
+**Description:** [`apps/desktop/src/main/index.ts`](../apps/desktop/src/main/index.ts) is 959 lines and growing. It contains all IPC handler registrations. While this is acceptable for now (it's essentially a handler registry), it could become unwieldy.
+
 **Mitigation:**
-- Test auto-update in Milestone 9 on Albert's actual machine
-- Provide a manual download fallback (link to GitHub Releases)
-- Document known auto-update issues in idiosyncrasies.md
-- Use NSIS installer (not Squirrel) for more reliable Windows updates
+- The file is well-organized with clear section comments
+- A future refactor could split IPC handlers into separate files by domain (auth, projects, modes, etc.)
+- This is not blocking any functionality
 
 ---
 
-## R11 — AI session context limits cause loss of conversation history
+## R11 — Orchestrator Intelligence Is Basic
 
-**Likelihood:** Medium
+**Likelihood:** Certain (current state)
 **Impact:** Medium
-**Description:** Long conversations may exceed the context window of the assigned model, causing the AI to lose track of earlier context.
+**Status:** ⚠️ Known limitation
+
+**Description:** The Orchestrator currently calls OpenRouter directly and streams a response. It does not yet:
+- Analyze the task and route to specialist Modes
+- Collect results from multiple Modes
+- Summarize long conversations
+- Manage context window limits
+
+This means the app works as a single-Mode AI chat, not as the multi-Mode orchestration system described in the product vision.
+
 **Mitigation:**
-- Implement conversation summarization in the Orchestrator
-- The handoff system (Milestone 8) is specifically designed to handle this
-- Show a warning in the UI when a conversation is getting long
-- Encourage users to use handoff before context limits are hit
-
----
-
-## R12 — pnpm workspace configuration conflicts with electron-builder
-
-**Likelihood:** Low-Medium
-**Impact:** Medium
-**Description:** electron-builder may have issues with pnpm workspaces, particularly with native modules and dependency bundling.
-**Mitigation:**
-- Test the full build pipeline in Milestone 1
-- Use electron-builder's pnpm support (available since electron-builder v24)
-- Document any workarounds in idiosyncrasies.md
+- The Mode system infrastructure is in place (6 Modes, per-Mode model assignment, approval policies)
+- Multi-Mode routing is a future enhancement, not a blocker for the current MVP
+- The Orchestrator can be enhanced incrementally

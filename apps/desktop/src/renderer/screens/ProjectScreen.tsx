@@ -14,9 +14,11 @@ interface ProjectScreenProps {
   currentMode: Mode | null;
   onBack: () => void;
   onOpenModes: () => void;
+  /** When true, skip rendering TopBar/BottomBar — parent shell provides them. */
+  hideChrome?: boolean;
 }
 
-export default function ProjectScreen({ project, email, currentMode, onBack, onOpenModes }: ProjectScreenProps) {
+export default function ProjectScreen({ project, email, currentMode, onBack, onOpenModes, hideChrome = false }: ProjectScreenProps) {
   const [conversations, setConversations] = useState<ConversationThread[]>([]);
   const [activeConversation, setActiveConversation] = useState<ConversationThread | null>(null);
   const [openRouterConnected, setOpenRouterConnected] = useState(false);
@@ -47,7 +49,7 @@ export default function ProjectScreen({ project, email, currentMode, onBack, onO
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      <TopBar email={email} />
+      {!hideChrome && <TopBar email={email} />}
 
       {/* Self-maintenance banner */}
       {project.isSelfMaintenance && (
@@ -201,7 +203,7 @@ export default function ProjectScreen({ project, email, currentMode, onBack, onO
         </div>
       </div>
 
-      <BottomBar currentMode={currentMode} openRouterConnected={openRouterConnected} />
+      {!hideChrome && <BottomBar currentMode={currentMode} openRouterConnected={openRouterConnected} />}
     </div>
   );
 }

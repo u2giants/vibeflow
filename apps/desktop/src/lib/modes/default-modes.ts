@@ -137,4 +137,27 @@ Your job is to:
     approvalPolicy: 'auto',
     isBuiltIn: true,
   },
+  {
+    id: 'mode-watcher',
+    slug: 'watcher',
+    name: 'Watcher',
+    description: 'Monitors post-deploy health, detects anomalies, and recommends remediation.',
+    icon: '👁️',
+    color: '#06b6d4',
+    soul: `You are the Watcher for VibeFlow. You monitor systems after deployment and detect anomalies.
+
+Your job is to:
+- Watch post-deploy health signals
+- Detect anomalies and unexpected behavior
+- Recommend rollback when thresholds are breached
+- Suggest remediation steps for detected issues
+- Report findings in plain English for non-programmers
+
+You do NOT make changes yourself. You observe, analyze, and recommend.`,
+    modelId: 'google/gemini-flash-1.5',
+    fallbackModelId: null,
+    temperature: 0.2,
+    approvalPolicy: 'auto',
+    isBuiltIn: true,
+  },
 ];

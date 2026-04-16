@@ -144,6 +144,10 @@ export interface DeployRun {
   startedAt: string;
   completedAt: string | null;
   error: string | null;
+  // Component 17: environment linkage, evidence, health verdict
+  environmentId: string | null;
+  evidenceIds: string[];
+  healthVerdict: 'healthy' | 'unhealthy' | 'unknown' | null;
 }
 
 // ── Component 10: Product Shell and AI-Native Workspace ──────────────
@@ -217,7 +221,21 @@ export type EvidenceItemType =
   | 'log'
   | 'policy'
   | 'performance'
-  | 'schema-safety';
+  | 'schema-safety'
+  // Component 15 additions: runtime execution, debugging, and evidence capture
+  | 'runtime-log'
+  | 'stack-trace'
+  | 'network-trace'
+  | 'dom-snapshot'
+  | 'db-query'
+  | 'crash-dump'
+  | 'console-log'
+  | 'before-after-comparison'
+  // Component 21 additions: observability and watch mode
+  | 'health-check'
+  | 'synthetic-check'
+  | 'anomaly-detection'
+  | 'watch-summary';
 
 export interface EvidenceItem {
   id: string;
@@ -227,6 +245,69 @@ export interface EvidenceItem {
   title: string;
   detail: string | null;
   timestamp: string;
+}
+
+// ── Component 15: Runtime Execution, Debugging, and Evidence Capture ─────────────────
+
+/** Tracks a runtime execution session (dev server, build process, etc.). */
+export interface RuntimeExecution {
+  id: string;
+  workspaceRunId: string;
+  missionId: string;
+  planStepId: string | null;
+  command: string;
+  cwd: string;
+  status: 'running' | 'completed' | 'failed' | 'killed';
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  durationMs: number;
+  startedAt: string;
+  completedAt: string | null;
+}
+
+/** Tracks a browser automation session. */
+export interface BrowserSession {
+  id: string;
+  workspaceRunId: string;
+  missionId: string;
+  planStepId: string | null;
+  baseUrl: string;
+  status: 'starting' | 'running' | 'closed' | 'failed';
+  screenshots: string[]; // paths to stored screenshots
+  consoleLogs: string;
+  networkTraces: string;
+  startedAt: string;
+  closedAt: string | null;
+}
+
+/** Persisted evidence record with full correlation links. */
+export interface EvidenceRecord {
+  id: string;
+  missionId: string;
+  workspaceRunId: string;
+  planStepId: string | null;
+  changesetId: string | null;
+  environmentId: string | null;
+  capabilityInvocationId: string | null;
+  type: EvidenceItemType;
+  status: 'pass' | 'fail' | 'warning' | 'running' | 'skipped';
+  title: string;
+  detail: string | null;
+  artifactPath: string | null; // path to stored artifact (screenshot, log file, etc.)
+  timestamp: string;
+}
+
+/** Before/after comparison result for debugging workflow. */
+export interface BeforeAfterComparison {
+  id: string;
+  missionId: string;
+  beforeEvidenceId: string;
+  afterEvidenceId: string;
+  differenceSummary: string;
+  beforeArtifactPath: string | null;
+  afterArtifactPath: string | null;
+  createdAt: string;
 }
 
 export type CapabilityClass =
@@ -365,6 +446,15 @@ export interface Incident {
   status: 'open' | 'investigating' | 'resolved' | 'dismissed';
   detectedAt: string;
   resolvedAt: string | null;
+  // Component 21 extensions
+  environmentId: string | null;
+  deployWorkflowId: string | null;
+  evidenceIds: string[];
+  correlatedChangeIds: string[];
+  recommendedAction: string | null;
+  selfHealingAttempted: boolean;
+  selfHealingResult: string | null;
+  watchModeActive: boolean;
 }
 
 export interface DeployCandidate {
@@ -376,6 +466,10 @@ export interface DeployCandidate {
   status: 'pending' | 'deploying' | 'deployed' | 'failed' | 'rolled-back';
   deployedAt: string | null;
   deployedBy: string;
+  // Component 17: evidence linkage, verification, rollback
+  evidenceIds: string[];
+  verificationRunId: string | null;
+  rollbackCheckpointId: string | null;
 }
 
 export type EnvironmentType = 'local' | 'preview' | 'staging' | 'canary' | 'production';
@@ -389,6 +483,15 @@ export interface Environment {
   secretsComplete: boolean;
   serviceHealth: CapabilityHealth;
   branchMapping: string | null;
+  // Component 17: extended environment fields
+  host: string | null;
+  deployMechanism: string | null; // 'coolify', 'github-actions', 'manual'
+  requiredSecrets: string[];
+  linkedServiceIds: string[];
+  healthEndpoint: string | null;
+  protections: EnvironmentProtection[];
+  rollbackMethod: string | null;
+  mutabilityRules: MutabilityRule[];
 }
 
 // ── Component 12: Agent Orchestration and Mode System ─────────────────
@@ -784,4 +887,368 @@ export interface PatternReuseSuggestion {
   existingSymbol: string | null;
   reason: string;
   confidence: number; // 0-1
+}
+
+// ── Component 19: Approval, Risk, Audit, and Rollback ─────────────────
+
+/** Risk classification for an action. */
+export type RiskClass =
+  | 'informational'
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'destructive'
+  | 'privileged-production';
+
+/** A single dimension of risk scoring. */
+export interface RiskDimension {
+  dimension: string;
+  score: number;
+  maxScore: number;
+  explanation: string;
+}
+
+/** Overall risk assessment for an action. */
+export interface RiskAssessment {
+  riskClass: RiskClass;
+  overallScore: number; // 0-100
+  dimensions: RiskDimension[];
+  evidenceCompleteness: 'complete' | 'partial' | 'missing';
+  reversibility: 'reversible' | 'partially-reversible' | 'irreversible';
+}
+
+/** A single entry in the approval chain. */
+export interface ApprovalChainEntry {
+  tier: number;
+  reviewerModel: string | null;
+  reviewerRole: string | null;
+  decision: string;
+  reason: string;
+  decidedAt: string;
+}
+
+/** Rollback plan for a risky action. */
+export interface RollbackPlan {
+  targetState: string;
+  reversibleChanges: string[];
+  irreversibleChanges: string[];
+  environment: string;
+  dataCaveats: string[];
+  estimatedDowntime: string | null;
+  requiredApprovals: string[];
+  checkpointId: string;
+}
+
+/** Full audit record for an action. */
+export interface AuditRecord {
+  id: string;
+  missionId: string | null;
+  planStepId: string | null;
+  roleSlug: string | null;
+  capabilityId: string | null;
+  actionType: string;
+  parameters: Record<string, unknown>;
+  environment: string | null;
+  riskAssessment: RiskAssessment;
+  evidenceSummary: string | null;
+  approvalChain: ApprovalChainEntry[];
+  result: 'approved' | 'rejected' | 'escalated' | 'rolled-back';
+  checkpointId: string | null;
+  rollbackPlan: RollbackPlan | null;
+  initiatedBy: string;
+  initiatedAt: string;
+  completedAt: string | null;
+  durationMs: number | null;
+}
+
+// ── Component 16: Verification and Acceptance System ─────────────────
+
+/** A single verification check within a verification run. */
+export interface VerificationCheck {
+  id: string;
+  verificationRunId: string;
+  layer: 'instant-validity' | 'impacted-tests' | 'acceptance-flow' | 'policy-safety' | 'deploy-specific';
+  checkName: string;
+  status: 'pass' | 'fail' | 'warning' | 'skipped' | 'running';
+  detail: string | null;
+  evidenceItemIds: string[]; // links to EvidenceRecord IDs
+  durationMs: number | null;
+  startedAt: string;
+  completedAt: string | null;
+}
+
+/** A full verification run — the primary output of the verification engine. */
+export interface VerificationRun {
+  id: string;
+  missionId: string;
+  workspaceRunId: string | null;
+  changesetId: string | null;
+  candidateId: string | null;
+  bundleId: string; // which verification bundle was used
+  overallStatus: 'pass' | 'fail' | 'blocked' | 'running';
+  checks: VerificationCheck[];
+  missingRequiredChecks: string[];
+  flakeSuspicions: string[]; // check IDs that may be flaky
+  riskImpact: 'low' | 'medium' | 'high' | 'critical';
+  startedAt: string;
+  completedAt: string | null;
+  verdict: 'promote' | 'block' | 'needs-review' | null;
+  verdictReason: string | null;
+}
+
+/** A verification bundle — a named set of required checks for a risk class. */
+export interface VerificationBundle {
+  id: string;
+  name: string;
+  riskClass: 'low' | 'medium' | 'high' | 'destructive';
+  requiredLayers: Array<'instant-validity' | 'impacted-tests' | 'acceptance-flow' | 'policy-safety' | 'deploy-specific'>;
+  description: string;
+}
+
+/** Acceptance criteria for a mission — derived before work begins. */
+export interface AcceptanceCriteria {
+  id: string;
+  missionId: string;
+  intendedBehavior: string[];
+  nonGoals: string[];
+  pathsThatMustStillWork: string[];
+  comparisonTargets: string[]; // screenshot paths, state identifiers
+  regressionThresholds: string[];
+  rollbackConditions: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ── Component 18: Secrets, Configuration, Database, and Migration Safety ──────────
+
+/** A structured record of a secret or config variable — metadata only, no values. */
+export interface SecretRecord {
+  id: string;
+  projectId: string;
+  keyName: string;
+  category: string; // 'database', 'api-key', 'oauth', 'smtp', 'storage', 'auth', 'custom'
+  description: string;
+  requiredEnvironments: string[]; // environment IDs
+  sensitivityLevel: 'public' | 'internal' | 'confidential' | 'restricted';
+  sourceOfTruth: string; // e.g., 'Supabase dashboard', 'Coolify settings', 'operator-provided'
+  rotationNotes: string;
+  approvalRulesForChanges: string;
+  codeReferences: string[]; // file paths that reference this secret
+  storedInKeytar: boolean;
+  lastVerifiedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Risk classification for database migrations. */
+export type MigrationRiskClass =
+  | 'additive-safe'
+  | 'backfill-required'
+  | 'index-performance'
+  | 'destructive-schema'
+  | 'data-rewrite'
+  | 'auth-identity';
+
+/** A safeguard that must be satisfied before a migration can proceed. */
+export interface MigrationSafeguard {
+  type: string;
+  description: string;
+  required: boolean;
+  satisfied: boolean;
+}
+
+/** A planned migration — not an execution record. */
+export interface MigrationPlan {
+  id: string;
+  projectId: string;
+  missionId: string | null;
+  riskClass: MigrationRiskClass;
+  description: string;
+  affectedTables: string[];
+  estimatedBlastRadius: 'low' | 'medium' | 'high' | 'critical';
+  forwardCompatible: boolean;
+  backwardCompatible: boolean;
+  requiresCheckpoint: boolean;
+  checkpointId: string | null;
+  safeguards: MigrationSafeguard[];
+  orderingRequirement: 'app-first' | 'schema-first' | 'simultaneous';
+  approvalRequired: boolean;
+  rollbackConstraints: string;
+  status: 'draft' | 'previewed' | 'approved' | 'executed' | 'rolled-back' | 'cancelled';
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A preview of what a migration will do — generated before execution. */
+export interface MigrationPreview {
+  planId: string;
+  sqlPreview: string;
+  affectedEntities: string[];
+  destructiveOperations: string[];
+  estimatedDowntime: string | null;
+  warnings: string[];
+}
+
+/** Information about the project's database schema. */
+export interface DatabaseSchemaInfo {
+  projectId: string;
+  engine: string; // 'postgresql', 'sqlite', 'mysql'
+  schemaSourceFiles: string[]; // paths to .sql files
+  migrationHistory: Array<{ id: string; name: string; appliedAt: string; riskClass: MigrationRiskClass }>;
+  tables: Array<{ name: string; columnCount: number; rowCountEstimate: number | null; isProtected: boolean }>;
+  relationships: Array<{ fromTable: string; toTable: string; type: string }>;
+  protectedEntities: string[];
+  highRiskDomains: string[];
+}
+
+/** A historical record of a migration that was applied. */
+export interface MigrationHistoryEntry {
+  id: string;
+  projectId: string;
+  planId: string;
+  migrationName: string;
+  riskClass: MigrationRiskClass;
+  appliedAt: string;
+  appliedBy: string;
+  success: boolean;
+  error: string | null;
+  rollbackExecuted: boolean;
+}
+
+// ── Component 17: Environments, Deployments, and Service Control Plane ──
+
+/** Protection rules for an environment. */
+export type EnvironmentProtection =
+  | 'require-approval'
+  | 'require-evidence'
+  | 'require-rollback-plan'
+  | 'require-service-dependency-check'
+  | 'require-incident-watch';
+
+/** Who can mutate an environment and under what conditions. */
+export interface MutabilityRule {
+  role: string;
+  conditions: string[];
+  requiresApproval: boolean;
+}
+
+/** A single step within a deploy workflow. */
+export interface DeployStep {
+  order: number;
+  name: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+  detail: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
+/** A deploy workflow tracking the 10-step deployment process. */
+export interface DeployWorkflow {
+  id: string;
+  candidateId: string;
+  environmentId: string;
+  steps: DeployStep[];
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'rolled-back';
+  verdict: 'promote' | 'block' | 'needs-review' | null;
+  verdictReason: string | null;
+  evidenceIds: string[];
+  startedAt: string;
+  completedAt: string | null;
+  rollbackOffered: boolean;
+}
+
+/** A drift report detecting mismatches between expected and actual environment state. */
+export interface DriftReport {
+  id: string;
+  projectId: string;
+  environmentId: string;
+  driftType: 'missing-secret' | 'version-mismatch' | 'config-drift' | 'manual-change' | 'schema-mismatch' | 'auth-drift';
+  severity: 'info' | 'warning' | 'critical';
+  description: string;
+  detectedAt: string;
+  resolved: boolean;
+}
+
+/** Service control plane — topology with environment linkage. */
+export interface ServiceControlPlane {
+  projectId: string;
+  services: ServiceNode[];
+  edges: ServiceEdge[];
+  environmentMappings: Record<string, string[]>; // envId -> serviceIds
+  updatedAt: string;
+}
+
+// ── Component 21: Observability, Incident Response, and Self-Healing ──
+
+/** Individual probe within a watch session. */
+export interface WatchProbe {
+  id: string;
+  watchSessionId: string;
+  type: 'health-check' | 'synthetic-check' | 'drift-check' | 'evidence-check';
+  url: string | null; // for health-check probes
+  description: string;
+  status: 'pending' | 'running' | 'pass' | 'fail' | 'warning' | 'disabled';
+  lastResult: string | null;
+  lastCheckedAt: string | null;
+  failureCount: number;
+  disabled: boolean;
+}
+
+/** Watch session — created automatically after a protected deploy. */
+export interface WatchSession {
+  id: string;
+  projectId: string;
+  environmentId: string;
+  deployWorkflowId: string;
+  status: 'active' | 'completed' | 'escalated' | 'dismissed';
+  startedAt: string;
+  completedAt: string | null;
+  elevatedEvidence: boolean;
+  anomalyThreshold: 'normal' | 'elevated' | 'critical';
+  probes: WatchProbe[];
+  regressionBaseline: string | null; // evidence ID of pre-deploy stable state
+}
+
+/** Anomaly event — detected deviation from expected state. */
+export interface AnomalyEvent {
+  id: string;
+  projectId: string;
+  environmentId: string;
+  watchSessionId: string | null;
+  anomalyType: 'health-degradation' | 'error-rate-spike' | 'latency-spike' | 'drift-detected' | 'synthetic-failure' | 'evidence-gap';
+  severity: IncidentSeverity;
+  description: string;
+  correlatedDeployWorkflowId: string | null;
+  correlatedChangeIds: string[];
+  evidenceIds: string[];
+  detectedAt: string;
+  acknowledged: boolean;
+  acknowledgedAt: string | null;
+  acknowledgedBy: string | null;
+}
+
+/** Self-healing action record. */
+export interface SelfHealingAction {
+  id: string;
+  projectId: string;
+  environmentId: string;
+  anomalyEventId: string | null;
+  incidentId: string | null;
+  actionType: 'restart-preview' | 'rerun-checks' | 'disable-probe' | 'notify-and-prepare-rollback' | 'rollback';
+  automatic: boolean; // true = system-initiated, false = human-initiated
+  status: 'pending' | 'approved' | 'running' | 'completed' | 'failed' | 'blocked';
+  approvalRequired: boolean;
+  approvalResult: string | null;
+  result: string | null;
+  executedAt: string | null;
+  auditRecordId: string | null;
+}
+
+/** Watch dashboard summary. */
+export interface WatchDashboard {
+  activeSessions: WatchSession[];
+  recentAnomalies: AnomalyEvent[];
+  openIncidents: Incident[];
+  recentSelfHealingActions: SelfHealingAction[];
+  environmentHealth: Record<string, CapabilityHealth>; // envId -> health
 }

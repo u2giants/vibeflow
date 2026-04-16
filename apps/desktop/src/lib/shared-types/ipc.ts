@@ -1,6 +1,6 @@
 /** IPC message types for Electron main ↔ renderer communication. */
 
-import type { Project, SyncStatus, Account, Mode, OpenRouterModel, ConversationThread, Message, ProjectDevOpsConfig, DeployRun, PlanRecord, RoleAssignment, OrchestrationState, Capability, CapabilityHealth, CapabilityInvocationLog, McpServerConfig, McpToolInfo, McpInvocationResult, ProjectIndex, FileRecord, SymbolRecord, ReferenceEdge, RouteRecord, ApiEndpointRecord, JobRecord, ServiceNode, ServiceEdge, ConfigVariableRecord, ContextPackEnriched, ContextItem, ContextWarning, ContextDashboard, DetectedStack, ImpactAnalysis, EvidenceItem, WorkspaceRun, PatchProposal, FileEdit, SemanticChangeGroup, Checkpoint, ChangeSet, DuplicateWarning, PatternReuseSuggestion } from './entities';
+import type { Project, SyncStatus, Account, Mode, OpenRouterModel, ConversationThread, Message, ProjectDevOpsConfig, DeployRun, PlanRecord, RoleAssignment, OrchestrationState, Capability, CapabilityHealth, CapabilityInvocationLog, McpServerConfig, McpToolInfo, McpInvocationResult, ProjectIndex, FileRecord, SymbolRecord, ReferenceEdge, RouteRecord, ApiEndpointRecord, JobRecord, ServiceNode, ServiceEdge, ConfigVariableRecord, ContextPackEnriched, ContextItem, ContextWarning, ContextDashboard, DetectedStack, ImpactAnalysis, EvidenceItem, WorkspaceRun, PatchProposal, FileEdit, SemanticChangeGroup, Checkpoint, ChangeSet, DuplicateWarning, PatternReuseSuggestion, AuditRecord, RollbackPlan, RuntimeExecution, BrowserSession, EvidenceRecord, BeforeAfterComparison, VerificationRun, VerificationCheck, VerificationBundle, AcceptanceCriteria, SecretRecord, MigrationPlan, MigrationRiskClass, MigrationPreview, DatabaseSchemaInfo, MigrationHistoryEntry, Environment, DeployWorkflow, DeployStep, DriftReport, ServiceControlPlane, Incident, WatchSession, AnomalyEvent, SelfHealingAction, WatchDashboard } from './entities';
 
 // ── Auth IPC ──────────────────────────────────────────────────────
 
@@ -314,7 +314,30 @@ export type ActionType =
   | 'deploy:trigger'
   | 'deploy:restart'
   | 'deploy:stop'
-  | 'ssh:connect';
+  | 'ssh:connect'
+  // Component 19: expanded action types
+  | 'migration:run'
+  | 'migration:rollback'
+  | 'config:change'
+  | 'secret:rotate'
+  | 'service:restart'
+  | 'service:stop'
+  | 'deploy:rollback'
+  | 'incident:acknowledge'
+  | 'incident:remediate'
+  // Component 17: environment and deploy workflow actions
+  | 'deploy:promote'
+  | 'deploy:canary'
+  | 'env:create'
+  | 'env:destroy'
+  | 'env:drift-detect'
+  | 'env:promote'
+  // Component 21: watch and self-healing actions
+  | 'watch:start'
+  | 'watch:stop'
+  | 'self-heal:restart'
+  | 'self-heal:rerun-check'
+  | 'self-heal:disable-probe';
 
 export interface ActionRequest {
   id: string;
@@ -348,6 +371,38 @@ export interface ApprovalApi {
   getLog: () => Promise<any[]>;
   onPendingApproval: (callback: (data: { type: string; action: ActionRequest; tier?: number; result?: ApprovalResult }) => void) => void;
   removePendingApprovalListener: () => void;
+}
+
+// ── Component 19: Audit IPC ──────────────────────────────────────────
+
+export interface AuditHistoryFilter {
+  missionId?: string;
+  limit?: number;
+}
+
+export interface AuditChannel {
+  getHistory: (filter?: AuditHistoryFilter) => Promise<AuditRecord[]>;
+  getRecord: (id: string) => Promise<AuditRecord | null>;
+  getCheckpoints: (missionId: string) => Promise<Checkpoint[]>;
+}
+
+// ── Component 19: Rollback IPC ───────────────────────────────────────
+
+export interface RollbackPreviewResult {
+  checkpointId: string;
+  rollbackPlan: RollbackPlan;
+  warning: string | null;
+}
+
+export interface RollbackInitiateResult {
+  success: boolean;
+  error: string | null;
+}
+
+export interface RollbackChannel {
+  preview: (checkpointId: string) => Promise<RollbackPreviewResult>;
+  initiate: (checkpointId: string) => Promise<RollbackInitiateResult>;
+  getStatus: (checkpointId: string) => Promise<{ status: string; error: string | null }>;
 }
 
 // ── Handoff IPC ───────────────────────────────────────────────────
@@ -529,6 +584,207 @@ export interface ChangeEngineChannel {
   listCheckpoints: (workspaceRunId: string) => Promise<Checkpoint[]>;
 }
 
+// ── Component 15: Runtime Execution IPC ───────────────────────────────────────
+
+export interface RuntimeStartArgs {
+  missionId: string;
+  workspaceRunId: string;
+  planStepId: string | null;
+  command: string;
+  cwd: string;
+}
+
+export interface RuntimeExecutionChannel {
+  start: (args: RuntimeStartArgs) => Promise<RuntimeExecution>;
+  stop: (executionId: string) => Promise<void>;
+  getStatus: (executionId: string) => Promise<RuntimeExecution | null>;
+  getExecutions: (missionId: string) => Promise<RuntimeExecution[]>;
+  getLogs: (executionId: string) => Promise<{ stdout: string; stderr: string }>;
+}
+
+// ── Component 15: Browser Automation IPC ─────────────────────────────────────
+
+export interface BrowserSessionArgs {
+  missionId: string;
+  workspaceRunId: string;
+  planStepId: string | null;
+  baseUrl: string;
+}
+
+export interface BrowserScreenshotResult {
+  path: string;
+}
+
+export interface BrowserAutomationChannel {
+  startSession: (args: BrowserSessionArgs) => Promise<BrowserSession>;
+  navigate: (sessionId: string, url: string) => Promise<void>;
+  click: (sessionId: string, selector: string) => Promise<void>;
+  fillForm: (sessionId: string, fields: Record<string, string>) => Promise<void>;
+  uploadFile: (sessionId: string, selector: string, filePath: string) => Promise<void>;
+  screenshot: (sessionId: string, name: string) => Promise<BrowserScreenshotResult>;
+  getConsoleLogs: (sessionId: string) => Promise<string>;
+  getNetworkTraces: (sessionId: string) => Promise<string>;
+  getDomSnapshot: (sessionId: string, selector: string) => Promise<string>;
+  closeSession: (sessionId: string) => Promise<void>;
+}
+
+// ── Component 15: Evidence Capture IPC ───────────────────────────────────────
+
+export interface EvidenceChannel {
+  getForMission: (missionId: string) => Promise<EvidenceRecord[]>;
+  getForWorkspaceRun: (workspaceRunId: string) => Promise<EvidenceRecord[]>;
+  compareBeforeAfter: (beforeId: string, afterId: string) => Promise<BeforeAfterComparison | null>;
+}
+
+// ── Component 16: Verification IPC ───────────────────────────────────────
+
+export interface VerificationRunArgs {
+  missionId: string;
+  workspaceRunId?: string;
+  changesetId?: string;
+  candidateId?: string;
+  bundleId?: string;
+}
+
+export interface VerificationChannel {
+  run: (args: VerificationRunArgs) => Promise<VerificationRun>;
+  getRun: (id: string) => Promise<VerificationRun | null>;
+  getRunsForMission: (missionId: string) => Promise<VerificationRun[]>;
+  getBundles: () => Promise<VerificationBundle[]>;
+}
+
+// ── Component 16: Acceptance IPC ─────────────────────────────────────────
+
+export interface AcceptanceGenerateArgs {
+  missionId: string;
+}
+
+export interface AcceptanceChannel {
+  generate: (args: AcceptanceGenerateArgs) => Promise<AcceptanceCriteria>;
+  get: (missionId: string) => Promise<AcceptanceCriteria | null>;
+}
+
+// ── Component 18: Secrets IPC ───────────────────────────────────────────────
+
+export interface SecretsChannel {
+  list: (projectId: string) => Promise<SecretRecord[]>;
+  get: (id: string) => Promise<SecretRecord | null>;
+  upsert: (record: Omit<SecretRecord, 'createdAt' | 'updatedAt'>) => Promise<SecretRecord>;
+  delete: (id: string) => Promise<{ success: boolean }>;
+  getMissingForEnvironment: (projectId: string, environmentId: string) => Promise<SecretRecord[]>;
+  getChangedSinceLastDeploy: (projectId: string) => Promise<SecretRecord[]>;
+  verify: (id: string) => Promise<{ success: boolean; error?: string }>;
+  getInventorySummary: (projectId: string) => Promise<{ total: number; missing: number; verified: number }>;
+}
+
+// ── Component 18: Migration IPC ─────────────────────────────────────────────
+
+export interface MigrationChannel {
+  createPlan: (plan: Omit<MigrationPlan, 'id' | 'createdAt' | 'updatedAt'>) => Promise<MigrationPlan>;
+  getPlan: (id: string) => Promise<MigrationPlan | null>;
+  listPlans: (projectId: string) => Promise<MigrationPlan[]>;
+  generatePreview: (planId: string) => Promise<MigrationPreview>;
+  classifyRisk: (sql: string) => Promise<{ riskClass: MigrationRiskClass; safeguards: Array<{ type: string; description: string; required: boolean; satisfied: boolean }> }>;
+  getSchemaInfo: (projectId: string) => Promise<DatabaseSchemaInfo | null>;
+  requireCheckpoint: (planId: string) => Promise<{ checkpointRequired: boolean; checkpointId?: string }>;
+  listHistory: (projectId: string) => Promise<MigrationHistoryEntry[]>;
+}
+
+// ── Component 17: Deploy IPC ─────────────────────────────────────────────
+
+export interface DeployInitiateArgs {
+  candidateId: string;
+  environmentId: string;
+  projectId: string;
+}
+
+export interface DeployChannel {
+  initiate: (args: DeployInitiateArgs) => Promise<DeployWorkflow>;
+  getStatus: (workflowId: string) => Promise<DeployWorkflow | null>;
+  getHistory: (projectId: string) => Promise<DeployWorkflow[]>;
+  rollback: (workflowId: string) => Promise<{ success: boolean; error: string | null }>;
+}
+
+// ── Component 17: Environment IPC ─────────────────────────────────────────
+
+export interface EnvironmentChannel {
+  list: (projectId: string) => Promise<Environment[]>;
+  get: (id: string) => Promise<Environment | null>;
+  create: (env: Omit<Environment, 'id'>) => Promise<Environment>;
+  update: (id: string, updates: Partial<Environment>) => Promise<Environment>;
+  delete: (id: string) => Promise<{ success: boolean }>;
+  createPreview: (projectId: string, branch: string) => Promise<Environment>;
+  destroyPreview: (id: string) => Promise<{ success: boolean }>;
+  promote: (fromEnvId: string, toEnvId: string, candidateId: string) => Promise<DeployWorkflow>;
+}
+
+// ── Component 17: Drift IPC ───────────────────────────────────────────────
+
+export interface DriftChannel {
+  detect: (projectId: string) => Promise<DriftReport[]>;
+  getReports: (projectId: string) => Promise<DriftReport[]>;
+  resolve: (reportId: string) => Promise<{ success: boolean }>;
+}
+
+// ── Component 21: Watch IPC ───────────────────────────────────────────────
+
+export interface WatchStartSessionArgs {
+  deployWorkflowId: string;
+  environmentId: string;
+  projectId: string;
+}
+
+export interface WatchChannel {
+  startSession: (args: WatchStartSessionArgs) => Promise<WatchSession>;
+  stopSession: (id: string) => Promise<{ success: boolean }>;
+  getSession: (id: string) => Promise<WatchSession | null>;
+  listSessions: (projectId: string) => Promise<WatchSession[]>;
+  getDashboard: (projectId: string) => Promise<WatchDashboard>;
+  onSessionStarted: (callback: (data: WatchSession) => void) => void;
+  onSessionCompleted: (callback: (data: WatchSession) => void) => void;
+  onAnomalyDetected: (callback: (data: AnomalyEvent) => void) => void;
+  removeListeners: () => void;
+}
+
+// ── Component 21: Anomaly IPC ─────────────────────────────────────────────
+
+export interface AnomalyChannel {
+  list: (projectId: string) => Promise<AnomalyEvent[]>;
+  acknowledge: (id: string, acknowledgedBy: string) => Promise<{ success: boolean }>;
+}
+
+// ── Component 21: Incident IPC (extends existing incident CRUD) ───────────
+
+export interface IncidentChannel {
+  list: (projectId: string) => Promise<Incident[]>;
+  get: (id: string) => Promise<Incident | null>;
+  resolve: (id: string) => Promise<{ success: boolean }>;
+  dismiss: (id: string) => Promise<{ success: boolean }>;
+  getRecommendation: (id: string) => Promise<string | null>;
+  onOpened: (callback: (data: Incident) => void) => void;
+  removeListeners: () => void;
+}
+
+// ── Component 21: Self-Healing IPC ────────────────────────────────────────
+
+export interface SelfHealingExecuteArgs {
+  actionType: SelfHealingAction['actionType'];
+  incidentId?: string;
+  anomalyId?: string;
+  environmentId?: string;
+  projectId?: string;
+}
+
+export interface SelfHealingChannel {
+  list: (projectId: string) => Promise<SelfHealingAction[]>;
+  execute: (args: SelfHealingExecuteArgs) => Promise<SelfHealingAction>;
+  getStatus: (id: string) => Promise<SelfHealingAction | null>;
+  onActionStarted: (callback: (data: SelfHealingAction) => void) => void;
+  onActionCompleted: (callback: (data: SelfHealingAction) => void) => void;
+  onApprovalRequired: (callback: (data: SelfHealingAction) => void) => void;
+  removeListeners: () => void;
+}
+
 // ── Full window API ──────────────────────────────────────────────
 
 export interface VibeFlowAPI {
@@ -553,4 +809,26 @@ export interface VibeFlowAPI {
   projectIntelligence: ProjectIntelligenceChannel;
   contextPacks: ContextPacksChannel;
   changeEngine: ChangeEngineChannel;
+  // Component 19: Audit and Rollback
+  audit: AuditChannel;
+  rollback: RollbackChannel;
+  // Component 15: Runtime Execution, Browser Automation, Evidence
+  runtime: RuntimeExecutionChannel;
+  browser: BrowserAutomationChannel;
+  evidence: EvidenceChannel;
+  // Component 16: Verification and Acceptance
+  verification: VerificationChannel;
+  acceptance: AcceptanceChannel;
+  // Component 18: Secrets and Migration
+  secrets: SecretsChannel;
+  migration: MigrationChannel;
+  // Component 17: Deploy, Environment, Drift
+  deploy: DeployChannel;
+  environment: EnvironmentChannel;
+  drift: DriftChannel;
+  // Component 21: Watch, Anomaly, Incident, Self-Healing
+  watch: WatchChannel;
+  anomaly: AnomalyChannel;
+  incident: IncidentChannel;
+  selfHealing: SelfHealingChannel;
 }

@@ -19,6 +19,11 @@ export interface HandoffContext {
   timestamp: string;
   isSelfMaintenance?: boolean;
   vibeFlowRepoPath?: string;
+  // Component 22: Extended context for mission-level handoff
+  missionState?: { id: string; title: string; status: string };
+  planState?: { completedSteps: number; totalSteps: number; nextStep: string };
+  evidenceSummary?: { passed: number; failed: number; warnings: number };
+  blockedItems?: string[];
 }
 
 export interface HandoffArtifacts {
@@ -36,11 +41,48 @@ export function generateHandoffDoc(ctx: HandoffContext): string {
     ? `# 🔧 VibeFlow Self-Maintenance Handoff — ${date}`
     : `# Handoff — ${ctx.projectName} — ${date}`;
 
+  // Mission state section (Component 22)
+  const missionSection = ctx.missionState
+    ? `
+## Current Mission
+- **Title:** ${ctx.missionState.title}
+- **Status:** ${ctx.missionState.status}
+- **Mission ID:** ${ctx.missionState.id}
+`
+    : '';
+
+  // Plan state section (Component 22)
+  const planSection = ctx.planState
+    ? `
+## Plan Progress
+- **Completed:** ${ctx.planState.completedSteps}/${ctx.planState.totalSteps} steps
+- **Next Step:** ${ctx.planState.nextStep}
+`
+    : '';
+
+  // Evidence summary section (Component 22)
+  const evidenceSection = ctx.evidenceSummary
+    ? `
+## Evidence Summary
+- **Passed:** ${ctx.evidenceSummary.passed}
+- **Failed:** ${ctx.evidenceSummary.failed}
+- **Warnings:** ${ctx.evidenceSummary.warnings}
+`
+    : '';
+
+  // Blocked items section (Component 22)
+  const blockedSection = ctx.blockedItems && ctx.blockedItems.length > 0
+    ? `
+## Blocked Items
+${ctx.blockedItems.map(b => `- ${b}`).join('\n')}
+`
+    : '';
+
   return `${title}
 
 ## What We Are Trying to Do Right Now
 ${ctx.currentGoal}
-
+${missionSection}
 ## What We Have Tried
 ${ctx.whatWasTried.map(t => `- ${t}`).join('\n') || '- Nothing yet'}
 
@@ -49,7 +91,7 @@ ${ctx.whatFailed.map(f => `- ${f}`).join('\n') || '- No failures recorded'}
 
 ## What Worked
 ${ctx.whatWorked.map(w => `- ${w}`).join('\n') || '- Nothing recorded yet'}
-
+${planSection}${evidenceSection}${blockedSection}
 ## Current Architecture Summary
 See /docs/architecture.md for the full technical architecture.
 

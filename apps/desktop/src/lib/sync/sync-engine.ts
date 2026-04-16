@@ -8,14 +8,21 @@
  */
 
 import { createClient, type SupabaseClient, type RealtimeChannel } from '@supabase/supabase-js';
-import type { SyncStatus, ConversationThread, Message, Project, RunState } from '../shared-types';
+import type {
+  SyncStatus, ConversationThread, Message, Project, RunState,
+  Mission, EvidenceItem, Capability, Incident, DeployCandidate, Environment,
+} from '../shared-types';
 import type { LocalDb } from '../storage/local-db';
 
 export type SyncEventType =
   | 'sync-status-changed'
   | 'conversation-updated'
   | 'message-added'
-  | 'lease-changed';
+  | 'lease-changed'
+  | 'mission-updated'
+  | 'evidence-added'
+  | 'incident-updated'
+  | 'environment-updated';
 
 export interface SyncEvent {
   type: SyncEventType;
@@ -99,6 +106,13 @@ export class SyncEngine {
 
     // Sync messages
     await this.syncMessages();
+
+    // Sync new domain objects
+    await this.syncMissions();
+    await this.syncEvidence();
+    await this.syncCapabilities();
+    await this.syncIncidents();
+    await this.syncEnvironments();
 
     this.setStatus('synced');
   }
@@ -251,6 +265,283 @@ export class SyncEngine {
     });
     if (error) {
       console.error('[sync] Failed to push message:', error.message);
+    }
+  }
+
+  // ── Sync New Domain Objects ───────────────────────────────────────
+
+  private async syncMissions(): Promise<void> {
+    const { data, error } = await this.supabase
+      .from('missions')
+      .select('*')
+      .eq('user_id', this.userId);
+
+    if (error) {
+      console.error('[sync] Failed to sync missions:', error.message);
+      return;
+    }
+
+    if (data) {
+      for (const row of data) {
+        const mission: Mission = {
+          id: row.id,
+          projectId: row.project_id,
+          title: row.title,
+          operatorRequest: row.operator_request ?? '',
+          clarifiedConstraints: JSON.parse(row.clarified_constraints_json ?? '[]'),
+          status: row.status ?? 'draft',
+          owner: row.owner ?? null,
+          startedAt: row.started_at ?? null,
+          completedAt: row.completed_at ?? null,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        };
+        this.localDb.insertMission(mission);
+      }
+    }
+  }
+
+  async pushMission(mission: Mission): Promise<void> {
+    const { error } = await this.supabase.from('missions').upsert({
+      id: mission.id,
+      project_id: mission.projectId,
+      user_id: this.userId,
+      title: mission.title,
+      operator_request: mission.operatorRequest,
+      clarified_constraints_json: JSON.stringify(mission.clarifiedConstraints),
+      status: mission.status,
+      owner: mission.owner,
+      started_at: mission.startedAt,
+      completed_at: mission.completedAt,
+      created_at: mission.createdAt,
+      updated_at: mission.updatedAt,
+    });
+    if (error) {
+      console.error('[sync] Failed to push mission:', error.message);
+    }
+  }
+
+  private async syncEvidence(): Promise<void> {
+    const { data, error } = await this.supabase
+      .from('evidence_items')
+      .select('*')
+      .eq('user_id', this.userId);
+
+    if (error) {
+      console.error('[sync] Failed to sync evidence:', error.message);
+      return;
+    }
+
+    if (data) {
+      for (const row of data) {
+        const item: EvidenceItem = {
+          id: row.id,
+          missionId: row.mission_id,
+          type: row.type,
+          status: row.status,
+          title: row.title,
+          detail: row.detail ?? null,
+          timestamp: row.timestamp,
+        };
+        this.localDb.insertEvidenceItem(item);
+      }
+    }
+  }
+
+  async pushEvidenceItem(item: EvidenceItem): Promise<void> {
+    const { error } = await this.supabase.from('evidence_items').upsert({
+      id: item.id,
+      mission_id: item.missionId,
+      user_id: this.userId,
+      type: item.type,
+      status: item.status,
+      title: item.title,
+      detail: item.detail,
+      timestamp: item.timestamp,
+    });
+    if (error) {
+      console.error('[sync] Failed to push evidence:', error.message);
+    }
+  }
+
+  private async syncCapabilities(): Promise<void> {
+    const { data, error } = await this.supabase
+      .from('capabilities')
+      .select('*')
+      .eq('user_id', this.userId);
+
+    if (error) {
+      console.error('[sync] Failed to sync capabilities:', error.message);
+      return;
+    }
+
+    if (data) {
+      for (const row of data) {
+        const now = new Date().toISOString();
+        const cap: Capability = {
+          id: row.id,
+          name: row.name,
+          type: row.type ?? 'direct',
+          class: row.class ?? (row.type === 'mcp' ? 'mcp' : 'direct-api'),
+          owner: row.owner ?? 'builtin',
+          description: row.description ?? '',
+          scope: row.scope ?? '',
+          authMethod: row.auth_method ?? null,
+          actions: JSON.parse(row.actions_json ?? '[]'),
+          health: row.health,
+          enabled: row.enabled !== 0,
+          lastSuccessAt: row.last_success_at ?? null,
+          lastFailureAt: row.last_failure_at ?? null,
+          lastFailureReason: row.last_failure_reason ?? null,
+          auditNotes: row.audit_notes ?? '',
+          projectId: row.project_id ?? null,
+          createdAt: row.created_at ?? now,
+          updatedAt: row.updated_at ?? now,
+          // Deprecated fields
+          lastFailure: row.last_failure ?? null,
+          permissions: JSON.parse(row.permissions_json ?? '[]'),
+        };
+        this.localDb.upsertCapability(cap);
+      }
+    }
+  }
+
+  async pushCapability(cap: Capability): Promise<void> {
+    const { error } = await this.supabase.from('capabilities').upsert({
+      id: cap.id,
+      user_id: this.userId,
+      name: cap.name,
+      type: cap.type,
+      health: cap.health,
+      last_failure: cap.lastFailure,
+      permissions_json: JSON.stringify(cap.permissions),
+    });
+    if (error) {
+      console.error('[sync] Failed to push capability:', error.message);
+    }
+  }
+
+  private async syncIncidents(): Promise<void> {
+    const { data, error } = await this.supabase
+      .from('incidents')
+      .select('*')
+      .eq('user_id', this.userId);
+
+    if (error) {
+      console.error('[sync] Failed to sync incidents:', error.message);
+      return;
+    }
+
+    if (data) {
+      for (const row of data) {
+        const incident: Incident = {
+          id: row.id,
+          projectId: row.project_id,
+          title: row.title,
+          severity: row.severity,
+          description: row.description ?? '',
+          status: row.status,
+          detectedAt: row.detected_at,
+          resolvedAt: row.resolved_at ?? null,
+          // Component 21 fields — default values for backward compatibility
+          environmentId: row.environment_id ?? null,
+          deployWorkflowId: row.deploy_workflow_id ?? null,
+          evidenceIds: row.evidence_ids ? JSON.parse(row.evidence_ids) : [],
+          correlatedChangeIds: row.correlated_change_ids ? JSON.parse(row.correlated_change_ids) : [],
+          recommendedAction: row.recommended_action ?? null,
+          selfHealingAttempted: row.self_healing_attempted === 1,
+          selfHealingResult: row.self_healing_result ?? null,
+          watchModeActive: row.watch_mode_active === 1,
+        };
+        this.localDb.insertIncident(incident);
+      }
+    }
+  }
+
+  async pushIncident(incident: Incident): Promise<void> {
+    const { error } = await this.supabase.from('incidents').upsert({
+      id: incident.id,
+      project_id: incident.projectId,
+      user_id: this.userId,
+      title: incident.title,
+      severity: incident.severity,
+      description: incident.description,
+      status: incident.status,
+      detected_at: incident.detectedAt,
+      resolved_at: incident.resolvedAt,
+    });
+    if (error) {
+      console.error('[sync] Failed to push incident:', error.message);
+    }
+  }
+
+  private async syncEnvironments(): Promise<void> {
+    const { data, error } = await this.supabase
+      .from('environments')
+      .select('*')
+      .eq('user_id', this.userId);
+
+    if (error) {
+      console.error('[sync] Failed to sync environments:', error.message);
+      return;
+    }
+
+    if (data) {
+      for (const row of data) {
+        const env: Environment = {
+          id: row.id,
+          projectId: row.project_id,
+          name: row.name,
+          type: row.type,
+          currentVersion: row.current_version ?? null,
+          secretsComplete: row.secrets_complete === true,
+          serviceHealth: row.service_health,
+          branchMapping: row.branch_mapping ?? null,
+          host: row.host ?? null,
+          deployMechanism: row.deploy_mechanism ?? null,
+          requiredSecrets: JSON.parse(row.required_secrets_json ?? '[]') as string[],
+          linkedServiceIds: JSON.parse(row.linked_service_ids_json ?? '[]') as string[],
+          healthEndpoint: row.health_endpoint ?? null,
+          protections: JSON.parse(row.protections_json ?? '[]') as any[],
+          rollbackMethod: row.rollback_method ?? null,
+          mutabilityRules: JSON.parse(row.mutability_rules_json ?? '[]') as any[],
+        };
+        this.localDb.upsertEnvironment(env);
+      }
+    }
+  }
+
+  async pushEnvironment(env: Environment): Promise<void> {
+    const { error } = await this.supabase.from('environments').upsert({
+      id: env.id,
+      project_id: env.projectId,
+      user_id: this.userId,
+      name: env.name,
+      type: env.type,
+      current_version: env.currentVersion,
+      secrets_complete: env.secretsComplete,
+      service_health: env.serviceHealth,
+      branch_mapping: env.branchMapping,
+    });
+    if (error) {
+      console.error('[sync] Failed to push environment:', error.message);
+    }
+  }
+
+  async pushDeployCandidate(candidate: DeployCandidate): Promise<void> {
+    const { error } = await this.supabase.from('deploy_candidates').upsert({
+      id: candidate.id,
+      project_id: candidate.projectId,
+      user_id: this.userId,
+      environment_id: candidate.environmentId,
+      commit_sha: candidate.commitSha,
+      version: candidate.version,
+      status: candidate.status,
+      deployed_at: candidate.deployedAt,
+      deployed_by: candidate.deployedBy,
+    });
+    if (error) {
+      console.error('[sync] Failed to push deploy candidate:', error.message);
     }
   }
 

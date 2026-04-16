@@ -5,6 +5,8 @@ import type { ChangeSet, SemanticChangeGroup, FileEdit, DuplicateWarning, Checkp
 
 interface ChangePanelProps {
   workspaceRunId?: string;
+  mission?: { id: string } | null;
+  projectId?: string;
 }
 
 export default function ChangePanel({ workspaceRunId }: ChangePanelProps) {

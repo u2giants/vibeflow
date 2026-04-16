@@ -67,7 +67,16 @@ import * as fs from 'fs';
 import { initAutoUpdater, downloadUpdate, installUpdate } from '../lib/updater/auto-updater';
 import { IndexingPipeline, detectFramework, ImpactAnalyzer, TopologyBuilder, ContextPackAssembler } from '../lib/project-intelligence';
 import { ChangeEngine } from '../lib/change-engine';
-import type { CreateWorkspaceRunArgs, ApplyPatchArgs, CommitWorkspaceArgs } from '../lib/shared-types';
+import type { CreateWorkspaceRunArgs, ApplyPatchArgs, CommitWorkspaceArgs, SecretRecord, MigrationPlan, MigrationRiskClass, Environment, DeployWorkflow, DriftReport, DeployInitiateArgs } from '../lib/shared-types';
+import { SecretsStore } from '../lib/secrets/secrets-store';
+import { classifyRisk, generatePreview, requiresCheckpoint } from '../lib/secrets/migration-safety';
+import { EnvironmentManager } from '../lib/environment-manager';
+import { DriftDetector } from '../lib/drift-detector';
+import { DeployEngine } from '../lib/deploy-engine';
+import { ServiceControlPlaneManager } from '../lib/service-control-plane';
+import { WatchEngine } from '../lib/observability/watch-engine';
+import { EvidenceCaptureEngine } from '../lib/runtime-execution/evidence-capture-engine';
+import type { WatchStartSessionArgs, SelfHealingExecuteArgs, Incident, AnomalyEvent, WatchSession, SelfHealingAction, WatchDashboard } from '../lib/shared-types';
 
 const KEYTAR_SERVICE = 'vibeflow';
 const KEYTAR_OPENROUTER_KEY = 'openrouter-api-key';
@@ -87,6 +96,7 @@ const mcpConnectionManager = new McpConnectionManager();
 const mcpToolExecutor = new McpToolExecutor();
 let orchestrationEngine: OrchestrationEngine | null = null;
 let changeEngine: ChangeEngine | null = null;
+let watchEngine: WatchEngine | null = null;
 
 function getSupabaseClient(): SupabaseClient | null {
   if (supabase) return supabase;
@@ -459,6 +469,10 @@ app.whenReady().then(async () => {
         localDb = new LocalDb(dbPath);
         await localDb.init();
         changeEngine = new ChangeEngine(localDb);
+        const secretsStore = new SecretsStore(localDb);
+        const driftDetector = new DriftDetector(localDb, secretsStore);
+        const evidenceEngine = new EvidenceCaptureEngine(localDb);
+        watchEngine = new WatchEngine(localDb, driftDetector, evidenceEngine, mainWindow);
         localDb.seedDefaultModes(DEFAULT_MODES);
         console.log('[main] LocalDb lazy-initialized in createSelfMaintenance');
       } catch (err) {
@@ -1409,6 +1423,282 @@ app.whenReady().then(async () => {
     return changeEngine.listCheckpoints(workspaceRunId);
   });
 
+  // ── Component 18: Secrets IPC ───────────────────────────────────────────────
+
+  ipcMain.handle('secrets:list', async (_event, projectId: string): Promise<SecretRecord[]> => {
+    if (!localDb) return [];
+    return localDb.listSecretRecords(projectId);
+  });
+
+  ipcMain.handle('secrets:get', async (_event, id: string): Promise<SecretRecord | null> => {
+    if (!localDb) return null;
+    return localDb.getSecretRecord(id);
+  });
+
+  ipcMain.handle('secrets:upsert', async (_event, record: Omit<SecretRecord, 'createdAt' | 'updatedAt'>): Promise<SecretRecord> => {
+    if (!localDb) throw new Error('Database not initialized');
+    const now = new Date().toISOString();
+    const full: SecretRecord = { ...record, createdAt: now, updatedAt: now };
+    localDb.upsertSecretRecord(full);
+    return full;
+  });
+
+  ipcMain.handle('secrets:delete', async (_event, id: string): Promise<{ success: boolean }> => {
+    if (!localDb) return { success: false };
+    localDb.deleteSecretRecord(id);
+    return { success: true };
+  });
+
+  ipcMain.handle('secrets:getMissingForEnvironment', async (_event, projectId: string, environmentId: string): Promise<SecretRecord[]> => {
+    if (!localDb) return [];
+    return localDb.getMissingSecretsForEnvironment(projectId, environmentId);
+  });
+
+  ipcMain.handle('secrets:getChangedSinceLastDeploy', async (_event, projectId: string): Promise<SecretRecord[]> => {
+    if (!localDb) return [];
+    return localDb.getChangedSecretsSinceLastDeploy(projectId);
+  });
+
+  ipcMain.handle('secrets:verify', async (_event, id: string): Promise<{ success: boolean; error?: string }> => {
+    if (!localDb) return { success: false, error: 'Database not initialized' };
+    return localDb.verifySecret(id);
+  });
+
+  ipcMain.handle('secrets:getInventorySummary', async (_event, projectId: string): Promise<{ total: number; missing: number; verified: number }> => {
+    if (!localDb) return { total: 0, missing: 0, verified: 0 };
+    return localDb.getSecretInventorySummary(projectId);
+  });
+
+  // ── Component 18: Migration IPC ─────────────────────────────────────────────
+
+  ipcMain.handle('migration:createPlan', async (_event, plan: Omit<MigrationPlan, 'id' | 'createdAt' | 'updatedAt'>): Promise<MigrationPlan> => {
+    if (!localDb) throw new Error('Database not initialized');
+    const fullPlan: MigrationPlan = { ...plan, id: `migration-${Date.now()}`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    localDb.upsertMigrationPlan(fullPlan);
+    return fullPlan;
+  });
+
+  ipcMain.handle('migration:getPlan', async (_event, id: string): Promise<MigrationPlan | null> => {
+    if (!localDb) return null;
+    return localDb.getMigrationPlan(id);
+  });
+
+  ipcMain.handle('migration:listPlans', async (_event, projectId: string): Promise<MigrationPlan[]> => {
+    if (!localDb) return [];
+    return localDb.listMigrationPlans(projectId);
+  });
+
+  ipcMain.handle('migration:generatePreview', async (_event, planId: string): Promise<any> => {
+    if (!localDb) return { planId, sqlPreview: '', affectedEntities: [], destructiveOperations: [], estimatedDowntime: null, warnings: [] };
+    const plan = localDb.getMigrationPlan(planId);
+    if (!plan) return { planId, sqlPreview: '', affectedEntities: [], destructiveOperations: [], estimatedDowntime: null, warnings: ['Plan not found'] };
+    return generatePreview(plan);
+  });
+
+  ipcMain.handle('migration:classifyRisk', async (_event, sql: string): Promise<{ riskClass: MigrationRiskClass; safeguards: any[] }> => {
+    return classifyRisk(sql);
+  });
+
+  ipcMain.handle('migration:getSchemaInfo', async (_event, projectId: string): Promise<any | null> => {
+    return { projectId, engine: 'sqlite', schemaSourceFiles: ['apps/desktop/src/lib/storage/local-db.ts'], migrationHistory: localDb ? localDb.listMigrationHistory(projectId) : [], tables: [], relationships: [], protectedEntities: [], highRiskDomains: [] };
+  });
+
+  ipcMain.handle('migration:requireCheckpoint', async (_event, planId: string): Promise<{ checkpointRequired: boolean; checkpointId?: string }> => {
+    if (!localDb) return { checkpointRequired: false };
+    const plan = localDb.getMigrationPlan(planId);
+    if (!plan) return { checkpointRequired: false };
+    return { checkpointRequired: requiresCheckpoint(plan.riskClass), checkpointId: plan.checkpointId ?? undefined };
+  });
+
+  ipcMain.handle('migration:listHistory', async (_event, projectId: string): Promise<any[]> => {
+    if (!localDb) return [];
+    return localDb.listMigrationHistory(projectId);
+  });
+
+  // ── Component 18: Secrets IPC ───────────────────────────────────────────────
+
+  ipcMain.handle('secrets:list', async (_event, projectId: string): Promise<SecretRecord[]> => {
+    if (!localDb) return [];
+    return localDb.listSecretRecords(projectId);
+  });
+
+  ipcMain.handle('secrets:get', async (_event, id: string): Promise<SecretRecord | null> => {
+    if (!localDb) return null;
+    return localDb.getSecretRecord(id);
+  });
+
+  ipcMain.handle('secrets:upsert', async (_event, record: Omit<SecretRecord, 'createdAt' | 'updatedAt'>): Promise<SecretRecord> => {
+    if (!localDb) throw new Error('Database not initialized');
+    const now = new Date().toISOString();
+    const full: SecretRecord = { ...record, createdAt: now, updatedAt: now };
+    localDb.upsertSecretRecord(full);
+    return full;
+  });
+
+  ipcMain.handle('secrets:delete', async (_event, id: string): Promise<{ success: boolean }> => {
+    if (!localDb) return { success: false };
+    localDb.deleteSecretRecord(id);
+    return { success: true };
+  });
+
+  ipcMain.handle('secrets:getMissingForEnvironment', async (_event, projectId: string, environmentId: string): Promise<SecretRecord[]> => {
+    if (!localDb) return [];
+    return localDb.getMissingSecretsForEnvironment(projectId, environmentId);
+  });
+
+  ipcMain.handle('secrets:getChangedSinceLastDeploy', async (_event, projectId: string): Promise<SecretRecord[]> => {
+    if (!localDb) return [];
+    return localDb.getChangedSecretsSinceLastDeploy(projectId);
+  });
+
+  ipcMain.handle('secrets:verify', async (_event, id: string): Promise<{ success: boolean; error?: string }> => {
+    if (!localDb) return { success: false, error: 'Database not initialized' };
+    return localDb.verifySecret(id);
+  });
+
+  ipcMain.handle('secrets:getInventorySummary', async (_event, projectId: string): Promise<{ total: number; missing: number; verified: number }> => {
+    if (!localDb) return { total: 0, missing: 0, verified: 0 };
+    return localDb.getSecretInventorySummary(projectId);
+  });
+
+  // ── Component 18: Migration IPC ─────────────────────────────────────────────
+
+  ipcMain.handle('migration:createPlan', async (_event, plan: Omit<MigrationPlan, 'id' | 'createdAt' | 'updatedAt'>): Promise<MigrationPlan> => {
+    if (!localDb) throw new Error('Database not initialized');
+    const fullPlan: MigrationPlan = { ...plan, id: `migration-${Date.now()}`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    localDb.upsertMigrationPlan(fullPlan);
+    return fullPlan;
+  });
+
+  ipcMain.handle('migration:getPlan', async (_event, id: string): Promise<MigrationPlan | null> => {
+    if (!localDb) return null;
+    return localDb.getMigrationPlan(id);
+  });
+
+  ipcMain.handle('migration:listPlans', async (_event, projectId: string): Promise<MigrationPlan[]> => {
+    if (!localDb) return [];
+    return localDb.listMigrationPlans(projectId);
+  });
+
+  ipcMain.handle('migration:generatePreview', async (_event, planId: string): Promise<any> => {
+    if (!localDb) return { planId, sqlPreview: '', affectedEntities: [], destructiveOperations: [], estimatedDowntime: null, warnings: [] };
+    const plan = localDb.getMigrationPlan(planId);
+    if (!plan) return { planId, sqlPreview: '', affectedEntities: [], destructiveOperations: [], estimatedDowntime: null, warnings: ['Plan not found'] };
+    return generatePreview(plan);
+  });
+
+  ipcMain.handle('migration:classifyRisk', async (_event, sql: string): Promise<{ riskClass: MigrationRiskClass; safeguards: any[] }> => {
+    return classifyRisk(sql);
+  });
+
+  ipcMain.handle('migration:getSchemaInfo', async (_event, projectId: string): Promise<any | null> => {
+    return { projectId, engine: 'sqlite', schemaSourceFiles: ['apps/desktop/src/lib/storage/local-db.ts'], migrationHistory: localDb ? localDb.listMigrationHistory(projectId) : [], tables: [], relationships: [], protectedEntities: [], highRiskDomains: [] };
+  });
+
+  ipcMain.handle('migration:requireCheckpoint', async (_event, planId: string): Promise<{ checkpointRequired: boolean; checkpointId?: string }> => {
+    if (!localDb) return { checkpointRequired: false };
+    const plan = localDb.getMigrationPlan(planId);
+    if (!plan) return { checkpointRequired: false };
+    return { checkpointRequired: requiresCheckpoint(plan.riskClass), checkpointId: plan.checkpointId ?? undefined };
+  });
+
+  ipcMain.handle('migration:listHistory', async (_event, projectId: string): Promise<any[]> => {
+    if (!localDb) return [];
+    return localDb.listMigrationHistory(projectId);
+  });
+
+  // ── Component 18: Secrets IPC ───────────────────────────────────────────────
+
+  ipcMain.handle('secrets:list', async (_event, projectId: string): Promise<SecretRecord[]> => {
+    if (!localDb) return [];
+    return localDb.listSecretRecords(projectId);
+  });
+
+  ipcMain.handle('secrets:get', async (_event, id: string): Promise<SecretRecord | null> => {
+    if (!localDb) return null;
+    return localDb.getSecretRecord(id);
+  });
+
+  ipcMain.handle('secrets:upsert', async (_event, record: Omit<SecretRecord, 'createdAt' | 'updatedAt'>): Promise<SecretRecord> => {
+    if (!localDb) throw new Error('Database not initialized');
+    const now = new Date().toISOString();
+    const full: SecretRecord = { ...record, createdAt: now, updatedAt: now };
+    localDb.upsertSecretRecord(full);
+    return full;
+  });
+
+  ipcMain.handle('secrets:delete', async (_event, id: string): Promise<{ success: boolean }> => {
+    if (!localDb) return { success: false };
+    localDb.deleteSecretRecord(id);
+    return { success: true };
+  });
+
+  ipcMain.handle('secrets:getMissingForEnvironment', async (_event, projectId: string, environmentId: string): Promise<SecretRecord[]> => {
+    if (!localDb) return [];
+    return localDb.getMissingSecretsForEnvironment(projectId, environmentId);
+  });
+
+  ipcMain.handle('secrets:getChangedSinceLastDeploy', async (_event, projectId: string): Promise<SecretRecord[]> => {
+    if (!localDb) return [];
+    return localDb.getChangedSecretsSinceLastDeploy(projectId);
+  });
+
+  ipcMain.handle('secrets:verify', async (_event, id: string): Promise<{ success: boolean; error?: string }> => {
+    if (!localDb) return { success: false, error: 'Database not initialized' };
+    return localDb.verifySecret(id);
+  });
+
+  ipcMain.handle('secrets:getInventorySummary', async (_event, projectId: string): Promise<{ total: number; missing: number; verified: number }> => {
+    if (!localDb) return { total: 0, missing: 0, verified: 0 };
+    return localDb.getSecretInventorySummary(projectId);
+  });
+
+  // ── Component 18: Migration IPC ─────────────────────────────────────────────
+
+  ipcMain.handle('migration:createPlan', async (_event, plan: Omit<MigrationPlan, 'id' | 'createdAt' | 'updatedAt'>): Promise<MigrationPlan> => {
+    if (!localDb) throw new Error('Database not initialized');
+    const fullPlan: MigrationPlan = { ...plan, id: `migration-${Date.now()}`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    localDb.upsertMigrationPlan(fullPlan);
+    return fullPlan;
+  });
+
+  ipcMain.handle('migration:getPlan', async (_event, id: string): Promise<MigrationPlan | null> => {
+    if (!localDb) return null;
+    return localDb.getMigrationPlan(id);
+  });
+
+  ipcMain.handle('migration:listPlans', async (_event, projectId: string): Promise<MigrationPlan[]> => {
+    if (!localDb) return [];
+    return localDb.listMigrationPlans(projectId);
+  });
+
+  ipcMain.handle('migration:generatePreview', async (_event, planId: string): Promise<any> => {
+    if (!localDb) return { planId, sqlPreview: '', affectedEntities: [], destructiveOperations: [], estimatedDowntime: null, warnings: [] };
+    const plan = localDb.getMigrationPlan(planId);
+    if (!plan) return { planId, sqlPreview: '', affectedEntities: [], destructiveOperations: [], estimatedDowntime: null, warnings: ['Plan not found'] };
+    return generatePreview(plan);
+  });
+
+  ipcMain.handle('migration:classifyRisk', async (_event, sql: string): Promise<{ riskClass: MigrationRiskClass; safeguards: any[] }> => {
+    return classifyRisk(sql);
+  });
+
+  ipcMain.handle('migration:getSchemaInfo', async (_event, projectId: string): Promise<any | null> => {
+    return { projectId, engine: 'sqlite', schemaSourceFiles: ['apps/desktop/src/lib/storage/local-db.ts'], migrationHistory: localDb ? localDb.listMigrationHistory(projectId) : [], tables: [], relationships: [], protectedEntities: [], highRiskDomains: [] };
+  });
+
+  ipcMain.handle('migration:requireCheckpoint', async (_event, planId: string): Promise<{ checkpointRequired: boolean; checkpointId?: string }> => {
+    if (!localDb) return { checkpointRequired: false };
+    const plan = localDb.getMigrationPlan(planId);
+    if (!plan) return { checkpointRequired: false };
+    return { checkpointRequired: requiresCheckpoint(plan.riskClass), checkpointId: plan.checkpointId ?? undefined };
+  });
+
+  ipcMain.handle('migration:listHistory', async (_event, projectId: string): Promise<any[]> => {
+    if (!localDb) return [];
+    return localDb.listMigrationHistory(projectId);
+  });
+
   createWindow();
 
   // Only init auto-updater in packaged builds (not dev mode)
@@ -1418,7 +1708,497 @@ app.whenReady().then(async () => {
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+      // ── Component 18: Secrets IPC ───────────────────────────────────────────────
+
+  ipcMain.handle('secrets:list', async (_event, projectId: string): Promise<SecretRecord[]> => {
+    if (!localDb) return [];
+    return localDb.listSecretRecords(projectId);
+  });
+
+  ipcMain.handle('secrets:get', async (_event, id: string): Promise<SecretRecord | null> => {
+    if (!localDb) return null;
+    return localDb.getSecretRecord(id);
+  });
+
+  ipcMain.handle('secrets:upsert', async (_event, record: Omit<SecretRecord, 'createdAt' | 'updatedAt'>): Promise<SecretRecord> => {
+    if (!localDb) throw new Error('Database not initialized');
+    const now = new Date().toISOString();
+    const full: SecretRecord = { ...record, createdAt: now, updatedAt: now };
+    localDb.upsertSecretRecord(full);
+    return full;
+  });
+
+  ipcMain.handle('secrets:delete', async (_event, id: string): Promise<{ success: boolean }> => {
+    if (!localDb) return { success: false };
+    localDb.deleteSecretRecord(id);
+    return { success: true };
+  });
+
+  ipcMain.handle('secrets:getMissingForEnvironment', async (_event, projectId: string, environmentId: string): Promise<SecretRecord[]> => {
+    if (!localDb) return [];
+    return localDb.getMissingSecretsForEnvironment(projectId, environmentId);
+  });
+
+  ipcMain.handle('secrets:getChangedSinceLastDeploy', async (_event, projectId: string): Promise<SecretRecord[]> => {
+    if (!localDb) return [];
+    return localDb.getChangedSecretsSinceLastDeploy(projectId);
+  });
+
+  ipcMain.handle('secrets:verify', async (_event, id: string): Promise<{ success: boolean; error?: string }> => {
+    if (!localDb) return { success: false, error: 'Database not initialized' };
+    return localDb.verifySecret(id);
+  });
+
+  ipcMain.handle('secrets:getInventorySummary', async (_event, projectId: string): Promise<{ total: number; missing: number; verified: number }> => {
+    if (!localDb) return { total: 0, missing: 0, verified: 0 };
+    return localDb.getSecretInventorySummary(projectId);
+  });
+
+  // ── Component 18: Migration IPC ─────────────────────────────────────────────
+
+  ipcMain.handle('migration:createPlan', async (_event, plan: Omit<MigrationPlan, 'id' | 'createdAt' | 'updatedAt'>): Promise<MigrationPlan> => {
+    if (!localDb) throw new Error('Database not initialized');
+    const fullPlan: MigrationPlan = { ...plan, id: `migration-${Date.now()}`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    localDb.upsertMigrationPlan(fullPlan);
+    return fullPlan;
+  });
+
+  ipcMain.handle('migration:getPlan', async (_event, id: string): Promise<MigrationPlan | null> => {
+    if (!localDb) return null;
+    return localDb.getMigrationPlan(id);
+  });
+
+  ipcMain.handle('migration:listPlans', async (_event, projectId: string): Promise<MigrationPlan[]> => {
+    if (!localDb) return [];
+    return localDb.listMigrationPlans(projectId);
+  });
+
+  ipcMain.handle('migration:generatePreview', async (_event, planId: string): Promise<any> => {
+    if (!localDb) return { planId, sqlPreview: '', affectedEntities: [], destructiveOperations: [], estimatedDowntime: null, warnings: [] };
+    const plan = localDb.getMigrationPlan(planId);
+    if (!plan) return { planId, sqlPreview: '', affectedEntities: [], destructiveOperations: [], estimatedDowntime: null, warnings: ['Plan not found'] };
+    return generatePreview(plan);
+  });
+
+  ipcMain.handle('migration:classifyRisk', async (_event, sql: string): Promise<{ riskClass: MigrationRiskClass; safeguards: any[] }> => {
+    return classifyRisk(sql);
+  });
+
+  ipcMain.handle('migration:getSchemaInfo', async (_event, projectId: string): Promise<any | null> => {
+    return { projectId, engine: 'sqlite', schemaSourceFiles: ['apps/desktop/src/lib/storage/local-db.ts'], migrationHistory: localDb ? localDb.listMigrationHistory(projectId) : [], tables: [], relationships: [], protectedEntities: [], highRiskDomains: [] };
+  });
+
+  ipcMain.handle('migration:requireCheckpoint', async (_event, planId: string): Promise<{ checkpointRequired: boolean; checkpointId?: string }> => {
+    if (!localDb) return { checkpointRequired: false };
+    const plan = localDb.getMigrationPlan(planId);
+    if (!plan) return { checkpointRequired: false };
+    return { checkpointRequired: requiresCheckpoint(plan.riskClass), checkpointId: plan.checkpointId ?? undefined };
+  });
+
+  ipcMain.handle('migration:listHistory', async (_event, projectId: string): Promise<any[]> => {
+    if (!localDb) return [];
+    return localDb.listMigrationHistory(projectId);
+  });
+
+  // ── Component 18: Secrets IPC ───────────────────────────────────────────────
+
+  ipcMain.handle('secrets:list', async (_event, projectId: string): Promise<SecretRecord[]> => {
+    if (!localDb) return [];
+    return localDb.listSecretRecords(projectId);
+  });
+
+  ipcMain.handle('secrets:get', async (_event, id: string): Promise<SecretRecord | null> => {
+    if (!localDb) return null;
+    return localDb.getSecretRecord(id);
+  });
+
+  ipcMain.handle('secrets:upsert', async (_event, record: Omit<SecretRecord, 'createdAt' | 'updatedAt'>): Promise<SecretRecord> => {
+    if (!localDb) throw new Error('Database not initialized');
+    const now = new Date().toISOString();
+    const full: SecretRecord = { ...record, createdAt: now, updatedAt: now };
+    localDb.upsertSecretRecord(full);
+    return full;
+  });
+
+  ipcMain.handle('secrets:delete', async (_event, id: string): Promise<{ success: boolean }> => {
+    if (!localDb) return { success: false };
+    localDb.deleteSecretRecord(id);
+    return { success: true };
+  });
+
+  ipcMain.handle('secrets:getMissingForEnvironment', async (_event, projectId: string, environmentId: string): Promise<SecretRecord[]> => {
+    if (!localDb) return [];
+    return localDb.getMissingSecretsForEnvironment(projectId, environmentId);
+  });
+
+  ipcMain.handle('secrets:getChangedSinceLastDeploy', async (_event, projectId: string): Promise<SecretRecord[]> => {
+    if (!localDb) return [];
+    return localDb.getChangedSecretsSinceLastDeploy(projectId);
+  });
+
+  ipcMain.handle('secrets:verify', async (_event, id: string): Promise<{ success: boolean; error?: string }> => {
+    if (!localDb) return { success: false, error: 'Database not initialized' };
+    return localDb.verifySecret(id);
+  });
+
+  ipcMain.handle('secrets:getInventorySummary', async (_event, projectId: string): Promise<{ total: number; missing: number; verified: number }> => {
+    if (!localDb) return { total: 0, missing: 0, verified: 0 };
+    return localDb.getSecretInventorySummary(projectId);
+  });
+
+  // ── Component 18: Migration IPC ─────────────────────────────────────────────
+
+  ipcMain.handle('migration:createPlan', async (_event, plan: Omit<MigrationPlan, 'id' | 'createdAt' | 'updatedAt'>): Promise<MigrationPlan> => {
+    if (!localDb) throw new Error('Database not initialized');
+    const fullPlan: MigrationPlan = { ...plan, id: `migration-${Date.now()}`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    localDb.upsertMigrationPlan(fullPlan);
+    return fullPlan;
+  });
+
+  ipcMain.handle('migration:getPlan', async (_event, id: string): Promise<MigrationPlan | null> => {
+    if (!localDb) return null;
+    return localDb.getMigrationPlan(id);
+  });
+
+  ipcMain.handle('migration:listPlans', async (_event, projectId: string): Promise<MigrationPlan[]> => {
+    if (!localDb) return [];
+    return localDb.listMigrationPlans(projectId);
+  });
+
+  ipcMain.handle('migration:generatePreview', async (_event, planId: string): Promise<any> => {
+    if (!localDb) return { planId, sqlPreview: '', affectedEntities: [], destructiveOperations: [], estimatedDowntime: null, warnings: [] };
+    const plan = localDb.getMigrationPlan(planId);
+    if (!plan) return { planId, sqlPreview: '', affectedEntities: [], destructiveOperations: [], estimatedDowntime: null, warnings: ['Plan not found'] };
+    return generatePreview(plan);
+  });
+
+  ipcMain.handle('migration:classifyRisk', async (_event, sql: string): Promise<{ riskClass: MigrationRiskClass; safeguards: any[] }> => {
+    return classifyRisk(sql);
+  });
+
+  ipcMain.handle('migration:getSchemaInfo', async (_event, projectId: string): Promise<any | null> => {
+    return { projectId, engine: 'sqlite', schemaSourceFiles: ['apps/desktop/src/lib/storage/local-db.ts'], migrationHistory: localDb ? localDb.listMigrationHistory(projectId) : [], tables: [], relationships: [], protectedEntities: [], highRiskDomains: [] };
+  });
+
+  ipcMain.handle('migration:requireCheckpoint', async (_event, planId: string): Promise<{ checkpointRequired: boolean; checkpointId?: string }> => {
+    if (!localDb) return { checkpointRequired: false };
+    const plan = localDb.getMigrationPlan(planId);
+    if (!plan) return { checkpointRequired: false };
+    return { checkpointRequired: requiresCheckpoint(plan.riskClass), checkpointId: plan.checkpointId ?? undefined };
+  });
+
+  ipcMain.handle('migration:listHistory', async (_event, projectId: string): Promise<any[]> => {
+    if (!localDb) return [];
+    return localDb.listMigrationHistory(projectId);
+  });
+
+  // ── Component 18: Secrets IPC ───────────────────────────────────────────────
+
+  ipcMain.handle('secrets:list', async (_event, projectId: string): Promise<SecretRecord[]> => {
+    if (!localDb) return [];
+    return localDb.listSecretRecords(projectId);
+  });
+
+  ipcMain.handle('secrets:get', async (_event, id: string): Promise<SecretRecord | null> => {
+    if (!localDb) return null;
+    return localDb.getSecretRecord(id);
+  });
+
+  ipcMain.handle('secrets:upsert', async (_event, record: Omit<SecretRecord, 'createdAt' | 'updatedAt'>): Promise<SecretRecord> => {
+    if (!localDb) throw new Error('Database not initialized');
+    const now = new Date().toISOString();
+    const full: SecretRecord = { ...record, createdAt: now, updatedAt: now };
+    localDb.upsertSecretRecord(full);
+    return full;
+  });
+
+  ipcMain.handle('secrets:delete', async (_event, id: string): Promise<{ success: boolean }> => {
+    if (!localDb) return { success: false };
+    localDb.deleteSecretRecord(id);
+    return { success: true };
+  });
+
+  ipcMain.handle('secrets:getMissingForEnvironment', async (_event, projectId: string, environmentId: string): Promise<SecretRecord[]> => {
+    if (!localDb) return [];
+    return localDb.getMissingSecretsForEnvironment(projectId, environmentId);
+  });
+
+  ipcMain.handle('secrets:getChangedSinceLastDeploy', async (_event, projectId: string): Promise<SecretRecord[]> => {
+    if (!localDb) return [];
+    return localDb.getChangedSecretsSinceLastDeploy(projectId);
+  });
+
+  ipcMain.handle('secrets:verify', async (_event, id: string): Promise<{ success: boolean; error?: string }> => {
+    if (!localDb) return { success: false, error: 'Database not initialized' };
+    return localDb.verifySecret(id);
+  });
+
+  ipcMain.handle('secrets:getInventorySummary', async (_event, projectId: string): Promise<{ total: number; missing: number; verified: number }> => {
+    if (!localDb) return { total: 0, missing: 0, verified: 0 };
+    return localDb.getSecretInventorySummary(projectId);
+  });
+
+  // ── Component 18: Migration IPC ─────────────────────────────────────────────
+
+  ipcMain.handle('migration:createPlan', async (_event, plan: Omit<MigrationPlan, 'id' | 'createdAt' | 'updatedAt'>): Promise<MigrationPlan> => {
+    if (!localDb) throw new Error('Database not initialized');
+    const fullPlan: MigrationPlan = { ...plan, id: `migration-${Date.now()}`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    localDb.upsertMigrationPlan(fullPlan);
+    return fullPlan;
+  });
+
+  ipcMain.handle('migration:getPlan', async (_event, id: string): Promise<MigrationPlan | null> => {
+    if (!localDb) return null;
+    return localDb.getMigrationPlan(id);
+  });
+
+  ipcMain.handle('migration:listPlans', async (_event, projectId: string): Promise<MigrationPlan[]> => {
+    if (!localDb) return [];
+    return localDb.listMigrationPlans(projectId);
+  });
+
+  ipcMain.handle('migration:generatePreview', async (_event, planId: string): Promise<any> => {
+    if (!localDb) return { planId, sqlPreview: '', affectedEntities: [], destructiveOperations: [], estimatedDowntime: null, warnings: [] };
+    const plan = localDb.getMigrationPlan(planId);
+    if (!plan) return { planId, sqlPreview: '', affectedEntities: [], destructiveOperations: [], estimatedDowntime: null, warnings: ['Plan not found'] };
+    return generatePreview(plan);
+  });
+
+  ipcMain.handle('migration:classifyRisk', async (_event, sql: string): Promise<{ riskClass: MigrationRiskClass; safeguards: any[] }> => {
+    return classifyRisk(sql);
+  });
+
+  ipcMain.handle('migration:getSchemaInfo', async (_event, projectId: string): Promise<any | null> => {
+    return { projectId, engine: 'sqlite', schemaSourceFiles: ['apps/desktop/src/lib/storage/local-db.ts'], migrationHistory: localDb ? localDb.listMigrationHistory(projectId) : [], tables: [], relationships: [], protectedEntities: [], highRiskDomains: [] };
+  });
+
+  ipcMain.handle('migration:requireCheckpoint', async (_event, planId: string): Promise<{ checkpointRequired: boolean; checkpointId?: string }> => {
+    if (!localDb) return { checkpointRequired: false };
+    const plan = localDb.getMigrationPlan(planId);
+    if (!plan) return { checkpointRequired: false };
+    return { checkpointRequired: requiresCheckpoint(plan.riskClass), checkpointId: plan.checkpointId ?? undefined };
+  });
+
+  ipcMain.handle('migration:listHistory', async (_event, projectId: string): Promise<any[]> => {
+    if (!localDb) return [];
+    return localDb.listMigrationHistory(projectId);
+  });
+
+  // ── Component 17: Deploy IPC ─────────────────────────────────────────────
+
+  ipcMain.handle('deploy:initiate', async (_event, args: DeployInitiateArgs): Promise<DeployWorkflow> => {
+    if (!localDb) throw new Error('Database not initialized');
+    const coolifyClient = new CoolifyClient('', ''); // API key from keytar in production
+    const engine = new DeployEngine(localDb, coolifyClient);
+    return engine.initiateDeploy(args.candidateId, args.environmentId, args.projectId);
+  });
+
+  ipcMain.handle('deploy:getStatus', async (_event, workflowId: string): Promise<DeployWorkflow | null> => {
+    if (!localDb) return null;
+    const coolifyClient = new CoolifyClient('', '');
+    const engine = new DeployEngine(localDb, coolifyClient);
+    return engine.getStatus(workflowId);
+  });
+
+  ipcMain.handle('deploy:getHistory', async (_event, projectId: string): Promise<DeployWorkflow[]> => {
+    if (!localDb) return [];
+    const coolifyClient = new CoolifyClient('', '');
+    const engine = new DeployEngine(localDb, coolifyClient);
+    return engine.getHistory(projectId);
+  });
+
+  ipcMain.handle('deploy:rollback', async (_event, workflowId: string): Promise<{ success: boolean; error: string | null }> => {
+    if (!localDb) return { success: false, error: 'Database not initialized' };
+    const coolifyClient = new CoolifyClient('', '');
+    const engine = new DeployEngine(localDb, coolifyClient);
+    return engine.rollback(workflowId);
+  });
+
+  // ── Component 17: Environment IPC ─────────────────────────────────────────
+
+  ipcMain.handle('environment:list', async (_event, projectId: string): Promise<Environment[]> => {
+    if (!localDb) return [];
+    const manager = new EnvironmentManager(localDb);
+    return manager.listEnvironments(projectId);
+  });
+
+  ipcMain.handle('environment:get', async (_event, id: string): Promise<Environment | null> => {
+    if (!localDb) return null;
+    const manager = new EnvironmentManager(localDb);
+    return manager.getEnvironment(id);
+  });
+
+  ipcMain.handle('environment:create', async (_event, env: Omit<Environment, 'id'>): Promise<Environment> => {
+    if (!localDb) throw new Error('Database not initialized');
+    const manager = new EnvironmentManager(localDb);
+    return manager.createEnvironment(env);
+  });
+
+  ipcMain.handle('environment:update', async (_event, id: string, updates: Partial<Environment>): Promise<Environment> => {
+    if (!localDb) throw new Error('Database not initialized');
+    const manager = new EnvironmentManager(localDb);
+    const result = await manager.updateEnvironment(id, updates);
+    if (!result) throw new Error(`Environment ${id} not found`);
+    return result;
+  });
+
+  ipcMain.handle('environment:delete', async (_event, id: string): Promise<{ success: boolean }> => {
+    if (!localDb) return { success: false };
+    const manager = new EnvironmentManager(localDb);
+    return { success: manager.deleteEnvironment(id) };
+  });
+
+  ipcMain.handle('environment:createPreview', async (_event, projectId: string, branch: string): Promise<Environment> => {
+    if (!localDb) throw new Error('Database not initialized');
+    const manager = new EnvironmentManager(localDb);
+    return manager.createPreviewEnvironment(projectId, branch);
+  });
+
+  ipcMain.handle('environment:destroyPreview', async (_event, id: string): Promise<{ success: boolean }> => {
+    if (!localDb) return { success: false };
+    const manager = new EnvironmentManager(localDb);
+    return { success: manager.destroyPreviewEnvironment(id) };
+  });
+
+  ipcMain.handle('environment:promote', async (_event, fromEnvId: string, toEnvId: string, candidateId: string): Promise<DeployWorkflow> => {
+    if (!localDb) throw new Error('Database not initialized');
+    const manager = new EnvironmentManager(localDb);
+    const result = manager.promote(fromEnvId, toEnvId, candidateId);
+    if (!result) throw new Error('Promotion failed');
+    return result;
+  });
+
+  // ── Component 17: Drift IPC ───────────────────────────────────────────────
+
+  ipcMain.handle('drift:detect', async (_event, projectId: string): Promise<DriftReport[]> => {
+    if (!localDb) return [];
+    const manager = new EnvironmentManager(localDb);
+    const environments = manager.listEnvironments(projectId);
+    const secretsStore = new SecretsStore(localDb);
+    const detector = new DriftDetector(localDb, secretsStore);
+    return detector.detectDrift(projectId, environments);
+  });
+
+  ipcMain.handle('drift:getReports', async (_event, projectId: string): Promise<DriftReport[]> => {
+    if (!localDb) return [];
+    const secretsStore = new SecretsStore(localDb);
+    const detector = new DriftDetector(localDb, secretsStore);
+    return detector.getReports(projectId);
+  });
+
+  ipcMain.handle('drift:resolve', async (_event, reportId: string): Promise<{ success: boolean }> => {
+    if (!localDb) return { success: false };
+    const secretsStore = new SecretsStore(localDb);
+    const detector = new DriftDetector(localDb, secretsStore);
+    detector.resolveReport(reportId);
+    return { success: true };
+  });
+
+  // ── Component 21: Watch IPC ───────────────────────────────────────────────
+
+  ipcMain.handle('watch:startSession', async (_event, args: WatchStartSessionArgs): Promise<WatchSession> => {
+    if (!localDb || !watchEngine) throw new Error('Watch engine not initialized');
+    return watchEngine.startSession(args);
+  });
+
+  ipcMain.handle('watch:stopSession', async (_event, sessionId: string): Promise<{ success: boolean }> => {
+    if (!watchEngine) return { success: false };
+    return watchEngine.stopSession(sessionId);
+  });
+
+  ipcMain.handle('watch:getSession', async (_event, sessionId: string): Promise<WatchSession | null> => {
+    if (!localDb) return null;
+    return localDb.getWatchSession(sessionId);
+  });
+
+  ipcMain.handle('watch:listSessions', async (_event, projectId: string): Promise<WatchSession[]> => {
+    if (!localDb) return [];
+    return localDb.listWatchSessions(projectId);
+  });
+
+  ipcMain.handle('watch:getDashboard', async (_event, projectId: string): Promise<WatchDashboard> => {
+    if (!watchEngine) throw new Error('Watch engine not initialized');
+    return watchEngine.getDashboard(projectId);
+  });
+
+  // ── Component 21: Anomaly IPC ─────────────────────────────────────────────
+
+  ipcMain.handle('anomaly:list', async (_event, projectId: string): Promise<AnomalyEvent[]> => {
+    if (!localDb) return [];
+    return localDb.listAnomalyEvents(projectId);
+  });
+
+  ipcMain.handle('anomaly:acknowledge', async (_event, id: string, acknowledgedBy: string): Promise<{ success: boolean }> => {
+    if (!localDb) return { success: false };
+    localDb.acknowledgeAnomaly(id, acknowledgedBy);
+    return { success: true };
+  });
+
+  // ── Component 21: Incident IPC ────────────────────────────────────────────
+
+  ipcMain.handle('incident:list', async (_event, projectId: string): Promise<Incident[]> => {
+    if (!localDb) return [];
+    return localDb.listIncidents(projectId);
+  });
+
+  ipcMain.handle('incident:get', async (_event, id: string): Promise<Incident | null> => {
+    if (!localDb) return null;
+    return localDb.getIncident(id);
+  });
+
+  ipcMain.handle('incident:resolve', async (_event, id: string): Promise<{ success: boolean }> => {
+    if (!localDb) return { success: false };
+    localDb.updateIncident(id, { status: 'resolved', resolvedAt: new Date().toISOString() });
+    return { success: true };
+  });
+
+  ipcMain.handle('incident:dismiss', async (_event, id: string): Promise<{ success: boolean }> => {
+    if (!localDb) return { success: false };
+    localDb.updateIncident(id, { status: 'dismissed', resolvedAt: new Date().toISOString() });
+    return { success: true };
+  });
+
+  ipcMain.handle('incident:getRecommendation', async (_event, id: string): Promise<string | null> => {
+    if (!localDb) return null;
+    const incident = localDb.getIncident(id);
+    return incident?.recommendedAction ?? null;
+  });
+
+  // ── Component 21: Self-Healing IPC ────────────────────────────────────────
+
+  ipcMain.handle('selfHealing:list', async (_event, projectId: string): Promise<SelfHealingAction[]> => {
+    if (!localDb) return [];
+    return localDb.listSelfHealingActions(projectId);
+  });
+
+  ipcMain.handle('selfHealing:execute', async (_event, args: SelfHealingExecuteArgs): Promise<SelfHealingAction> => {
+    if (!localDb) throw new Error('Database not initialized');
+    const action: SelfHealingAction = {
+      id: `heal-manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      projectId: args.projectId ?? '',
+      environmentId: args.environmentId ?? '',
+      anomalyEventId: args.anomalyId ?? null,
+      incidentId: args.incidentId ?? null,
+      actionType: args.actionType,
+      automatic: false,
+      status: 'pending',
+      approvalRequired: args.actionType === 'rollback',
+      approvalResult: null,
+      result: null,
+      executedAt: null,
+      auditRecordId: null,
+    };
+    localDb.upsertSelfHealingAction(action);
+    return action;
+  });
+
+  ipcMain.handle('selfHealing:getStatus', async (_event, id: string): Promise<SelfHealingAction | null> => {
+    if (!localDb) return null;
+    const actions = localDb.listSelfHealingActions('');
+    return actions.find((a) => a.id === id) ?? null;
+  });
+
+  createWindow();
     }
   });
 });
