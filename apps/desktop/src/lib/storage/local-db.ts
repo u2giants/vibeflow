@@ -147,7 +147,7 @@ export class LocalDb {
   }
 
   private initializeSchema(): void {
-    this.db!.run(`
+    const schemaSql = `
       CREATE TABLE IF NOT EXISTS projects (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
@@ -870,7 +870,7 @@ export class LocalDb {
         updated_at TEXT NOT NULL
       );
 
-      // ── SSH Targets (from remote merge) ──
+      -- ── SSH Targets (from remote merge) ──
       CREATE TABLE IF NOT EXISTS ssh_targets (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
@@ -883,7 +883,7 @@ export class LocalDb {
         created_at TEXT NOT NULL
       );
 
-      // ── MCP Connections (from remote merge) ──
+      -- ── MCP Connections (from remote merge) ──
       CREATE TABLE IF NOT EXISTS mcp_connections (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
@@ -897,7 +897,7 @@ export class LocalDb {
         updated_at TEXT NOT NULL
       );
 
-      // ── DevOps Templates (from remote merge) ──
+      -- ── DevOps Templates (from remote merge) ──
       CREATE TABLE IF NOT EXISTS devops_templates (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -915,7 +915,23 @@ export class LocalDb {
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
-    `);
+    `;
+
+    // Execute each CREATE TABLE statement individually for better error isolation
+    const statements = schemaSql
+      .split(';')
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+
+    for (const stmt of statements) {
+      const tableMatch = stmt.match(/CREATE TABLE IF NOT EXISTS\s+(\w+)/);
+      const tableName = tableMatch ? tableMatch[1] : 'unknown';
+      try {
+        this.db!.run(stmt);
+      } catch (err) {
+        console.error(`[local-db] Schema init failed for table "${tableName}":`, err);
+      }
+    }
 
     // ── Component 17: Brownfield migration for environments table ──
     // Add new columns to existing environments table (safe to run multiple times via try/catch)
