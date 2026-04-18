@@ -1800,9 +1800,18 @@ Every agent must update this file when work begins and when work ends.
   - Phase 3 (cf4975d): IPC handlers — missions.ts handler file; conversations.ts missionMode fork; preload missions API; index.ts barrel registration
   - Phase 4 (a2a5790): UI — Chat/Mission toggle in ConversationScreen; push event subscriptions; MissionApprovalButtons component
 
-### Known remaining work after lifecycle MVP:
-- Steps 12-18 (deploy, watch, self-healing) are stubbed — mission completes immediately after verification
-- contextPackAssembler is null in missions.ts (ContextPackAssembler not in state.ts) — step 4 skipped
+### Steps 12-18 implementation (1de0d9c):
+- Step 12: listEnvironments → pick non-prod env → upsertDeployCandidate → initiateDeploy → emit mission:deployProgress
+- Step 13: runVerification at medium risk class
+- Step 14: production env approval gate (same suspension pattern as step 7)
+- Step 15: executeWorkflow → emit mission:deployProgress
+- Step 16: watchEngine.startSession (non-fatal if null)
+- Step 17: mission:completed with summary
+- Step 18: delegated to WatchEngine internals
+- Also fixed: step 4 context pack assembly now creates ContextPackAssembler on-demand if null
+
+### Known remaining gaps (not blocking):
+- Coolify credentials not injected into DeployEngine — deploy will fail at auth unless credentials configured
 - missionStatusMessages not persisted to DB — disappear on refresh
 - projectId passed as (args as any) — not in SendMessageArgs type
-- ~40 docs/README files from prior sessions remain unstaged (unrelated to this sprint)
+- commitSha on DeployCandidate is empty string — no git context at orchestrator layer
