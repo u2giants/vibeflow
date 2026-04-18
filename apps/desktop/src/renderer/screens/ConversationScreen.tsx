@@ -1,9 +1,10 @@
 /** ConversationScreen — 5-panel layout: execution stream, chat, editor/diff, terminal/git. */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { Message, ConversationThread, Mode, StreamTokenData, RunState, GitStatus, TerminalCommandResult, ActionRequest, ApprovalResult, HandoffResult } from '../../lib/shared-types';
+import type { Message, ConversationThread, Mode, StreamTokenData, RunState, GitStatus, TerminalCommandResult, ActionRequest, ApprovalResult, HandoffResult, MissionPlanReadyEvent, MissionAwaitingApprovalEvent, MissionVerificationCompleteEvent, MissionCompletedEvent, MissionFailedEvent } from '../../lib/shared-types';
 import ApprovalCard from '../components/ApprovalCard';
 import HandoffDialog from '../components/HandoffDialog';
+import MissionApprovalButtons from '../components/MissionApprovalButtons';
 import { C, R } from '../theme';
 
 interface ConversationScreenProps {
@@ -62,12 +63,24 @@ function eventBg(event: string): string {
   return C.bg2;
 }
 
+/** An ephemeral status message appended to the chat when a mission push event fires. */
+interface MissionStatusMessage {
+  id: string;
+  text: string;
+  /** When set, renders inline Approve/Reject buttons for this missionId. */
+  awaitingApprovalMissionId?: string;
+  /** When true, the approval buttons have already been resolved and should be hidden. */
+  approvalResolved?: boolean;
+}
+
 export default function ConversationScreen({ conversation, currentMode, onNewConversation, onConversationUpdated, isSelfMaintenance }: ConversationScreenProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
   const [executionEvents, setExecutionEvents] = useState<string[]>(['Ready']);
+  const [missionMode, setMissionMode] = useState(false);
+  const [missionStatusMessages, setMissionStatusMessages] = useState<MissionStatusMessage[]>([]);
   const [leaseInfo, setLeaseInfo] = useState<{ deviceId: string; deviceName: string; expiresAt: string } | null>(null);
   const [leaseError, setLeaseError] = useState<string | null>(null);
   const [isTakingOver, setIsTakingOver] = useState(false);
@@ -202,6 +215,62 @@ export default function ConversationScreen({ conversation, currentMode, onNewCon
     };
   }, []);
 
+  // ── Mission push event subscriptions ──────────────────────────────────────
+  useEffect(() => {
+    const unsubPlan = window.vibeflow.missions.onPlanReady((data: MissionPlanReadyEvent) => {
+      const stepCount = data.plan?.steps?.length ?? 0;
+      setMissionStatusMessages(prev => [...prev, {
+        id: crypto.randomUUID(),
+        text: `📋 Mission plan ready: ${stepCount} step${stepCount !== 1 ? 's' : ''}`,
+      }]);
+      setExecutionEvents(prev => [...prev, `[info] Mission plan ready (${stepCount} steps)`]);
+    });
+
+    const unsubApproval = window.vibeflow.missions.onAwaitingApproval((data: MissionAwaitingApprovalEvent) => {
+      setMissionStatusMessages(prev => [...prev, {
+        id: crypto.randomUUID(),
+        text: '⏸ Waiting for your approval before proceeding',
+        awaitingApprovalMissionId: data.missionId,
+      }]);
+      setExecutionEvents(prev => [...prev, `[info] Mission awaiting approval (tier ${data.tier})`]);
+    });
+
+    const unsubVerification = window.vibeflow.missions.onVerificationComplete((data: MissionVerificationCompleteEvent) => {
+      const verdict = data.run?.verdict;
+      const icon = verdict === 'promote' ? '✅' : '❌';
+      const label = verdict === 'promote' ? 'Verification passed' : `Verification ${verdict ?? 'complete'}`;
+      setMissionStatusMessages(prev => [...prev, {
+        id: crypto.randomUUID(),
+        text: `${icon} ${label}`,
+      }]);
+      setExecutionEvents(prev => [...prev, `[info] ${label}`]);
+    });
+
+    const unsubCompleted = window.vibeflow.missions.onCompleted((data: MissionCompletedEvent) => {
+      setMissionStatusMessages(prev => [...prev, {
+        id: crypto.randomUUID(),
+        text: `✅ Mission complete: ${data.summary}`,
+      }]);
+      setExecutionEvents(prev => [...prev, '[info] Mission completed']);
+    });
+
+    const unsubFailed = window.vibeflow.missions.onFailed((data: MissionFailedEvent) => {
+      setMissionStatusMessages(prev => [...prev, {
+        id: crypto.randomUUID(),
+        text: `❌ Mission failed at step ${data.step}: ${data.reason}`,
+      }]);
+      setExecutionEvents(prev => [...prev, `[error] Mission failed: ${data.reason}`]);
+    });
+
+    return () => {
+      unsubPlan();
+      unsubApproval();
+      unsubVerification();
+      unsubCompleted();
+      unsubFailed();
+    };
+  }, []);
+
   const handleApprove = async () => {
     if (!pendingApproval) return;
     await window.vibeflow.approval.humanDecision({ actionId: pendingApproval.id, decision: 'approved', note: null });
@@ -269,19 +338,20 @@ export default function ConversationScreen({ conversation, currentMode, onNewCon
     setInput('');
     setStreaming(true);
     setStreamingContent('');
-    setExecutionEvents(prev => [...prev, 'Orchestrator is thinking...']);
+    setExecutionEvents(prev => [...prev, missionMode ? 'Starting mission...' : 'Orchestrator is thinking...']);
     try {
       await window.vibeflow.conversations.sendMessage({
         conversationId: conversation.id,
         content: userContent,
         modeId: currentMode?.id ?? 'orchestrator',
+        ...(missionMode ? { missionMode: true, projectId: conversation.projectId } as any : {}),
       });
     } catch (err) {
       setStreaming(false);
       setExecutionEvents(prev => [...prev, `Error: ${String(err)}`]);
       window.vibeflow.sync.releaseLease(conversation.id).catch(() => {});
     }
-  }, [input, streaming, conversation.id, currentMode, leaseInfo]);
+  }, [input, streaming, conversation.id, currentMode, leaseInfo, missionMode]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -574,6 +644,43 @@ export default function ConversationScreen({ conversation, currentMode, onNewCon
               </div>
             ))}
 
+            {/* Mission status messages */}
+            {missionStatusMessages.map((msg) => (
+              <div key={msg.id} style={{
+                marginBottom: 12,
+                display: 'flex',
+                justifyContent: 'flex-start',
+                alignItems: 'flex-end',
+                gap: 8,
+              }}>
+                <div style={{
+                  maxWidth: '72%',
+                  padding: '9px 13px',
+                  borderRadius: `${R.xl}px ${R.xl}px ${R.xl}px ${R.sm}px`,
+                  backgroundColor: C.accentBg,
+                  color: C.accent,
+                  fontSize: 13,
+                  lineHeight: 1.55,
+                  border: `1px solid ${C.accent}33`,
+                }}>
+                  <div>{msg.text}</div>
+                  {msg.awaitingApprovalMissionId && !msg.approvalResolved && (
+                    <MissionApprovalButtons
+                      missionId={msg.awaitingApprovalMissionId}
+                      onResolved={() => {
+                        setMissionStatusMessages(prev =>
+                          prev.map(m => m.id === msg.id ? { ...m, approvalResolved: true } : m)
+                        );
+                      }}
+                    />
+                  )}
+                  {msg.awaitingApprovalMissionId && msg.approvalResolved && (
+                    <div style={{ marginTop: 6, fontSize: 11, color: C.text3 }}>Decision sent</div>
+                  )}
+                </div>
+              </div>
+            ))}
+
             {/* Streaming bubble */}
             {streamingContent && (
               <div style={{
@@ -646,6 +753,26 @@ export default function ConversationScreen({ conversation, currentMode, onNewCon
                   lineHeight: 1.5,
                 }}
               />
+              <button
+                onClick={() => setMissionMode(prev => !prev)}
+                disabled={streaming || isReadOnly}
+                title={missionMode ? 'Switch to Chat mode' : 'Switch to Mission mode'}
+                style={{
+                  padding: '9px 12px',
+                  backgroundColor: missionMode ? C.accentBg : C.bg4,
+                  color: missionMode ? C.accent : C.text3,
+                  border: `1px solid ${missionMode ? C.accent + '55' : C.border2}`,
+                  borderRadius: R.lg,
+                  cursor: (streaming || isReadOnly) ? 'not-allowed' : 'pointer',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  alignSelf: 'flex-end',
+                  whiteSpace: 'nowrap',
+                  transition: 'background 0.15s, color 0.15s',
+                }}
+              >
+                {missionMode ? 'Mission' : 'Chat'}
+              </button>
               <button
                 onClick={handleSend}
                 disabled={streaming || !input.trim() || isReadOnly}
