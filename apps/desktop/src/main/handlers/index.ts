@@ -29,3 +29,4 @@ export { registerEvidenceHandlers } from './evidence';
 export { registerVerificationHandlers } from './verification';
 export { registerBuildMetadataHandlers } from './build-metadata';
 export { registerUpdaterHandlers } from './updater';
+export { registerMissionsHandlers } from './missions';

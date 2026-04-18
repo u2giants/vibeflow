@@ -4,7 +4,7 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
-import type { VibeFlowAPI, CreateConversationArgs, SendMessageArgs, StreamTokenData, StreamDoneData, StreamErrorData, TerminalRunArgs, GitCommitArgs, GitPushArgs, SshHost, ProjectDevOpsConfig, ActionRequest, HumanDecisionArgs, GenerateHandoffArgs, DecomposeMissionArgs, AssignRoleArgs, McpServerConfig, CapabilityHealth, ContextPackOptions, ContextPackUpdates, CreateWorkspaceRunArgs, ApplyPatchArgs, CommitWorkspaceArgs, AuditHistoryFilter, RuntimeStartArgs, BrowserSessionArgs, SecretRecord, MigrationPlan, MigrationRiskClass, Environment, DeployWorkflow, DriftReport, DeployInitiateArgs, WatchStartSessionArgs, SelfHealingExecuteArgs, UpdateModeConfigArgs, ExecutionEventData, CreateSshTargetArgs } from '../lib/shared-types';
+import type { VibeFlowAPI, CreateConversationArgs, SendMessageArgs, StreamTokenData, StreamDoneData, StreamErrorData, TerminalRunArgs, GitCommitArgs, GitPushArgs, SshHost, ProjectDevOpsConfig, ActionRequest, HumanDecisionArgs, GenerateHandoffArgs, DecomposeMissionArgs, AssignRoleArgs, McpServerConfig, CapabilityHealth, ContextPackOptions, ContextPackUpdates, CreateWorkspaceRunArgs, ApplyPatchArgs, CommitWorkspaceArgs, AuditHistoryFilter, RuntimeStartArgs, BrowserSessionArgs, SecretRecord, MigrationPlan, MigrationRiskClass, Environment, DeployWorkflow, DriftReport, DeployInitiateArgs, WatchStartSessionArgs, SelfHealingExecuteArgs, UpdateModeConfigArgs, ExecutionEventData, CreateSshTargetArgs, MissionStartArgs } from '../lib/shared-types';
 import { SyncStatus } from '../lib/shared-types';
 
 const api: VibeFlowAPI = {
@@ -414,6 +414,50 @@ const api: VibeFlowAPI = {
     list: (projectId: string | null) => ipcRenderer.invoke('sshTargets:list', projectId),
     save: (args: CreateSshTargetArgs) => ipcRenderer.invoke('sshTargets:save', args),
     delete: (id: string) => ipcRenderer.invoke('sshTargets:delete', id),
+  },
+  // Mission lifecycle (Phase 3 wiring)
+  missions: {
+    start: (args: MissionStartArgs) => ipcRenderer.invoke('missions:start', args),
+    get: (missionId: string) => ipcRenderer.invoke('missions:get', missionId),
+    getLifecycleState: (missionId: string) => ipcRenderer.invoke('missions:getLifecycleState', missionId),
+    cancel: (missionId: string) => ipcRenderer.invoke('missions:cancel', missionId),
+    retry: (args: { missionId: string; fromStep: number }) => ipcRenderer.invoke('missions:retry', args),
+    resolveApproval: (args: { missionId: string; approved: boolean }) => ipcRenderer.invoke('missions:resolveApproval', args),
+    onPlanReady: (cb: (data: any) => void) => {
+      const handler = (_event: unknown, data: any) => cb(data);
+      ipcRenderer.on('mission:planReady', handler);
+      return () => ipcRenderer.removeListener('mission:planReady', handler);
+    },
+    onContextReady: (cb: (data: any) => void) => {
+      const handler = (_event: unknown, data: any) => cb(data);
+      ipcRenderer.on('mission:contextReady', handler);
+      return () => ipcRenderer.removeListener('mission:contextReady', handler);
+    },
+    onAwaitingApproval: (cb: (data: any) => void) => {
+      const handler = (_event: unknown, data: any) => cb(data);
+      ipcRenderer.on('mission:awaitingApproval', handler);
+      return () => ipcRenderer.removeListener('mission:awaitingApproval', handler);
+    },
+    onWorkspaceProgress: (cb: (data: any) => void) => {
+      const handler = (_event: unknown, data: any) => cb(data);
+      ipcRenderer.on('mission:workspaceProgress', handler);
+      return () => ipcRenderer.removeListener('mission:workspaceProgress', handler);
+    },
+    onVerificationComplete: (cb: (data: any) => void) => {
+      const handler = (_event: unknown, data: any) => cb(data);
+      ipcRenderer.on('mission:verificationComplete', handler);
+      return () => ipcRenderer.removeListener('mission:verificationComplete', handler);
+    },
+    onCompleted: (cb: (data: any) => void) => {
+      const handler = (_event: unknown, data: any) => cb(data);
+      ipcRenderer.on('mission:completed', handler);
+      return () => ipcRenderer.removeListener('mission:completed', handler);
+    },
+    onFailed: (cb: (data: any) => void) => {
+      const handler = (_event: unknown, data: any) => cb(data);
+      ipcRenderer.on('mission:failed', handler);
+      return () => ipcRenderer.removeListener('mission:failed', handler);
+    },
   },
 };
 

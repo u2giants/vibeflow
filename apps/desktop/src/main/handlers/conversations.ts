@@ -5,10 +5,11 @@
 import { ipcMain } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import keytar from 'keytar';
-import type { CreateConversationArgs, SendMessageArgs, Message } from '../../lib/shared-types';
-import { localDb, syncEngine, KEYTAR_SERVICE, KEYTAR_OPENROUTER_KEY } from './state';
+import type { CreateConversationArgs, SendMessageArgs, Message, MissionStartArgs, Mission } from '../../lib/shared-types';
+import { localDb, mainWindow, syncEngine, KEYTAR_SERVICE, KEYTAR_OPENROUTER_KEY, orchestrationEngine, changeEngine, verificationEngine } from './state';
 import { getCurrentUserId } from './helpers';
 import { runOrchestrator } from '../../lib/orchestrator/orchestrator';
+import { MissionOrchestrator } from '../mission-orchestrator';
 
 export function registerConversationsHandlers(): void {
   ipcMain.handle('conversations:list', async (_event, projectId: string) => {
@@ -49,6 +50,68 @@ export function registerConversationsHandlers(): void {
 
   ipcMain.handle('conversations:sendMessage', async (event, args: SendMessageArgs) => {
     if (!localDb) throw new Error('DB not initialized');
+
+    // ── Mission mode fork ───────────────────────────────────────────────
+    // When missionMode is true, route through the mission lifecycle orchestrator
+    // instead of the standard chat path.
+    if (args.missionMode === true) {
+      if (!orchestrationEngine || !changeEngine || !verificationEngine) {
+        throw new Error('Mission services not initialized');
+      }
+      const webContents = mainWindow?.webContents ?? event.sender as any;
+      const now = new Date().toISOString();
+      const missionId = crypto.randomUUID();
+
+      const missionStartArgs: MissionStartArgs = {
+        projectId: (args as any).projectId ?? '',
+        title: args.content.slice(0, 80),
+        operatorRequest: args.content,
+        conversationId: args.conversationId,
+      };
+
+      const mission: Mission = {
+        id: missionId,
+        projectId: missionStartArgs.projectId,
+        title: missionStartArgs.title,
+        operatorRequest: missionStartArgs.operatorRequest,
+        clarifiedConstraints: [],
+        status: 'draft',
+        owner: null,
+        startedAt: null,
+        completedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      localDb.insertMission(mission);
+
+      localDb.upsertMissionLifecycleState({
+        missionId,
+        currentStep: 1,
+        lifecycleStatus: 'idle',
+        riskAssessment: null,
+        workspaceRunId: null,
+        verificationRunId: null,
+        deployWorkflowId: null,
+        watchSessionId: null,
+        updatedAt: now,
+      });
+
+      const orchestrator = new MissionOrchestrator(
+        localDb,
+        orchestrationEngine,
+        changeEngine,
+        verificationEngine,
+        null,
+        webContents,
+      );
+
+      orchestrator.run(missionId).catch((err: unknown) => {
+        console.error(`[conversations:sendMessage] Mission ${missionId} orchestrator error:`, err);
+      });
+
+      // Return early — push events notify the renderer of progress
+      return { missionId } as any;
+    }
 
     // Save user message
     const userMsg: Message = {

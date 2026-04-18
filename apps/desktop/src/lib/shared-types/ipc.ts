@@ -1026,6 +1026,15 @@ export interface VibeFlowAPI {
   decisions: DecisionsChannel;
   // SSH Targets (from remote merge)
   sshTargets: SshTargetsApi;
-  // Mission lifecycle (Phase 1 wiring — handlers added in Phase 3)
-  missions?: MissionsChannel;
+  // Mission lifecycle (Phase 3 wiring)
+  missions: MissionsChannel & {
+    resolveApproval: (args: { missionId: string; approved: boolean }) => Promise<void>;
+    onPlanReady: (cb: (data: MissionPlanReadyEvent) => void) => () => void;
+    onContextReady: (cb: (data: MissionContextReadyEvent) => void) => () => void;
+    onAwaitingApproval: (cb: (data: MissionAwaitingApprovalEvent) => void) => () => void;
+    onWorkspaceProgress: (cb: (data: MissionWorkspaceProgressEvent) => void) => () => void;
+    onVerificationComplete: (cb: (data: MissionVerificationCompleteEvent) => void) => () => void;
+    onCompleted: (cb: (data: MissionCompletedEvent) => void) => () => void;
+    onFailed: (cb: (data: MissionFailedEvent) => void) => () => void;
+  };
 }

@@ -74,6 +74,7 @@ import {
   registerVerificationHandlers,
   registerBuildMetadataHandlers,
   registerUpdaterHandlers,
+  registerMissionsHandlers,
 } from './handlers';
 
 import { getSupabaseClient, createWindow, initSyncEngine } from './handlers/helpers';
@@ -172,6 +173,7 @@ app.whenReady().then(async () => {
   registerVerificationHandlers();
   registerBuildMetadataHandlers();
   registerUpdaterHandlers();
+  registerMissionsHandlers();
 
   createWindow();
 
