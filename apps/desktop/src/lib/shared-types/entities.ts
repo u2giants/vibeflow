@@ -24,6 +24,61 @@ export interface Project {
   createdAt: string;
   updatedAt: string;
   syncedAt: string | null;
+  setupComplete?: boolean;
+}
+
+// ── New Project Wizard types ──────────────────────────────────────────
+
+export interface ProjectConfig {
+  projectId: string;
+  repoUrl: string | null;
+  localFolderPath: string | null;
+  coolifyBaseUrl: string | null;
+  coolifyAppId: string | null;
+  supabaseProjectUrl: string | null;
+  supabaseProjectRef: string | null;
+  supabaseAnonKey: string | null;
+  railwayProjectId: string | null;
+  railwayServiceId: string | null;
+  cloudflareAccountId: string | null;
+  cloudflareZoneId: string | null;
+  googleOAuthClientId: string | null;
+  azureOAuthClientId: string | null;
+  azureOAuthTenantId: string | null;
+  enabledIntegrations: string[];
+  updatedAt: string;
+}
+
+export interface WizardSecret {
+  credentialType: string;   // e.g. 'github-pat', 'coolify-token', 'supabase-service-role', etc.
+  value: string;
+}
+
+export interface WizardPayload {
+  // Basic info
+  name: string;
+  description?: string;
+  // Non-secret config (goes to project_config table)
+  config: Omit<ProjectConfig, 'projectId' | 'updatedAt'>;
+  // Secrets (each stored in keytar as 'vibeflow' / 'project-{id}-{credentialType}')
+  secrets: WizardSecret[];
+  // SSH target to create (optional)
+  sshTarget?: {
+    name: string;
+    hostname: string;
+    user: string;
+    port: number;
+    identityFile: string | null;
+  };
+  // Custom MCP servers to add (optional)
+  mcpServers?: Array<{
+    name: string;
+    description: string;
+    command: string;
+    args: string[];
+    transport: 'stdio' | 'sse' | 'http';
+    env: Record<string, string>;
+  }>;
 }
 
 export interface ConversationThread {

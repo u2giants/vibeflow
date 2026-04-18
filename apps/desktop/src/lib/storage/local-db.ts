@@ -28,6 +28,7 @@ import type {
   WatchSession, WatchProbe, AnomalyEvent, SelfHealingAction,
   MemoryItem, MemoryCategory, MemoryRevision, Skill, SkillStep, SkillVersionEntry, DecisionRecord,
   MissionLifecycleState, MissionLifecycleStatus,
+  ProjectConfig,
 } from '../shared-types';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -45,6 +46,7 @@ interface Project {
   createdAt: string;
   updatedAt: string;
   syncedAt: string | null;
+  setupComplete?: boolean;
 }
 
 interface ProjectRow {
@@ -53,6 +55,7 @@ interface ProjectRow {
   name: string;
   description: string | null;
   is_self_maintenance: number;
+  setup_complete: number | null;
   created_at: string;
   updated_at: string;
   synced_at: string | null;
@@ -155,6 +158,7 @@ export class LocalDb {
         name TEXT NOT NULL,
         description TEXT,
         is_self_maintenance INTEGER DEFAULT 0,
+        setup_complete INTEGER DEFAULT 0,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         synced_at TEXT
@@ -911,6 +915,27 @@ export class LocalDb {
         updated_at TEXT NOT NULL
       );
 
+      -- ── New Project Wizard: project config ──
+      CREATE TABLE IF NOT EXISTS project_config (
+        project_id TEXT PRIMARY KEY,
+        repo_url TEXT,
+        local_folder_path TEXT,
+        coolify_base_url TEXT,
+        coolify_app_id TEXT,
+        supabase_project_url TEXT,
+        supabase_project_ref TEXT,
+        supabase_anon_key TEXT,
+        railway_project_id TEXT,
+        railway_service_id TEXT,
+        cloudflare_account_id TEXT,
+        cloudflare_zone_id TEXT,
+        google_oauth_client_id TEXT,
+        azure_oauth_client_id TEXT,
+        azure_oauth_tenant_id TEXT,
+        enabled_integrations_json TEXT NOT NULL DEFAULT '[]',
+        updated_at TEXT NOT NULL
+      );
+
       -- ── DevOps Templates (from remote merge) ──
       CREATE TABLE IF NOT EXISTS devops_templates (
         id TEXT PRIMARY KEY,
@@ -1014,6 +1039,13 @@ export class LocalDb {
       }
     }
 
+    // ── New Project Wizard: brownfield migration for projects table ──
+    try {
+      this.db!.run('ALTER TABLE projects ADD COLUMN setup_complete INTEGER DEFAULT 0');
+    } catch {
+      // Column already exists — safe to skip
+    }
+
     this.save();
   }
 
@@ -1059,8 +1091,8 @@ export class LocalDb {
 
   insertProject(project: Project): void {
     this.db!.run(
-      'INSERT OR REPLACE INTO projects (id, user_id, name, description, is_self_maintenance, created_at, updated_at, synced_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [project.id, project.userId, project.name, project.description, project.isSelfMaintenance ? 1 : 0, project.createdAt, project.updatedAt, project.syncedAt]
+      'INSERT OR REPLACE INTO projects (id, user_id, name, description, is_self_maintenance, setup_complete, created_at, updated_at, synced_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [project.id, project.userId, project.name, project.description, project.isSelfMaintenance ? 1 : 0, project.setupComplete ? 1 : 0, project.createdAt, project.updatedAt, project.syncedAt]
     );
     this.save();
   }
@@ -1079,9 +1111,71 @@ export class LocalDb {
       name: row.name,
       description: row.description ?? null,
       isSelfMaintenance: row.is_self_maintenance === 1,
+      setupComplete: row.setup_complete === 1,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       syncedAt: row.synced_at,
+    };
+  }
+
+  // ── Project Config (New Project Wizard) ─────────────────────────────
+
+  upsertProjectConfig(config: ProjectConfig): void {
+    this.db!.run(
+      `INSERT OR REPLACE INTO project_config (
+        project_id, repo_url, local_folder_path, coolify_base_url, coolify_app_id,
+        supabase_project_url, supabase_project_ref, supabase_anon_key,
+        railway_project_id, railway_service_id,
+        cloudflare_account_id, cloudflare_zone_id,
+        google_oauth_client_id, azure_oauth_client_id, azure_oauth_tenant_id,
+        enabled_integrations_json, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        config.projectId,
+        config.repoUrl,
+        config.localFolderPath,
+        config.coolifyBaseUrl,
+        config.coolifyAppId,
+        config.supabaseProjectUrl,
+        config.supabaseProjectRef,
+        config.supabaseAnonKey,
+        config.railwayProjectId,
+        config.railwayServiceId,
+        config.cloudflareAccountId,
+        config.cloudflareZoneId,
+        config.googleOAuthClientId,
+        config.azureOAuthClientId,
+        config.azureOAuthTenantId,
+        JSON.stringify(config.enabledIntegrations),
+        config.updatedAt,
+      ]
+    );
+    this.save();
+  }
+
+  getProjectConfig(projectId: string): ProjectConfig | null {
+    const result = this.db!.exec('SELECT * FROM project_config WHERE project_id = ?', [projectId])[0];
+    const objs = this.toObjAll(result);
+    if (!objs.length) return null;
+    const row = objs[0];
+    return {
+      projectId: row.project_id as string,
+      repoUrl: (row.repo_url as string) ?? null,
+      localFolderPath: (row.local_folder_path as string) ?? null,
+      coolifyBaseUrl: (row.coolify_base_url as string) ?? null,
+      coolifyAppId: (row.coolify_app_id as string) ?? null,
+      supabaseProjectUrl: (row.supabase_project_url as string) ?? null,
+      supabaseProjectRef: (row.supabase_project_ref as string) ?? null,
+      supabaseAnonKey: (row.supabase_anon_key as string) ?? null,
+      railwayProjectId: (row.railway_project_id as string) ?? null,
+      railwayServiceId: (row.railway_service_id as string) ?? null,
+      cloudflareAccountId: (row.cloudflare_account_id as string) ?? null,
+      cloudflareZoneId: (row.cloudflare_zone_id as string) ?? null,
+      googleOAuthClientId: (row.google_oauth_client_id as string) ?? null,
+      azureOAuthClientId: (row.azure_oauth_client_id as string) ?? null,
+      azureOAuthTenantId: (row.azure_oauth_tenant_id as string) ?? null,
+      enabledIntegrations: JSON.parse((row.enabled_integrations_json as string) || '[]') as string[],
+      updatedAt: row.updated_at as string,
     };
   }
 

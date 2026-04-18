@@ -1,6 +1,6 @@
 /** IPC message types for Electron main ↔ renderer communication. */
 
-import type { Project, SyncStatus, Account, Mode, OpenRouterModel, ConversationThread, Message, ProjectDevOpsConfig, DeployRun, SshTarget, McpConnection, PlanRecord, RoleAssignment, OrchestrationState, Capability, CapabilityHealth, CapabilityInvocationLog, McpServerConfig, McpToolInfo, McpInvocationResult, ProjectIndex, FileRecord, SymbolRecord, ReferenceEdge, RouteRecord, ApiEndpointRecord, JobRecord, ServiceNode, ServiceEdge, ConfigVariableRecord, ContextPackEnriched, ContextItem, ContextWarning, ContextDashboard, DetectedStack, ImpactAnalysis, EvidenceItem, WorkspaceRun, PatchProposal, FileEdit, SemanticChangeGroup, Checkpoint, ChangeSet, DuplicateWarning, PatternReuseSuggestion, AuditRecord, RollbackPlan, RuntimeExecution, BrowserSession, EvidenceRecord, BeforeAfterComparison, VerificationRun, VerificationCheck, VerificationBundle, AcceptanceCriteria, SecretRecord, MigrationPlan, MigrationRiskClass, MigrationPreview, DatabaseSchemaInfo, MigrationHistoryEntry, Environment, DeployWorkflow, DeployStep, DriftReport, ServiceControlPlane, Incident, WatchSession, AnomalyEvent, SelfHealingAction, WatchDashboard, MemoryItem, MemoryCategory, MemoryRetrievalResult, MemoryDashboard, Skill, DecisionRecord, Mission, MissionLifecycleState, MissionStartArgs } from './entities';
+import type { Project, SyncStatus, Account, Mode, OpenRouterModel, ConversationThread, Message, ProjectDevOpsConfig, DeployRun, SshTarget, McpConnection, PlanRecord, RoleAssignment, OrchestrationState, Capability, CapabilityHealth, CapabilityInvocationLog, McpServerConfig, McpToolInfo, McpInvocationResult, ProjectIndex, FileRecord, SymbolRecord, ReferenceEdge, RouteRecord, ApiEndpointRecord, JobRecord, ServiceNode, ServiceEdge, ConfigVariableRecord, ContextPackEnriched, ContextItem, ContextWarning, ContextDashboard, DetectedStack, ImpactAnalysis, EvidenceItem, WorkspaceRun, PatchProposal, FileEdit, SemanticChangeGroup, Checkpoint, ChangeSet, DuplicateWarning, PatternReuseSuggestion, AuditRecord, RollbackPlan, RuntimeExecution, BrowserSession, EvidenceRecord, BeforeAfterComparison, VerificationRun, VerificationCheck, VerificationBundle, AcceptanceCriteria, SecretRecord, MigrationPlan, MigrationRiskClass, MigrationPreview, DatabaseSchemaInfo, MigrationHistoryEntry, Environment, DeployWorkflow, DeployStep, DriftReport, ServiceControlPlane, Incident, WatchSession, AnomalyEvent, SelfHealingAction, WatchDashboard, MemoryItem, MemoryCategory, MemoryRetrievalResult, MemoryDashboard, Skill, DecisionRecord, Mission, MissionLifecycleState, MissionStartArgs, ProjectConfig, WizardPayload } from './entities';
 
 // ── Auth IPC ──────────────────────────────────────────────────────
 
@@ -22,6 +22,7 @@ export interface AuthChannel {
 export interface CreateProjectArgs {
   name: string;
   description?: string;
+  wizardPayload?: WizardPayload;
 }
 
 export interface ProjectsChannel {
@@ -31,6 +32,10 @@ export interface ProjectsChannel {
   createSelfMaintenance: () => Promise<Project>;
   getVibeFlowRepoPath: () => Promise<string | null>;
   pickVibeFlowRepoPath: () => Promise<string | null>;
+  listAll: () => Promise<Project[]>;
+  getConfig: (projectId: string) => Promise<ProjectConfig | null>;
+  saveConfig: (config: ProjectConfig) => Promise<void>;
+  copyCredential: (sourceProjectId: string, credentialType: string) => Promise<string | null>;
 }
 
 // ── Build Metadata IPC ────────────────────────────────────────────
