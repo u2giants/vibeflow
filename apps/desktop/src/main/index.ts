@@ -83,8 +83,13 @@ import { DeployEngine } from '../lib/deploy-engine';
 import { ServiceControlPlaneManager } from '../lib/service-control-plane';
 import { WatchEngine } from '../lib/observability/watch-engine';
 import { EvidenceCaptureEngine } from '../lib/runtime-execution/evidence-capture-engine';
-import type { WatchStartSessionArgs, SelfHealingExecuteArgs, Incident, AnomalyEvent, WatchSession, SelfHealingAction, WatchDashboard, MemoryItem, MemoryCategory, Skill, DecisionRecord } from '../lib/shared-types';
+import type { WatchStartSessionArgs, SelfHealingExecuteArgs, Incident, AnomalyEvent, WatchSession, SelfHealingAction, WatchDashboard, MemoryItem, MemoryCategory, Skill, DecisionRecord, AuditHistoryFilter, AuditRecord, Checkpoint, RollbackPlan, RuntimeStartArgs, RuntimeExecution, BrowserSessionArgs, BrowserSession, EvidenceRecord, BeforeAfterComparison, VerificationRun, VerificationBundle, AcceptanceCriteria } from '../lib/shared-types';
 import { MemoryRetriever, MemoryLifecycle, seedDecisionsFromDocs, seedIdiosyncrasiesFromDocs } from '../lib/memory';
+import { RuntimeExecutionService } from '../lib/runtime-execution/runtime-execution-service';
+import { BrowserAutomationService } from '../lib/runtime-execution/browser-automation-service';
+import { VerificationEngine } from '../lib/verification/verification-engine';
+import { AcceptanceCriteriaGenerator } from '../lib/verification/acceptance-criteria-generator';
+import { ValidityPipeline } from '../lib/change-engine/validity-pipeline';
 
 const KEYTAR_SERVICE = 'vibeflow';
 const KEYTAR_OPENROUTER_KEY = 'openrouter-api-key';
@@ -106,6 +111,10 @@ const mcpToolExecutor = new McpToolExecutor();
 let orchestrationEngine: OrchestrationEngine | null = null;
 let changeEngine: ChangeEngine | null = null;
 let watchEngine: WatchEngine | null = null;
+let evidenceEngine: EvidenceCaptureEngine | null = null;
+let runtimeService: RuntimeExecutionService | null = null;
+let browserService: BrowserAutomationService | null = null;
+let verificationEngine: VerificationEngine | null = null;
 
 function getSupabaseClient(): SupabaseClient | null {
   if (supabase) return supabase;
@@ -131,7 +140,8 @@ async function getCurrentUserId(): Promise<string> {
 /** Get the repo path for a project. For self-maintenance, use VibeFlow repo. */
 async function getProjectRepoPath(projectId: string): Promise<string> {
   if (!localDb) return process.cwd();
-  const project = localDb.listProjects('').find(p => p.id === projectId);
+  const userId = await getCurrentUserId();
+  const project = localDb.listProjects(userId).find(p => p.id === projectId);
   if (project?.isSelfMaintenance) {
     if (app.isPackaged) return app.getAppPath();
     return path.resolve(__dirname, '../../../..');
@@ -152,10 +162,8 @@ async function initSyncEngine(userId: string): Promise<void> {
     return;
   }
 
-  const supabaseUrl = process.env.VITE_SUPABASE_URL ?? '';
-  const anonKey = process.env.VITE_SUPABASE_ANON_KEY ?? '';
-
-  if (!supabaseUrl || !anonKey) {
+  const client = getSupabaseClient();
+  if (!client) {
     console.warn('[main] Supabase not configured — sync disabled');
     if (mainWindow) {
       mainWindow.webContents.send('sync:statusChanged', 'offline');
@@ -173,7 +181,8 @@ async function initSyncEngine(userId: string): Promise<void> {
 
   const deviceName = os.hostname();
 
-  syncEngine = new SyncEngine(supabaseUrl, anonKey, deviceId, deviceName, userId, localDb);
+  // Pass the authenticated SupabaseClient so RLS policies work correctly
+  syncEngine = new SyncEngine(client, deviceId, deviceName, userId, localDb);
 
   // Forward sync events to renderer
   syncEngine.on((event) => {
@@ -427,6 +436,12 @@ app.whenReady().then(async () => {
   );
 
   ipcMain.handle('auth:signOut', async (): Promise<void> => {
+    // Stop sync engine before signing out to prevent stale session operations
+    if (syncEngine) {
+      syncEngine.stop();
+      syncEngine = null;
+      console.log('[main] Sync engine stopped on sign-out');
+    }
     const client = getSupabaseClient();
     if (client) {
       await client.auth.signOut();
@@ -447,7 +462,8 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('projects:list', async (): Promise<unknown[]> => {
     if (!localDb) return [];
-    return localDb.listProjects('');
+    const userId = await getCurrentUserId();
+    return localDb.listProjects(userId);
   });
 
   ipcMain.handle(
@@ -513,8 +529,13 @@ app.whenReady().then(async () => {
         changeEngine = new ChangeEngine(localDb);
         const secretsStore = new SecretsStore(localDb);
         const driftDetector = new DriftDetector(localDb, secretsStore);
-        const evidenceEngine = new EvidenceCaptureEngine(localDb);
+        evidenceEngine = new EvidenceCaptureEngine(localDb);
         watchEngine = new WatchEngine(localDb, driftDetector, evidenceEngine, mainWindow);
+        const lazyScreenshotDir = path.join(app.getPath('userData'), 'screenshots');
+        runtimeService = new RuntimeExecutionService(localDb, evidenceEngine);
+        browserService = new BrowserAutomationService(localDb, evidenceEngine, lazyScreenshotDir);
+        const lazyValidityPipeline = new ValidityPipeline();
+        verificationEngine = new VerificationEngine(localDb, lazyValidityPipeline, evidenceEngine, browserService);
         localDb.seedDefaultModes(DEFAULT_MODES);
         localDb.migrateDefaultModelId('anthropic/claude-sonnet-4-5', 'anthropic/claude-sonnet-4-6');
         console.log('[main] LocalDb lazy-initialized in createSelfMaintenance');
@@ -584,6 +605,15 @@ app.whenReady().then(async () => {
     mcpConnectionManager.db = localDb;
     mcpConnectionManager.loadFromDb();
     console.log('[main] MCP connection manager initialized');
+
+    // Initialize Component 15/19 services
+    evidenceEngine = new EvidenceCaptureEngine(localDb);
+    const screenshotDir = path.join(app.getPath('userData'), 'screenshots');
+    runtimeService = new RuntimeExecutionService(localDb, evidenceEngine);
+    browserService = new BrowserAutomationService(localDb, evidenceEngine, screenshotDir);
+    const validityPipeline = new ValidityPipeline();
+    verificationEngine = new VerificationEngine(localDb, validityPipeline, evidenceEngine, browserService);
+    console.log('[main] Runtime, browser, evidence, and verification services initialized');
   } catch (err) {
     console.error('[main] SQLite DB init failed (non-fatal):', err);
     localDb = null;
@@ -975,7 +1005,16 @@ app.whenReady().then(async () => {
         deviceId = crypto.randomUUID();
         localDb.setDeviceId(deviceId);
       }
-      return { deviceId, deviceName: os.hostname() };
+      const deviceName = os.hostname();
+      // Also register with Supabase if sync engine is running
+      if (syncEngine) {
+        try {
+          await syncEngine.registerDevice();
+        } catch (err) {
+          console.warn('[main] sync:registerDevice Supabase registration failed (non-fatal):', err);
+        }
+      }
+      return { deviceId, deviceName };
     }
   );
 
@@ -1377,7 +1416,9 @@ app.whenReady().then(async () => {
       const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY ?? '';
 
       // Read current idiosyncrasies.md
-      const idiosyncrasiesPath = path.join(__dirname, '../../../../docs/idiosyncrasies.md');
+      const idiosyncrasiesPath = isPackaged
+        ? path.join(process.resourcesPath, 'docs', 'idiosyncrasies.md')
+        : path.join(__dirname, '../../../../docs/idiosyncrasies.md');
       let idiosyncrasies = '';
       try {
         idiosyncrasies = fs.readFileSync(idiosyncrasiesPath, 'utf-8');
@@ -1469,7 +1510,9 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.handle('handoff:getIdiosyncrasies', () => {
-    const idiosyncrasiesPath = path.join(__dirname, '../../../../docs/idiosyncrasies.md');
+    const idiosyncrasiesPath = isPackaged
+      ? path.join(process.resourcesPath, 'docs', 'idiosyncrasies.md')
+      : path.join(__dirname, '../../../../docs/idiosyncrasies.md');
     try {
       return fs.readFileSync(idiosyncrasiesPath, 'utf-8');
     } catch {
@@ -1488,7 +1531,8 @@ app.whenReady().then(async () => {
   ipcMain.handle('approval:requestAction', async (event, action: ActionRequest): Promise<ApprovalResult> => {
     // Check if this conversation belongs to a self-maintenance project
     const conv = localDb?.getConversation(action.conversationId);
-    const project = conv ? localDb?.listProjects('').find(p => p.id === conv.projectId) : null;
+    const userId = await getCurrentUserId();
+    const project = conv ? localDb?.listProjects(userId).find(p => p.id === conv.projectId) : null;
     const isSelfMaintenance = project?.isSelfMaintenance ?? false;
 
     const tier = classifyAction(action.actionType, { isSelfMaintenance });
@@ -2164,6 +2208,208 @@ app.whenReady().then(async () => {
       console.error('[main] Seed from docs failed:', err);
       return { decisions: 0, memories: 0 };
     }
+  });
+
+  // ── Component 19: Audit IPC ──────────────────────────────────────────────
+
+  ipcMain.handle('audit:getHistory', async (_event, filter?: AuditHistoryFilter): Promise<AuditRecord[]> => {
+    if (!localDb) return [];
+    return localDb.listAuditRecords(filter);
+  });
+
+  ipcMain.handle('audit:getRecord', async (_event, id: string): Promise<AuditRecord | null> => {
+    if (!localDb) return null;
+    return localDb.getAuditRecord(id);
+  });
+
+  ipcMain.handle('audit:getCheckpoints', async (_event, missionId: string): Promise<Checkpoint[]> => {
+    if (!localDb) return [];
+    if (!missionId) return localDb.listCheckpoints('');
+    return localDb.getCheckpointsForMission(missionId);
+  });
+
+  // ── Component 19: Rollback IPC ──────────────────────────────────────────
+
+  ipcMain.handle('rollback:preview', async (_event, checkpointId: string): Promise<{ checkpointId: string; rollbackPlan: RollbackPlan | null; warning: string | null }> => {
+    if (!changeEngine || !localDb) {
+      return { checkpointId, rollbackPlan: null, warning: 'No change engine available' };
+    }
+    const checkpoint = localDb.getCheckpoint(checkpointId);
+    if (!checkpoint) {
+      return { checkpointId, rollbackPlan: null, warning: `Checkpoint ${checkpointId} not found` };
+    }
+    const rollbackPlan: RollbackPlan = {
+      targetState: checkpoint.gitRef,
+      reversibleChanges: [`Revert to checkpoint: ${checkpoint.label}`],
+      irreversibleChanges: [],
+      environment: 'local',
+      dataCaveats: [],
+      estimatedDowntime: null,
+      requiredApprovals: [],
+      checkpointId,
+    };
+    return { checkpointId, rollbackPlan, warning: null };
+  });
+
+  ipcMain.handle('rollback:initiate', async (_event, checkpointId: string): Promise<{ success: boolean; error: string | null }> => {
+    if (!changeEngine) {
+      return { success: false, error: 'Change engine not initialized' };
+    }
+    try {
+      const result = changeEngine.rollbackToCheckpoint(checkpointId);
+      return { success: result, error: result ? null : 'Rollback failed — checkpoint or workspace run not found' };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  });
+
+  ipcMain.handle('rollback:getStatus', async (_event, checkpointId: string): Promise<{ status: string; error: string | null }> => {
+    if (!localDb) return { status: 'unknown', error: 'Database not initialized' };
+    const checkpoint = localDb.getCheckpoint(checkpointId);
+    if (!checkpoint) return { status: 'not-found', error: `Checkpoint ${checkpointId} not found` };
+    return { status: 'available', error: null };
+  });
+
+  // ── Component 15: Runtime Execution IPC ──────────────────────────────────
+
+  ipcMain.handle('runtime:start', async (_event, args: RuntimeStartArgs): Promise<RuntimeExecution> => {
+    if (!runtimeService || !mainWindow) throw new Error('Runtime service not initialized');
+    return runtimeService.start({
+      missionId: args.missionId,
+      workspaceRunId: args.workspaceRunId,
+      planStepId: args.planStepId,
+      command: args.command,
+      cwd: args.cwd,
+    }, mainWindow);
+  });
+
+  ipcMain.handle('runtime:stop', async (_event, executionId: string): Promise<void> => {
+    if (!runtimeService) throw new Error('Runtime service not initialized');
+    await runtimeService.stop(executionId);
+  });
+
+  ipcMain.handle('runtime:getStatus', async (_event, executionId: string): Promise<RuntimeExecution | null> => {
+    if (!runtimeService) return null;
+    return runtimeService.getStatus(executionId);
+  });
+
+  ipcMain.handle('runtime:getExecutions', async (_event, missionId: string): Promise<RuntimeExecution[]> => {
+    if (!runtimeService) return [];
+    return runtimeService.getExecutions(missionId);
+  });
+
+  ipcMain.handle('runtime:getLogs', async (_event, executionId: string): Promise<{ stdout: string; stderr: string }> => {
+    if (!runtimeService) return { stdout: '', stderr: '' };
+    return runtimeService.getLogs(executionId);
+  });
+
+  // ── Component 15: Browser Automation IPC ─────────────────────────────────
+
+  ipcMain.handle('browser:startSession', async (_event, args: BrowserSessionArgs): Promise<BrowserSession> => {
+    if (!browserService) throw new Error('Browser service not initialized');
+    return browserService.startSession({
+      missionId: args.missionId,
+      workspaceRunId: args.workspaceRunId,
+      planStepId: args.planStepId,
+      baseUrl: args.baseUrl,
+    });
+  });
+
+  ipcMain.handle('browser:navigate', async (_event, sessionId: string, url: string): Promise<void> => {
+    if (!browserService) throw new Error('Browser service not initialized');
+    await browserService.navigate(sessionId, url);
+  });
+
+  ipcMain.handle('browser:click', async (_event, sessionId: string, selector: string): Promise<void> => {
+    if (!browserService) throw new Error('Browser service not initialized');
+    await browserService.click(sessionId, selector);
+  });
+
+  ipcMain.handle('browser:fillForm', async (_event, sessionId: string, fields: Record<string, string>): Promise<void> => {
+    if (!browserService) throw new Error('Browser service not initialized');
+    await browserService.fillForm(sessionId, fields);
+  });
+
+  ipcMain.handle('browser:uploadFile', async (_event, sessionId: string, selector: string, filePath: string): Promise<void> => {
+    if (!browserService) throw new Error('Browser service not initialized');
+    await browserService.uploadFile(sessionId, selector, filePath);
+  });
+
+  ipcMain.handle('browser:screenshot', async (_event, sessionId: string, name: string): Promise<{ path: string }> => {
+    if (!browserService) throw new Error('Browser service not initialized');
+    return browserService.screenshot(sessionId, name);
+  });
+
+  ipcMain.handle('browser:getConsoleLogs', async (_event, sessionId: string): Promise<string> => {
+    if (!browserService) throw new Error('Browser service not initialized');
+    return browserService.getConsoleLogs(sessionId);
+  });
+
+  ipcMain.handle('browser:getNetworkTraces', async (_event, sessionId: string): Promise<string> => {
+    if (!browserService) throw new Error('Browser service not initialized');
+    return browserService.getNetworkTraces(sessionId);
+  });
+
+  ipcMain.handle('browser:getDomSnapshot', async (_event, sessionId: string, selector: string): Promise<string> => {
+    if (!browserService) throw new Error('Browser service not initialized');
+    return browserService.getDomSnapshot(sessionId, selector);
+  });
+
+  ipcMain.handle('browser:closeSession', async (_event, sessionId: string): Promise<void> => {
+    if (!browserService) throw new Error('Browser service not initialized');
+    await browserService.closeSession(sessionId);
+  });
+
+  // ── Component 15: Evidence Capture IPC ───────────────────────────────────
+
+  ipcMain.handle('evidence:getForMission', async (_event, missionId: string): Promise<EvidenceRecord[]> => {
+    if (!evidenceEngine) return [];
+    return evidenceEngine.getEvidenceForMission(missionId);
+  });
+
+  ipcMain.handle('evidence:getForWorkspaceRun', async (_event, workspaceRunId: string): Promise<EvidenceRecord[]> => {
+    if (!evidenceEngine) return [];
+    return evidenceEngine.getEvidenceForWorkspaceRun(workspaceRunId);
+  });
+
+  ipcMain.handle('evidence:compareBeforeAfter', async (_event, beforeId: string, afterId: string): Promise<BeforeAfterComparison | null> => {
+    if (!evidenceEngine) return null;
+    return evidenceEngine.compareBeforeAfter(beforeId, afterId);
+  });
+
+  // ── Component 16: Verification IPC ───────────────────────────────────────
+
+  ipcMain.handle('verification:run', async (_event, args): Promise<VerificationRun> => {
+    if (!verificationEngine) throw new Error('Verification engine not initialized');
+    return verificationEngine.runVerification(args);
+  });
+
+  ipcMain.handle('verification:getRun', async (_event, id: string): Promise<VerificationRun | null> => {
+    if (!localDb) return null;
+    return localDb.getVerificationRun(id);
+  });
+
+  ipcMain.handle('verification:getRunsForMission', async (_event, missionId: string): Promise<VerificationRun[]> => {
+    if (!localDb) return [];
+    return localDb.listVerificationRunsByMission(missionId);
+  });
+
+  ipcMain.handle('verification:getBundles', async (): Promise<VerificationBundle[]> => {
+    if (!localDb) return [];
+    return localDb.listVerificationBundles();
+  });
+
+  // ── Component 16: Acceptance IPC ────────────────────────────────────────
+
+  ipcMain.handle('acceptance:generate', async (_event, args): Promise<AcceptanceCriteria> => {
+    if (!localDb) throw new Error('Database not initialized');
+    const generator = new AcceptanceCriteriaGenerator(localDb);
+    return generator.generateCriteria(args.missionId);
+  });
+
+  ipcMain.handle('acceptance:get', async (_event, missionId: string): Promise<AcceptanceCriteria | null> => {
+    if (!localDb) return null;
+    return localDb.getAcceptanceCriteria(missionId);
   });
 
   createWindow();

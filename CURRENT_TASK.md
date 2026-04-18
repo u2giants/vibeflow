@@ -6,6 +6,186 @@ Every agent must update this file when work begins and when work ends.
 
 ## CURRENT SPRINT
 
+### Cloud Sync — Part 3: Re-enable initSyncEngine() and adapt runtime wiring (2026-04-18)
+- Status: Complete
+- Mode: Builder (`z-ai/glm-5.1`)
+- Conversation: Re-enable cloud sync engine initialization and adapt runtime wiring to real Supabase tables
+- Project: VibeFlow brownfield rebuild
+- Branch: `master`
+- Supabase project ref: `wnbazobqhyhncksjfxvq`
+- What was done:
+  - Changed `SyncEngine` constructor to accept an already-authenticated `SupabaseClient` instead of creating its own unauthenticated client (critical for RLS policies to work)
+  - Updated `initSyncEngine()` in main/index.ts to pass the authenticated client from `getSupabaseClient()` instead of raw URL+anonKey
+  - Improved `sync:registerDevice` IPC handler to also call `syncEngine.registerDevice()` for Supabase device registration
+  - Added sync engine stop on sign-out (`auth:signOut` handler) to prevent stale session operations
+  - Verified `syncEngine.stop()` was already called in `before-quit` handler ✅
+  - Verified all 6 sync IPC handlers (`sync:getDeviceId`, `sync:registerDevice`, `sync:syncAll`, `sync:acquireLease`, `sync:releaseLease`, `sync:takeoverLease`, `sync:getLease`) already call real sync engine methods ✅
+  - Verified sync status forwarding to renderer via `sync:statusChanged` event already wired ✅
+  - Verified all LocalDb methods used by SyncEngine exist on the sql.js-based implementation ✅
+- Files changed:
+  - [`apps/desktop/src/lib/sync/sync-engine.ts`](apps/desktop/src/lib/sync/sync-engine.ts) — Changed constructor to accept `SupabaseClient` instead of `supabaseUrl`+`supabaseAnonKey`; removed `createClient` import
+  - [`apps/desktop/src/main/index.ts`](apps/desktop/src/main/index.ts) — Updated `initSyncEngine()` to pass authenticated client; improved `sync:registerDevice` to also register with Supabase; added sync engine stop on sign-out
+- Verification: `cd apps/desktop && npx tsc --noEmit` exits with code 0, zero errors
+- Reuse classification:
+  - **Kept as-is**: SyncEngine lifecycle (start/stop), all sync/push methods, lease management, heartbeat, Realtime subscriptions, event emitter, status tracking
+  - **Adapted in place**: SyncEngine constructor (now accepts authenticated client instead of creating its own)
+  - **Kept as-is**: All LocalDb methods (insertProject, upsertConversation, upsertMessage, etc.) — all already compatible with sql.js
+  - **Kept as-is**: All sync IPC handlers — were already calling real sync engine methods, not stubs
+  - **Kept as-is**: Sync status forwarding to renderer — already wired
+  - **Kept as-is**: `before-quit` handler calling `syncEngine?.stop()` — already present
+- Remaining limitations before Albert can test live sync across sessions:
+  - Need to test with two devices signed into the same account
+  - Need to verify lease/heartbeat takeover works after 45-second expiry
+  - Need to verify offline reconciliation works after reconnect
+
+### Cloud Sync — Part 2: Run Supabase Migration + Create Handoffs Bucket (2026-04-18)
+- Status: Complete
+- Mode: DevOps (`z-ai/glm-5.1`)
+- Conversation: Execute idempotent SQL migration against live Supabase project + create handoffs storage bucket + policies
+- Project: VibeFlow brownfield rebuild
+- Branch: `master`
+- Supabase project ref: `wnbazobqhyhncksjfxvq`
+- What was done:
+  - Verified all 6 required tables already existed: profiles, devices, projects, conversations, messages, conversation_leases
+  - Verified RLS enabled on all 6 tables
+  - Verified all required RLS policies present on all 6 tables
+  - Added profiles, devices, projects to `supabase_realtime` publication (were missing; conversations, messages, conversation_leases, modes were already there)
+  - Verified `handoffs` storage bucket already existed and is private (`public: false`)
+  - Created 4 storage policies for handoffs bucket (INSERT, SELECT, UPDATE, DELETE) scoped to `auth.uid()::text` folder prefix
+- Verification results:
+  - ✅ All 6 required tables exist in `public` schema
+  - ✅ RLS enabled on all 6 tables
+  - ✅ All RLS policies present (profiles: 2, devices: 2, projects: 2, conversations: 2, messages: 2, conversation_leases: 2)
+  - ✅ Realtime publication includes: conversation_leases, conversations, devices, messages, modes, profiles, projects
+  - ✅ `handoffs` bucket exists, private
+  - ✅ 4 handoffs storage policies: upload (INSERT), read (SELECT), update (UPDATE), delete (DELETE)
+- No repo files changed (infrastructure-only task)
+
+### Cloud Sync — Part 1: Safe Migration SQL for Albert (2026-04-17)
+- Status: Complete
+- Mode: DevOps (`z-ai/glm-5.1`)
+- Conversation: Produce safe idempotent SQL migration for Supabase + step-by-step instructions for Albert
+- Project: VibeFlow brownfield rebuild
+- Branch: `master`
+- What: Produce a single idempotent SQL block covering all 6 sync-engine tables (profiles, devices, projects, conversations, messages, conversation_leases) with IF NOT EXISTS + DO/EXCEPTION policy wrapping + Realtime publication. No app code changes.
+- Deliverable: SQL block + Albert instructions (output-only, no file changes)
+
+### Bug Fix — Missing IPC Handlers for audit:*, rollback:*, runtime:*, browser:*, evidence:*, verification:*, acceptance:* (2026-04-17)
+- Status: Complete
+- Mode: Builder (`z-ai/glm-5.1`)
+- Conversation: Fix AuditPanel crash "No handler registered for 'audit:getHistory'" and full gap audit of all missing IPC handlers
+- Project: VibeFlow brownfield rebuild
+- Branch: `master`
+- Root cause: Preload exposes 30 IPC channels that have no corresponding `ipcMain.handle()` in main/index.ts
+- Full list of missing handlers found and implemented:
+  - `audit:getHistory` — returns audit records from localDb.listAuditRecords(filter)
+  - `audit:getRecord` — returns single audit record from localDb.getAuditRecord(id)
+  - `audit:getCheckpoints` — returns checkpoints via localDb.getCheckpointsForMission(missionId)
+  - `rollback:preview` — builds RollbackPlan from checkpoint data, returns safe fallback if no changeEngine
+  - `rollback:initiate` — delegates to changeEngine.rollbackToCheckpoint(checkpointId)
+  - `rollback:getStatus` — checks checkpoint existence in localDb
+  - `runtime:start` — delegates to RuntimeExecutionService.start()
+  - `runtime:stop` — delegates to RuntimeExecutionService.stop()
+  - `runtime:getStatus` — delegates to RuntimeExecutionService.getStatus()
+  - `runtime:getExecutions` — delegates to RuntimeExecutionService.getExecutions()
+  - `runtime:getLogs` — delegates to RuntimeExecutionService.getLogs()
+  - `browser:startSession` — delegates to BrowserAutomationService.startSession()
+  - `browser:navigate` — delegates to BrowserAutomationService.navigate()
+  - `browser:click` — delegates to BrowserAutomationService.click()
+  - `browser:fillForm` — delegates to BrowserAutomationService.fillForm()
+  - `browser:uploadFile` — delegates to BrowserAutomationService.uploadFile()
+  - `browser:screenshot` — delegates to BrowserAutomationService.screenshot()
+  - `browser:getConsoleLogs` — delegates to BrowserAutomationService.getConsoleLogs()
+  - `browser:getNetworkTraces` — delegates to BrowserAutomationService.getNetworkTraces()
+  - `browser:getDomSnapshot` — delegates to BrowserAutomationService.getDomSnapshot()
+  - `browser:closeSession` — delegates to BrowserAutomationService.closeSession()
+  - `evidence:getForMission` — delegates to EvidenceCaptureEngine.getEvidenceForMission()
+  - `evidence:getForWorkspaceRun` — delegates to EvidenceCaptureEngine.getEvidenceForWorkspaceRun()
+  - `evidence:compareBeforeAfter` — delegates to EvidenceCaptureEngine.compareBeforeAfter()
+  - `verification:run` — delegates to VerificationEngine.runVerification()
+  - `verification:getRun` — reads from localDb.getVerificationRun()
+  - `verification:getRunsForMission` — reads from localDb.listVerificationRunsByMission()
+  - `verification:getBundles` — reads from localDb.listVerificationBundles()
+  - `acceptance:generate` — uses AcceptanceCriteriaGenerator.generateCriteria()
+  - `acceptance:get` — reads from localDb.getAcceptanceCriteria()
+- No new localDb methods needed — all required methods already existed
+- New module-level service variables added: evidenceEngine, runtimeService, browserService, verificationEngine
+- Services initialized in both DB init block and lazy-init block
+- Files changed:
+  - [`apps/desktop/src/main/index.ts`](apps/desktop/src/main/index.ts) — Added 4 imports (RuntimeExecutionService, BrowserAutomationService, VerificationEngine, AcceptanceCriteriaGenerator, ValidityPipeline); added 4 module-level service variables; initialized services in DB init block and lazy-init block; added 30 IPC handlers for audit, rollback, runtime, browser, evidence, verification, and acceptance channels
+- Verification: `cd apps/desktop && npx tsc --noEmit` exits with code 0, zero errors
+
+### Wire Up 6 Remaining Left-Rail Sections (2026-04-17)
+- Status: Complete
+- Mode: Builder (`z-ai/glm-5.1`)
+- Conversation: Wire 6 left-rail navigation sections to their own content instead of falling through to legacy ProjectScreen
+- Project: VibeFlow brownfield rebuild
+- Branch: `master`
+- What was done:
+  - `projects` → `useEffect` detects `leftRailSection === 'projects'` and calls `handleBackToProjects()` to navigate back to project list
+  - `deploys` → Reuses existing `DevOpsScreen` with `projectId` and `onBack` props
+  - `environments` → Reuses existing `EnvironmentPanel` with `projectId` prop (renders standalone)
+  - `incidents` → Reuses existing `WatchPanel` with `projectId` prop (already has tabs for watches/anomalies/incidents/self-healing)
+  - `memory-packs` → Reuses existing `MemoryPanel` with `projectId` prop (renders standalone)
+  - `audit-rollback` → Reuses existing `AuditPanel` with `projectId` prop (renders standalone)
+  - `missions` and `capabilities` sections unchanged — still work as before
+  - `ProjectScreen` fallback kept as safety-net for unknown sections
+- No new screen files created — all 4 panel components render cleanly standalone with just `projectId`
+- Files changed:
+  - [`apps/desktop/src/renderer/App.tsx`](apps/desktop/src/renderer/App.tsx) — Added imports for DevOpsScreen, EnvironmentPanel, WatchPanel, MemoryPanel, AuditPanel; added useEffect for projects navigation; extended routing ternary for all 6 sections
+- Verification: `cd apps/desktop && npx tsc --noEmit` exits with code 0, zero errors
+
+### Bug Fix — Packaged-Build Handoff Path + listProjects Bug (2026-04-17)
+- Status: Complete
+- Mode: Builder (`z-ai/glm-5.1`)
+- Conversation: Fix three bugs: handoff idiosyncrasies.md path breaks in packaged builds, and another listProjects('') empty-string bug in approval handler
+- Project: VibeFlow brownfield rebuild
+- Branch: `master`
+- Bug 1 — Handoff `idiosyncrasies.md` path breaks in packaged builds:
+  - Root cause: Both `handoff:generate` and `handoff:getIdiosyncrasies` use `path.join(__dirname, '../../../../docs/idiosyncrasies.md')` which resolves correctly in dev but fails in packaged builds where `__dirname` is inside `app.asar`
+  - Fix Part A: Added `extraResources` section to `electron-builder.yml` to bundle `idiosyncrasies.md` into `resources/docs/` in packaged builds
+  - Fix Part B: Replaced hardcoded path with `isPackaged` ternary — uses `process.resourcesPath` when packaged, original relative path in dev
+- Bug 2 — `listProjects('')` in `approval:requestAction` handler:
+  - Root cause: Same empty-string userId bug as earlier fix — passes `''` so `WHERE user_id = ''` never matches
+  - Fix: Changed to `await getCurrentUserId()` before `listProjects(userId)`
+- Files changed:
+  - [`apps/desktop/electron-builder.yml`](apps/desktop/electron-builder.yml) — Added `extraResources` section to bundle `docs/idiosyncrasies.md`
+  - [`apps/desktop/src/main/index.ts`](apps/desktop/src/main/index.ts) — Line ~1382: isPackaged ternary for idiosyncrasiesPath in `handoff:generate`; Line ~1474: isPackaged ternary for idiosyncrasiesPath in `handoff:getIdiosyncrasies`; Line ~1493: `getCurrentUserId()` instead of `''` in `approval:requestAction`
+- Verification: `cd apps/desktop && npx tsc --noEmit` exits with code 0, zero errors
+
+### Bug Fix — Projects Never Appear in The List (2026-04-17)
+- Status: Complete
+- Mode: Builder (`z-ai/glm-5.1`)
+- Conversation: Fix two related bugs where projects never appear in the list
+- Project: VibeFlow brownfield rebuild
+- Branch: `master`
+- Bug — `projects:list` and `getProjectRepoPath` both pass empty string `''` to `localDb.listProjects('')`, so `WHERE user_id = ''` never matches any projects
+  - Root cause: Both call sites used hardcoded `''` instead of the actual signed-in user's Supabase UUID
+  - Fix 1: `projects:list` handler now calls `await getCurrentUserId()` before `listProjects(userId)`
+  - Fix 2: `getProjectRepoPath` helper now calls `await getCurrentUserId()` before `listProjects(userId)`
+- Files changed:
+  - [`apps/desktop/src/main/index.ts`](apps/desktop/src/main/index.ts) — Line 134: added `const userId = await getCurrentUserId()` before `listProjects` call; Line 448–451: added `const userId = await getCurrentUserId()` before `listProjects` call
+- Verification: `cd apps/desktop && npx tsc --noEmit` exits with code 0, zero errors. Runtime test requires manual sign-in + project creation to confirm list appears.
+
+### Launch-Blocking Bug Fix — SQLite Schema Crash + Duplicate IPC Handlers (2026-04-17)
+- Status: Complete
+- Mode: Builder (`z-ai/glm-5.1`)
+- Conversation: Fixed two launch-blocking bugs preventing the app from starting
+- Project: VibeFlow brownfield rebuild
+- Branch: `master`
+- Bug 1 — SQLite schema crash: `near "/": syntax error` on startup
+  - Root cause: Three SQL comments in [`local-db.ts`](apps/desktop/src/lib/storage/local-db.ts) used `//` (JavaScript-style) instead of `--` (SQL-style) on lines 873, 886, 900. sql.js interpreted `//` as a division operator, causing the syntax error.
+  - Fix: Changed `// ── SSH Targets (from remote merge) ──`, `// ── MCP Connections (from remote merge) ──`, and `// ── DevOps Templates (from remote merge) ──` to use `--` prefix instead of `//`.
+  - Also split the monolithic `db.run()` call into individual per-statement execution with try/catch per table for better error isolation and future maintainability.
+- Bug 2 — Duplicate IPC handler crash: `Attempted to register a second handler for 'secrets:list'`
+  - Root cause: The `secrets:*` and `migration:*` IPC handler blocks were copy-pasted 6 times in [`index.ts`](apps/desktop/src/main/index.ts) (lines 1658–1747 original, then duplicates at 1748–1838, 1840–1930, 1932–2031, 2033–2123, 2125–2215). One duplicate block was also incorrectly nested inside `app.on('activate')`, breaking the code structure.
+  - Fix: Removed 5 duplicate blocks (461 lines removed). Kept only the first authoritative instance. Restored proper `app.on('activate')` and `app.on('window-all-closed')` structure. All unique handlers (deploy, environment, drift, watch, anomaly, incident, selfHealing, memory, skills, decisions) preserved.
+- Files changed:
+  - [`apps/desktop/src/lib/storage/local-db.ts`](apps/desktop/src/lib/storage/local-db.ts) — Fixed 3 `//` → `--` SQL comments; split monolithic `db.run()` into per-statement execution with error isolation
+  - [`apps/desktop/src/main/index.ts`](apps/desktop/src/main/index.ts) — Removed 461 lines of duplicate IPC handler registrations; restored proper app lifecycle structure
+- Verification: `cd apps/desktop && npx tsc --noEmit` exits with code 0, zero errors; `pnpm dev` starts without SQLite error or duplicate-handler crash
+- No other handlers were duplicated (audit confirmed only `secrets:*` and `migration:*`)
+
 ### DevOps Push — Component 20 + Merge-Residue Fix (2026-04-16)
 - Status: Complete
 - Mode: DevOps (`z-ai/glm-5.1`)

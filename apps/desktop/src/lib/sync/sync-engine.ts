@@ -7,7 +7,7 @@
  * Supabase Realtime pushes changes to all connected clients.
  */
 
-import { createClient, type SupabaseClient, type RealtimeChannel } from '@supabase/supabase-js';
+import { type SupabaseClient, type RealtimeChannel } from '@supabase/supabase-js';
 import type {
   SyncStatus, ConversationThread, Message, Project, RunState, Mode, ApprovalPolicy,
   Mission, EvidenceItem, Capability, Incident, DeployCandidate, Environment,
@@ -44,15 +44,19 @@ export class SyncEngine {
   private channel: RealtimeChannel | null = null;
   private listeners: ((event: SyncEvent) => void)[] = [];
 
+  /**
+   * Accept an already-authenticated SupabaseClient so that RLS policies
+   * apply correctly. The caller is responsible for ensuring the client
+   * has a valid session before constructing SyncEngine.
+   */
   constructor(
-    supabaseUrl: string,
-    supabaseAnonKey: string,
+    supabaseClient: SupabaseClient,
     deviceId: string,
     deviceName: string,
     userId: string,
     localDb: LocalDb
   ) {
-    this.supabase = createClient(supabaseUrl, supabaseAnonKey);
+    this.supabase = supabaseClient;
     this.deviceId = deviceId;
     this.deviceName = deviceName;
     this.userId = userId;
