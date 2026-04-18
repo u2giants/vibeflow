@@ -128,7 +128,7 @@ Return ONLY a JSON object with this exact shape (no markdown, no explanation):
 
 Mission: {{missionTitle}}
 Operator Request: {{operatorRequest}}
-`;
+{{projectContext}}`;
 
 const ASSIGN_ROLE_PROMPT = `You are a role assignment engine. Given a step description, assign the most appropriate role.
 
@@ -177,7 +177,7 @@ export class OrchestrationEngine {
    * Decompose a mission into a structured plan.
    * Calls the LLM with the decompose prompt and parses the response.
    */
-  async decomposeMission(mission: Mission): Promise<PlanRecord> {
+  async decomposeMission(mission: Mission, projectContext?: string): Promise<PlanRecord> {
     this.updateState({
       status: 'planning',
       missionId: mission.id,
@@ -189,9 +189,14 @@ export class OrchestrationEngine {
       throw new Error('Orchestrator mode not found');
     }
 
+    const contextBlock = projectContext
+      ? `\n\nProject Context:\n${projectContext}`
+      : '';
+
     const prompt = DECOMPOSE_PROMPT
       .replace('{{missionTitle}}', mission.title)
-      .replace('{{operatorRequest}}', mission.operatorRequest);
+      .replace('{{operatorRequest}}', mission.operatorRequest)
+      .replace('{{projectContext}}', contextBlock);
 
     const fallbackPlan: PlanRecord = {
       missionId: mission.id,

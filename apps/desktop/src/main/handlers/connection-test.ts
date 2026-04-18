@@ -7,6 +7,7 @@
 
 import * as https from 'https';
 import { ipcMain } from 'electron';
+import { sshService } from './state';
 
 function httpsGet(options: https.RequestOptions): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
@@ -126,6 +127,28 @@ export function registerConnectionTestHandlers(): void {
         if (result.status === 401) return { success: false, message: 'Invalid API key (401 Unauthorized).' };
         if (result.status === 403) return { success: false, message: 'Access forbidden — check key permissions (403).' };
         return { success: false, message: `ClawdTalk returned HTTP ${result.status}.` };
+      } catch (err) {
+        return { success: false, message: `Connection failed: ${String(err instanceof Error ? err.message : err)}` };
+      }
+    },
+  );
+
+  // ── SSH ───────────────────────────────────────────────────────────────────
+  // Delegates to the same SshService used by the tooling handler, unified here.
+  ipcMain.handle(
+    'connectionTest:ssh',
+    async (_event, host: { hostname: string; username: string; port?: number; identityFile?: string }): Promise<{ success: boolean; message: string }> => {
+      if (!host?.hostname) return { success: false, message: 'No hostname provided.' };
+      try {
+        const result = await sshService.testConnection({
+          name: host.hostname,
+          hostname: host.hostname,
+          user: host.username,
+          port: host.port ?? 22,
+          identityFile: host.identityFile ?? null,
+        });
+        if (result.success) return { success: true, message: `Connected to ${result.host} (${result.latencyMs ?? '?'}ms)` };
+        return { success: false, message: result.error ?? 'Connection failed.' };
       } catch (err) {
         return { success: false, message: `Connection failed: ${String(err instanceof Error ? err.message : err)}` };
       }

@@ -25,6 +25,8 @@ const api: VibeFlowAPI = {
     getConfig: (projectId: string) => ipcRenderer.invoke('projects:getConfig', projectId),
     saveConfig: (config) => ipcRenderer.invoke('projects:saveConfig', config),
     copyCredential: (sourceProjectId: string, credentialType: string) => ipcRenderer.invoke('projects:copyCredential', sourceProjectId, credentialType),
+    pickFolder: () => ipcRenderer.invoke('projects:pickFolder'),
+    updateWizard: (projectId: string, args: import('../lib/shared-types').CreateProjectArgs) => ipcRenderer.invoke('projects:updateWizard', projectId, args),
   },
   buildMetadata: {
     get: () => ipcRenderer.invoke('buildMetadata:get'),
@@ -322,6 +324,7 @@ const api: VibeFlowAPI = {
     railway: (apiKey: string) => ipcRenderer.invoke('connectionTest:railway', apiKey),
     brevo: (apiKey: string) => ipcRenderer.invoke('connectionTest:brevo', apiKey),
     clawdtalk: (apiKey: string) => ipcRenderer.invoke('connectionTest:clawdtalk', apiKey),
+    ssh: (host: { hostname: string; username: string; port?: number; identityFile?: string }) => ipcRenderer.invoke('connectionTest:ssh', host),
   },
   migration: {
     createPlan: (plan: Omit<MigrationPlan, 'id' | 'createdAt' | 'updatedAt'>) => ipcRenderer.invoke('migration:createPlan', plan),

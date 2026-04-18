@@ -24,6 +24,9 @@ import EnvironmentPanel from './components/panels/EnvironmentPanel';
 import WatchPanel from './components/panels/WatchPanel';
 import MemoryPanel from './components/panels/MemoryPanel';
 import AuditPanel from './components/panels/AuditPanel';
+import SetupPanel from './components/panels/SetupPanel';
+import NewProjectWizard from './components/NewProjectWizard';
+import PassphraseOnboarding from './components/PassphraseOnboarding';
 import { useUiState } from './hooks/useUiState';
 
 type Screen = 'projects' | 'modes' | 'project' | 'mcp';
@@ -35,6 +38,8 @@ export default function App() {
   const [currentMode, setCurrentMode] = useState<Mode | null>(null);
   const [openRouterConnected, setOpenRouterConnected] = useState(false);
   const [activeProject, setActiveProject] = useState<Project | null>(null);
+  const [showConfigureWizard, setShowConfigureWizard] = useState(false);
+  const [showPassphraseOnboarding, setShowPassphraseOnboarding] = useState(false);
 
   // Component 10: UI state
   const { state: uiState, setLeftRailSection, setLastActiveProject, setLeftRailCollapsed } = useUiState();
@@ -65,8 +70,15 @@ export default function App() {
     });
   }, []);
 
-  const handleSignedIn = (userEmail: string) => {
+  const handleSignedIn = async (userEmail: string) => {
     setEmail(userEmail);
+    // Prompt for passphrase if not already set — ensures secrets sync is visible from day one
+    try {
+      const has = await window.vibeflow.secrets.hasPassphrase();
+      if (!has) setShowPassphraseOnboarding(true);
+    } catch {
+      // Non-fatal — proceed without passphrase prompt
+    }
   };
 
   const handleSignedOut = () => {
@@ -97,6 +109,11 @@ export default function App() {
 
   if (!email) {
     return <SignInScreen onSignedIn={handleSignedIn} />;
+  }
+
+  // Passphrase onboarding — shown once per session after first sign-in
+  if (showPassphraseOnboarding) {
+    return <PassphraseOnboarding onDone={() => setShowPassphraseOnboarding(false)} />;
   }
 
   // Component 10: Project screen with left rail + panel layout
@@ -158,6 +175,12 @@ export default function App() {
             ) : uiState.leftRailSection === 'audit-rollback' ? (
               /* Audit log, checkpoints, and rollback history */
               <AuditPanel projectId={activeProject.id} />
+            ) : uiState.leftRailSection === 'setup' ? (
+              /* Integration setup and health */
+              <SetupPanel
+                projectId={activeProject.id}
+                onOpenWizard={() => setShowConfigureWizard(true)}
+              />
             ) : (
               /* Safety-net fallback for unknown sections */
               <ProjectScreen
@@ -180,6 +203,19 @@ export default function App() {
         </div>
 
         <BottomBar currentMode={currentMode} openRouterConnected={openRouterConnected} />
+
+        {/* Configure wizard overlay — triggered from SetupPanel or project header */}
+        {showConfigureWizard && activeProject && (
+          <NewProjectWizard
+            existingProjects={[]}
+            editProject={activeProject}
+            onCreated={(updated) => {
+              setActiveProject(updated);
+              setShowConfigureWizard(false);
+            }}
+            onCancel={() => setShowConfigureWizard(false)}
+          />
+        )}
       </div>
     );
   }

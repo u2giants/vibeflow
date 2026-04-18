@@ -36,6 +36,8 @@ export interface ProjectsChannel {
   getConfig: (projectId: string) => Promise<ProjectConfig | null>;
   saveConfig: (config: ProjectConfig) => Promise<void>;
   copyCredential: (sourceProjectId: string, credentialType: string) => Promise<string | null>;
+  pickFolder: () => Promise<string | null>;
+  updateWizard: (projectId: string, args: CreateProjectArgs) => Promise<void>;
 }
 
 // ── Build Metadata IPC ────────────────────────────────────────────
@@ -765,6 +767,7 @@ export interface ConnectionTestChannel {
   railway: (apiKey: string) => Promise<ConnectionTestResult>;
   brevo: (apiKey: string) => Promise<ConnectionTestResult>;
   clawdtalk: (apiKey: string) => Promise<ConnectionTestResult>;
+  ssh: (host: { hostname: string; username: string; port?: number; identityFile?: string }) => Promise<ConnectionTestResult>;
 }
 
 // ── OAuth Automation IPC ─────────────────────────────────────────────────────

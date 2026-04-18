@@ -3,8 +3,8 @@
  * All styles are inline — no CSS files, no CSS modules.
  */
 
-import { useState } from 'react';
-import type { Project, WizardSecret } from '../../lib/shared-types';
+import { useState, useEffect } from 'react';
+import type { Project, ProjectConfig, WizardSecret } from '../../lib/shared-types';
 import { C, R } from '../theme';
 
 // ── Local types ──────────────────────────────────────────────────────────────
@@ -22,25 +22,37 @@ interface NewProjectWizardProps {
   onCreated: (project: Project) => void;
   onCancel: () => void;
   existingProjects: Project[];
+  /** When provided, wizard runs in edit mode — updates this project instead of creating a new one */
+  editProject?: Project;
 }
 
-// ── Integration step id → display name ──────────────────────────────────────
+// ── Integration metadata ─────────────────────────────────────────────────────
 
-const INTEGRATION_LABELS: Record<string, string> = {
-  github: 'GitHub',
-  coolify: 'Coolify',
-  railway: 'Railway',
-  supabase: 'Supabase',
-  ssh: 'SSH server',
-  'custom-mcp': 'Custom MCP server',
-  cloudflare: 'Cloudflare',
-  brevo: 'Brevo (email)',
-  clawdtalk: 'ClawdTalk',
-  google: 'Google OAuth',
-  azure: 'Microsoft / Azure OAuth',
+interface IntegrationMeta {
+  label: string;
+  description: string;
+  /** Credential types that must be non-empty for setup to be considered complete */
+  requiredSecrets: string[];
+}
+
+const INTEGRATION_META: Record<string, IntegrationMeta> = {
+  github:       { label: 'GitHub',                   description: 'Source control — read/write your code repository and run workflows', requiredSecrets: ['github-pat'] },
+  coolify:      { label: 'Coolify',                  description: 'Self-hosted deployment — ship your app to your own server or VPS', requiredSecrets: ['coolify-token'] },
+  railway:      { label: 'Railway',                  description: 'Cloud hosting — deploy backends and databases without DevOps setup', requiredSecrets: ['railway-key'] },
+  supabase:     { label: 'Supabase',                 description: "Your project's database and auth — Postgres + Auth + Storage", requiredSecrets: ['supabase-service-role'] },
+  ssh:          { label: 'SSH server',               description: 'Direct server access — run commands and manage files on a remote machine', requiredSecrets: [] },
+  'custom-mcp': { label: 'Custom MCP server',        description: 'Extra AI tools — connect any MCP-compatible tool server to extend AI capabilities', requiredSecrets: [] },
+  cloudflare:   { label: 'Cloudflare',               description: 'DNS, CDN, and edge workers — manage domains and global delivery', requiredSecrets: ['cloudflare-token'] },
+  brevo:        { label: 'Brevo (email)',             description: 'Transactional email — send password resets, notifications, and newsletters', requiredSecrets: ['brevo-key'] },
+  clawdtalk:    { label: 'ClawdTalk',                description: 'In-app chat messaging — real-time chat for your application users', requiredSecrets: ['clawdtalk-key'] },
+  google:       { label: 'Google OAuth',             description: 'Sign in with Google — let users authenticate using their Google account', requiredSecrets: ['google-oauth-secret'] },
+  azure:        { label: 'Microsoft / Azure OAuth',  description: 'Sign in with Microsoft — enterprise SSO and personal Microsoft account login', requiredSecrets: ['azure-oauth-secret'] },
 };
 
-const ALL_INTEGRATIONS = Object.keys(INTEGRATION_LABELS);
+const ALL_INTEGRATIONS = Object.keys(INTEGRATION_META);
+const INTEGRATION_LABELS: Record<string, string> = Object.fromEntries(
+  Object.entries(INTEGRATION_META).map(([k, v]) => [k, v.label])
+);
 
 // ── Shared style helpers ─────────────────────────────────────────────────────
 
@@ -380,7 +392,9 @@ export default function NewProjectWizard({
   onCreated,
   onCancel,
   existingProjects,
+  editProject,
 }: NewProjectWizardProps) {
+  const isEditing = !!editProject;
   // Step navigation
   const [currentStep, setCurrentStep] = useState(0);
   const [steps, setSteps] = useState<string[]>(['basics', 'checklist', 'summary']);
@@ -480,6 +494,37 @@ export default function NewProjectWizard({
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // ── Pre-populate from existing project config (edit mode) ─────────────────
+
+  useEffect(() => {
+    if (!editProject) return;
+    setName(editProject.name);
+    setDescription(editProject.description ?? '');
+    window.vibeflow.projects.getConfig(editProject.id).then((cfg: ProjectConfig | null) => {
+      if (!cfg) return;
+      setLocalFolderPath(cfg.localFolderPath ?? '');
+      setRepoUrl(cfg.repoUrl ?? '');
+      setCoolifyBaseUrl(cfg.coolifyBaseUrl ?? '');
+      setCoolifyAppId(cfg.coolifyAppId ?? '');
+      setRailwayProjectId(cfg.railwayProjectId ?? '');
+      setRailwayServiceId(cfg.railwayServiceId ?? '');
+      setSupabaseProjectUrl(cfg.supabaseProjectUrl ?? '');
+      setSupabaseProjectRef(cfg.supabaseProjectRef ?? '');
+      setSupabaseAnonKey(cfg.supabaseAnonKey ?? '');
+      setCloudflareAccountId(cfg.cloudflareAccountId ?? '');
+      setCloudflareZoneId(cfg.cloudflareZoneId ?? '');
+      setGoogleClientId(cfg.googleOAuthClientId ?? '');
+      setAzureClientId(cfg.azureOAuthClientId ?? '');
+      setAzureTenantId(cfg.azureOAuthTenantId ?? '');
+      if (cfg.enabledIntegrations?.length) {
+        setSelectedIntegrations(cfg.enabledIntegrations);
+        const newSteps = ['basics', 'checklist', ...cfg.enabledIntegrations, 'summary'];
+        setSteps(newSteps);
+      }
+    }).catch(() => {});
+    // Secrets are write-only (never sent to renderer); leave blank — empty = "no change" on save
+  }, [editProject]);
+
   // ── Helpers ──────────────────────────────────────────────────────────────
 
   const toggleIntegration = (id: string) => {
@@ -527,18 +572,13 @@ export default function NewProjectWizard({
     setSshTesting(true);
     setSshTestResult(null);
     try {
-      const result = await window.vibeflow.tooling.ssh.testConnection({
-        name: sshHostname,
+      const result = await window.vibeflow.connectionTest.ssh({
         hostname: sshHostname,
-        user: sshUsername || 'root',
+        username: sshUsername || 'root',
         port: parseInt(sshPort) || 22,
-        identityFile: sshIdentityFilePath || null,
+        identityFile: sshIdentityFilePath || undefined,
       });
-      if (result.success) {
-        setSshTestResult(`Connected successfully${result.latencyMs != null ? ` — ${result.latencyMs}ms` : ''}`);
-      } else {
-        setSshTestResult(`Connection failed: ${result.error ?? 'unknown error'}`);
-      }
+      setSshTestResult(result.message);
     } catch (e: unknown) {
       setSshTestResult(`Connection test failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -602,6 +642,31 @@ export default function NewProjectWizard({
       setError('Project name is required.');
       return;
     }
+
+    // Warn for integrations that were checked but have no credentials entered
+    const secretValuesByType: Record<string, string> = {
+      'github-pat': githubPat,
+      'coolify-token': coolifyApiToken,
+      'railway-key': railwayApiKey,
+      'supabase-service-role': supabaseServiceRoleKey,
+      'cloudflare-token': cloudflareApiToken,
+      'brevo-key': brevoApiKey,
+      'clawdtalk-key': clawdtalkApiKey,
+      'google-oauth-secret': googleClientSecret,
+      'azure-oauth-secret': azureClientSecret,
+    };
+    const emptyIntegrations = selectedIntegrations.filter(id => {
+      const required = INTEGRATION_META[id]?.requiredSecrets ?? [];
+      return required.length > 0 && required.every(s => !secretValuesByType[s]?.trim());
+    });
+    if (emptyIntegrations.length > 0) {
+      const names = emptyIntegrations.map(id => INTEGRATION_META[id].label).join(', ');
+      const confirmed = window.confirm(
+        `You selected ${names} but didn't enter credentials for ${emptyIntegrations.length === 1 ? 'it' : 'them'}.\n\nCreate the project anyway? You can add credentials later.`
+      );
+      if (!confirmed) return;
+    }
+
     setCreating(true);
     setError(null);
     try {
@@ -617,7 +682,7 @@ export default function NewProjectWizard({
       if (googleServiceAccountJson.trim()) secrets.push({ credentialType: 'google-service-account-json', value: googleServiceAccountJson.trim() });
       if (azureClientSecret) secrets.push({ credentialType: 'azure-oauth-secret', value: azureClientSecret });
 
-      const project = await window.vibeflow.projects.create({
+      const wizardArgs = {
         name: name.trim(),
         description: description.trim() || undefined,
         wizardPayload: {
@@ -650,10 +715,17 @@ export default function NewProjectWizard({
           } : undefined,
           mcpServers: mcpServers.length > 0 ? mcpServers : undefined,
         },
-      });
-      onCreated(project as Project);
+      };
+
+      if (isEditing && editProject) {
+        await window.vibeflow.projects.updateWizard(editProject.id, wizardArgs);
+        onCreated({ ...editProject, name: name.trim(), description: description.trim() || null });
+      } else {
+        const project = await window.vibeflow.projects.create(wizardArgs);
+        onCreated(project as Project);
+      }
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to create project');
+      setError(e instanceof Error ? e.message : isEditing ? 'Failed to save changes' : 'Failed to create project');
     } finally {
       setCreating(false);
     }
@@ -692,13 +764,29 @@ export default function NewProjectWizard({
         label="Local folder"
         help="The folder on this machine where your project code lives. The AI will read and write files here."
       >
-        <input
-          type="text"
-          value={localFolderPath}
-          onChange={e => setLocalFolderPath(e.target.value)}
-          placeholder="/home/user/projects/my-project"
-          style={inputStyle}
-        />
+        <div style={{ display: 'flex', gap: 6 }}>
+          <input
+            type="text"
+            value={localFolderPath}
+            onChange={e => setLocalFolderPath(e.target.value)}
+            placeholder="Click Browse or type a path"
+            style={{ ...inputStyle, flex: 1 }}
+          />
+          <button
+            type="button"
+            onClick={async () => {
+              const picked = await window.vibeflow.projects.pickFolder();
+              if (picked) setLocalFolderPath(picked);
+            }}
+            style={{
+              padding: '8px 12px', background: C.bg4,
+              border: `1px solid ${C.border2}`, borderRadius: R.md,
+              color: C.text2, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
+            }}
+          >
+            Browse…
+          </button>
+        </div>
       </Field>
 
       <Field
@@ -721,28 +809,22 @@ export default function NewProjectWizard({
       <h2 style={sectionHeading}>Which tools does this project use?</h2>
       <p style={sectionSubheading}>We'll ask for the credentials you need. You can skip any of these.</p>
 
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        gap: 8,
-        marginBottom: 24,
-      }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 24 }}>
         {ALL_INTEGRATIONS.map(id => {
           const checked = selectedIntegrations.includes(id);
+          const meta = INTEGRATION_META[id];
           return (
             <label
               key={id}
               style={{
                 display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                padding: '10px 12px',
+                alignItems: 'flex-start',
+                gap: 12,
+                padding: '10px 14px',
                 backgroundColor: checked ? C.accentBg : C.bg4,
                 border: `1px solid ${checked ? C.accent + '55' : C.border2}`,
                 borderRadius: R.md,
                 cursor: 'pointer',
-                fontSize: 13,
-                color: checked ? C.text1 : C.text2,
                 transition: 'background 0.15s, border-color 0.15s',
                 userSelect: 'none',
               }}
@@ -751,9 +833,16 @@ export default function NewProjectWizard({
                 type="checkbox"
                 checked={checked}
                 onChange={() => toggleIntegration(id)}
-                style={{ accentColor: C.accent, cursor: 'pointer' }}
+                style={{ accentColor: C.accent, cursor: 'pointer', marginTop: 2, flexShrink: 0 }}
               />
-              {INTEGRATION_LABELS[id]}
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: checked ? C.text1 : C.text2 }}>
+                  {meta.label}
+                </div>
+                <div style={{ fontSize: 11, color: C.text3, marginTop: 2, lineHeight: 1.5 }}>
+                  {meta.description}
+                </div>
+              </div>
             </label>
           );
         })}
@@ -1065,7 +1154,7 @@ export default function NewProjectWizard({
   );
 
   const renderSsh = () => {
-    const sshTestSuccess = sshTestResult !== null && !sshTestResult.startsWith('Connection failed') && !sshTestResult.startsWith('Connection test failed');
+    const sshTestSuccess = sshTestResult !== null && !sshTestResult.toLowerCase().startsWith('connection failed') && !sshTestResult.toLowerCase().startsWith('connection test failed');
     return (
       <div>
         <h2 style={sectionHeading}>SSH server</h2>
@@ -1665,9 +1754,15 @@ export default function NewProjectWizard({
         <div style={{ fontSize: 13, fontWeight: 600, color: '#90caf9', marginBottom: 4 }}>
           Auto-create app registration
         </div>
-        <div style={{ fontSize: 11, color: '#888', marginBottom: 12, lineHeight: '1.5' }}>
+        <div style={{ fontSize: 11, color: '#888', marginBottom: 8, lineHeight: '1.6' }}>
           Provide a Service Principal with <code style={{ color: '#aaa' }}>Application.ReadWrite.OwnedBy</code> permission.
           VibeFlow will call the Microsoft Graph API to create the app registration and generate a client secret.
+        </div>
+        <div style={{ fontSize: 11, color: '#666', marginBottom: 12, lineHeight: '1.7', borderLeft: '2px solid #333', paddingLeft: 10 }}>
+          <strong style={{ color: '#888', display: 'block', marginBottom: 4 }}>Don't have a Service Principal? Create one in 3 steps:</strong>
+          1. <a href="https://portal.azure.com/#blade/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/RegisteredApps" target="_blank" rel="noreferrer" style={{ color: '#64b5f6' }}>Azure Portal → App registrations → New registration</a><br />
+          2. Go to <strong style={{ color: '#999' }}>Certificates &amp; secrets → New client secret</strong> and copy the value<br />
+          3. Go to <strong style={{ color: '#999' }}>API permissions → Add → Microsoft Graph → Application → Application.ReadWrite.OwnedBy → Grant admin consent</strong>
         </div>
 
         <Field label="Service Principal — Tenant ID" help="The Azure tenant where the Service Principal lives">
@@ -1904,6 +1999,13 @@ export default function NewProjectWizard({
           ×
         </button>
 
+        {/* Edit mode label */}
+        {isEditing && (
+          <div style={{ fontSize: 11, color: C.text3, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600, marginBottom: 12 }}>
+            Configure project — {editProject?.name}
+          </div>
+        )}
+
         {/* Progress */}
         <WizardProgress steps={steps} currentStep={currentStep} />
 
@@ -1969,7 +2071,7 @@ export default function NewProjectWizard({
                   cursor: (creating || !name.trim()) ? 'not-allowed' : 'pointer',
                 }}
               >
-                {creating ? 'Creating…' : 'Create Project'}
+                {creating ? (isEditing ? 'Saving…' : 'Creating…') : (isEditing ? 'Save Changes' : 'Create Project')}
               </button>
             ) : (
               <button

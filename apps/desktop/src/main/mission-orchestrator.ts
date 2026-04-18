@@ -98,7 +98,27 @@ export class MissionOrchestrator {
       this.persistLifecycleState(missionId, currentStep, 'running', null, null, null);
       this.localDb.updateMission(missionId, { status: 'planning' });
 
-      const plan: PlanRecord = await this.orchestrationEngine.decomposeMission(mission);
+      // Build project context block so the Orchestrator knows what tools are connected
+      let projectContext: string | undefined;
+      try {
+        const cfg = this.localDb.getProjectConfig(mission.projectId);
+        if (cfg && cfg.enabledIntegrations.length > 0) {
+          const lines: string[] = [`Enabled integrations: ${cfg.enabledIntegrations.join(', ')}`];
+          if (cfg.repoUrl)           lines.push(`Repository: ${cfg.repoUrl}`);
+          if (cfg.localFolderPath)   lines.push(`Local folder: ${cfg.localFolderPath}`);
+          if (cfg.supabaseProjectUrl) lines.push(`Supabase URL: ${cfg.supabaseProjectUrl}`);
+          if (cfg.railwayProjectId)   lines.push(`Railway project ID: ${cfg.railwayProjectId}`);
+          if (cfg.coolifyBaseUrl)     lines.push(`Coolify URL: ${cfg.coolifyBaseUrl}`);
+          if (cfg.cloudflareAccountId) lines.push(`Cloudflare account: ${cfg.cloudflareAccountId}`);
+          if (cfg.googleOAuthClientId) lines.push('Google OAuth: configured');
+          if (cfg.azureOAuthClientId)  lines.push(`Azure OAuth tenant: ${cfg.azureOAuthTenantId ?? 'common'}`);
+          projectContext = lines.join('\n');
+        }
+      } catch {
+        // Non-fatal — proceed without project context
+      }
+
+      const plan: PlanRecord = await this.orchestrationEngine.decomposeMission(mission, projectContext);
 
       // Persist plan as a Plan record (map PlanRecord → Plan shape).
       // PlanStep.status does not include 'failed' so we coerce it.

@@ -8,7 +8,8 @@ export type LeftRailSection =
   | 'incidents'
   | 'memory-packs'
   | 'capabilities'
-  | 'audit-rollback';
+  | 'audit-rollback'
+  | 'setup';
 
 interface LeftRailProps {
   activeSection: LeftRailSection;
@@ -26,6 +27,7 @@ const SECTIONS: { id: LeftRailSection; icon: string; label: string }[] = [
   { id: 'memory-packs', icon: '🧠', label: 'Memory Packs' },
   { id: 'capabilities', icon: '🔌', label: 'Capabilities' },
   { id: 'audit-rollback', icon: '📋', label: 'Audit / Rollback' },
+  { id: 'setup', icon: '⚙', label: 'Setup' },
 ];
 
 export default function LeftRail({ activeSection, onSectionChange, collapsed, onToggleCollapse }: LeftRailProps) {

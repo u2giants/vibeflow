@@ -251,4 +251,119 @@ export function registerProjectsHandlers(): void {
     localDb!.insertProject(project);
     return project;
   });
+
+  // ── projects:pickFolder ────────────────────────────────────────────────────
+  // Opens a native folder picker; returns the selected path or null.
+  ipcMain.handle('projects:pickFolder', async (): Promise<string | null> => {
+    const result = await dialog.showOpenDialog({
+      title: 'Select project folder',
+      message: 'Choose the folder where this project\'s code lives',
+      properties: ['openDirectory'],
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    return result.filePaths[0];
+  });
+
+  // ── projects:updateWizard ─────────────────────────────────────────────────
+  // Updates an existing project's config + secrets from a re-run of the wizard.
+  // Does NOT re-create the project record — only updates name, description,
+  // config, and keytar secrets. Empty secret values are treated as "no change".
+  ipcMain.handle(
+    'projects:updateWizard',
+    async (_e: IpcMainInvokeEvent, projectId: string, args: import('../../lib/shared-types').CreateProjectArgs): Promise<void> => {
+      if (!localDb) throw new Error('DB not initialized');
+      const now = new Date().toISOString();
+
+      // Update name/description on the project row
+      const userId = await getCurrentUserId();
+      const projects = localDb.listProjects(userId);
+      const existing = projects.find(p => p.id === projectId);
+      if (existing) {
+        localDb.insertProject({
+          ...existing,
+          name: args.name,
+          description: args.description ?? null,
+          setupComplete: true,
+          updatedAt: now,
+        });
+      }
+
+      if (args.wizardPayload) {
+        const payload = args.wizardPayload;
+
+        // Update non-secret config
+        if (payload.config) {
+          localDb.upsertProjectConfig({ projectId, ...payload.config, updatedAt: now });
+        }
+
+        // Update secrets — only write non-empty values (empty = "don't change")
+        for (const secret of payload.secrets ?? []) {
+          if (secret.value?.trim()) {
+            await keytar.setPassword(KEYTAR_SERVICE, `project-${projectId}-${secret.credentialType}`, secret.value);
+          }
+        }
+
+        // Re-create/update GitHub MCP if PAT provided
+        const githubSecret = payload.secrets?.find(s => s.credentialType === 'github-pat');
+        if (githubSecret?.value) {
+          const mcpId = `mcp-github-${projectId}`;
+          localDb.upsertMcpServer({
+            id: mcpId,
+            name: 'GitHub',
+            description: 'GitHub MCP server for repo access, PRs, issues, and Actions',
+            command: 'npx',
+            args: ['-y', '@modelcontextprotocol/server-github'],
+            env: { GITHUB_PERSONAL_ACCESS_TOKEN: githubSecret.value },
+            transport: 'stdio' as const,
+            authMethod: null,
+            scope: 'project',
+            enabled: true,
+            projectId,
+            health: 'unknown' as const,
+            lastHealthCheckAt: null,
+            discoveredTools: [],
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+
+        // SSH target update
+        if (payload.sshTarget) {
+          localDb.upsertSshTarget({
+            id: `ssh-${projectId}-main`,
+            userId,
+            name: payload.sshTarget.name || payload.sshTarget.hostname,
+            hostname: payload.sshTarget.hostname,
+            username: payload.sshTarget.user,
+            port: payload.sshTarget.port ?? 22,
+            identityFile: payload.sshTarget.identityFile,
+            projectId,
+            createdAt: now,
+          });
+        }
+
+        // Additional custom MCP servers
+        for (const mcp of payload.mcpServers ?? []) {
+          localDb.upsertMcpServer({
+            id: `mcp-custom-${projectId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            name: mcp.name,
+            description: mcp.description || '',
+            command: mcp.command,
+            args: mcp.args ?? [],
+            env: mcp.env ?? {},
+            transport: mcp.transport,
+            authMethod: null,
+            scope: 'project',
+            enabled: true,
+            projectId,
+            health: 'unknown' as const,
+            lastHealthCheckAt: null,
+            discoveredTools: [],
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+      }
+    },
+  );
 }

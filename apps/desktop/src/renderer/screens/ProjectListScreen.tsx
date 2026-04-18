@@ -10,7 +10,7 @@ interface ProjectListScreenProps {
   onOpenProject: (project: Project) => void;
 }
 
-function ProjectCard({ project, onClick }: { project: Project; onClick: () => void }) {
+function ProjectCard({ project, onClick, onConfigure }: { project: Project; onClick: () => void; onConfigure: (e: React.MouseEvent) => void }) {
   const [hover, setHover] = useState(false);
   const initials = project.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
   const hue = (project.name.charCodeAt(0) * 37 + project.name.charCodeAt(Math.min(1, project.name.length - 1)) * 13) % 360;
@@ -30,6 +30,7 @@ function ProjectCard({ project, onClick }: { project: Project; onClick: () => vo
         display: 'flex', alignItems: 'center', gap: 14,
         transition: 'background-color 0.15s, border-color 0.15s, transform 0.1s',
         transform: hover ? 'translateY(-1px)' : 'none',
+        position: 'relative',
       }}
     >
       <div style={{
@@ -49,8 +50,25 @@ function ProjectCard({ project, onClick }: { project: Project; onClick: () => vo
             {project.description}
           </div>
         )}
+        {project.setupComplete === false && (
+          <div style={{ fontSize: 11, color: C.yellow, marginTop: 2 }}>⚠ Setup incomplete</div>
+        )}
       </div>
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+      {hover && (
+        <button
+          onClick={onConfigure}
+          title="Configure integrations"
+          style={{
+            padding: '4px 10px', background: C.bg4,
+            border: `1px solid ${C.border2}`, borderRadius: R.md,
+            color: C.text3, fontSize: 11, cursor: 'pointer',
+            flexShrink: 0,
+          }}
+        >
+          Configure
+        </button>
+      )}
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
         <path d="M6 3l5 5-5 5" stroke={hover ? C.text2 : C.text3} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
       </svg>
     </div>
@@ -61,6 +79,7 @@ export default function ProjectListScreen({ onSignOut, onOpenModes, onOpenProjec
   const [projects, setProjects] = useState<Project[]>([]);
   const [showNew, setShowNew] = useState(false);
   const [showSyncPanel, setShowSyncPanel] = useState(false);
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
 
   const load = useCallback(async () => {
     try { setProjects((await window.vibeflow.projects.list()) as Project[]); }
@@ -135,6 +154,19 @@ export default function ProjectListScreen({ onSignOut, onOpenModes, onOpenProjec
         </div>
       )}
 
+      {/* Edit project wizard */}
+      {editingProject && (
+        <NewProjectWizard
+          existingProjects={projects.filter(p => p.id !== editingProject.id)}
+          editProject={editingProject}
+          onCreated={(_updated) => {
+            setEditingProject(null);
+            load();
+          }}
+          onCancel={() => setEditingProject(null)}
+        />
+      )}
+
       {/* New project wizard */}
       {showNew && (
         <NewProjectWizard
@@ -158,7 +190,12 @@ export default function ProjectListScreen({ onSignOut, onOpenModes, onOpenProjec
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
           {projects.filter(p => !p.isSelfMaintenance).map(p => (
-            <ProjectCard key={p.id} project={p} onClick={() => onOpenProject(p)} />
+            <ProjectCard
+              key={p.id}
+              project={p}
+              onClick={() => onOpenProject(p)}
+              onConfigure={(e) => { e.stopPropagation(); setEditingProject(p); }}
+            />
           ))}
         </div>
       )}
