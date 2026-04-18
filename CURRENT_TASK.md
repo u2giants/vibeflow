@@ -6,6 +6,22 @@ Every agent must update this file when work begins and when work ends.
 
 ## CURRENT SPRINT
 
+### Bug Fix — Sync status indicator stuck on Offline (2026-04-18)
+- Status: Complete — Ready for Review
+- Mode: Builder (`z-ai/glm-5.1`) → Reviewer-Pusher
+- Conversation: Fix sync badge stuck on Offline even when sync engine is initialized
+- Project: VibeFlow brownfield rebuild
+- Branch: `master`
+- Root cause: Preload `syncStatus.subscribe` hardcodes initial callback as `'offline'` instead of fetching the real current status from the main process
+- Fix:
+  - Added `sync:getStatus` IPC handler in main/index.ts that returns `syncEngine?.getStatus() ?? 'offline'`
+  - Updated preload `syncStatus.subscribe` to call `ipcRenderer.invoke('sync:getStatus')` for the initial callback instead of hardcoding `'offline'`
+  - Kept existing `sync:statusChanged` event listener path intact
+- Files changed:
+  - [`apps/desktop/src/main/index.ts`](apps/desktop/src/main/index.ts) — Added `sync:getStatus` IPC handler
+  - [`apps/desktop/src/preload/index.ts`](apps/desktop/src/preload/index.ts) — Updated `syncStatus.subscribe` to fetch real initial status
+- Verification: `cd apps/desktop && npx tsc --noEmit` exits with code 0, zero errors ✅
+
 ### Cloud Sync — Part 3: Re-enable initSyncEngine() and adapt runtime wiring (2026-04-18)
 - Status: Complete — Reviewed & Pushed (`7e2ce7d`)
 - Mode: Builder (`z-ai/glm-5.1`) → Reviewer-Pusher (`z-ai/glm-5.1`)

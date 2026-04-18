@@ -27,8 +27,12 @@ const api: VibeFlowAPI = {
   },
   syncStatus: {
     subscribe: (callback) => {
-      // Initial status
-      callback('offline' as SyncStatus);
+      // Fetch real initial status from main process instead of hardcoding 'offline'
+      ipcRenderer.invoke('sync:getStatus').then((status) => {
+        callback((status ?? 'offline') as SyncStatus);
+      }).catch(() => {
+        callback('offline' as SyncStatus);
+      });
       const handler = (_event: unknown, status: string) => {
         callback(status as SyncStatus);
       };

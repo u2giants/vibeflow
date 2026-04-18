@@ -992,6 +992,10 @@ app.whenReady().then(async () => {
 
   // ── Sync IPC Handlers ──
 
+  ipcMain.handle('sync:getStatus', async (): Promise<string> => {
+    return syncEngine?.getStatus() ?? 'offline';
+  });
+
   ipcMain.handle('sync:getDeviceId', async (): Promise<string | null> => {
     return localDb?.getDeviceId() ?? null;
   });
