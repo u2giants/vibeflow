@@ -1399,6 +1399,54 @@ export interface MemoryRetrievalResult {
 /** Memory lifecycle state for batch operations. */
 export type MemoryLifecycleAction = 'write' | 'evict' | 'summarize' | 'retire' | 'reactivate';
 
+// ── Mission Lifecycle Wiring (Phase 1) ────────────────────────────────────
+
+/**
+ * Fine-grained lifecycle status for a mission, distinct from MissionStatus.
+ * Tracked in MissionLifecycleState rather than the Mission record itself.
+ */
+export type MissionLifecycleStatus =
+  | 'idle'
+  | 'running'
+  | 'awaiting-approval'
+  | 'blocked'
+  | 'completed'
+  | 'failed';
+
+/**
+ * Per-mission step-level state stored in mission_lifecycle_state.
+ * Persisted before each async step so crashes are recoverable.
+ */
+export interface MissionLifecycleState {
+  missionId: string;
+  /** Current step number (1–18) in the mission lifecycle. */
+  currentStep: number;
+  lifecycleStatus: MissionLifecycleStatus;
+  /** JSON-serialised RiskAssessment from step 6, or null if not yet assessed. */
+  riskAssessment: RiskAssessment | null;
+  workspaceRunId: string | null;
+  verificationRunId: string | null;
+  deployWorkflowId: string | null;
+  watchSessionId: string | null;
+  updatedAt: string;
+}
+
+/** Arguments for the missions:start IPC invoke channel. */
+export interface MissionStartArgs {
+  projectId: string;
+  title: string;
+  operatorRequest: string;
+  conversationId: string;
+}
+
+/** Generic push event emitted main → renderer for mission step progress. */
+export interface MissionProgressEvent {
+  missionId: string;
+  step: number;
+  event: string;
+  payload: unknown;
+}
+
 /** Memory dashboard summary. */
 export interface MemoryDashboard {
   totalMemories: number;

@@ -1,6 +1,6 @@
 /** IPC message types for Electron main ↔ renderer communication. */
 
-import type { Project, SyncStatus, Account, Mode, OpenRouterModel, ConversationThread, Message, ProjectDevOpsConfig, DeployRun, SshTarget, McpConnection, PlanRecord, RoleAssignment, OrchestrationState, Capability, CapabilityHealth, CapabilityInvocationLog, McpServerConfig, McpToolInfo, McpInvocationResult, ProjectIndex, FileRecord, SymbolRecord, ReferenceEdge, RouteRecord, ApiEndpointRecord, JobRecord, ServiceNode, ServiceEdge, ConfigVariableRecord, ContextPackEnriched, ContextItem, ContextWarning, ContextDashboard, DetectedStack, ImpactAnalysis, EvidenceItem, WorkspaceRun, PatchProposal, FileEdit, SemanticChangeGroup, Checkpoint, ChangeSet, DuplicateWarning, PatternReuseSuggestion, AuditRecord, RollbackPlan, RuntimeExecution, BrowserSession, EvidenceRecord, BeforeAfterComparison, VerificationRun, VerificationCheck, VerificationBundle, AcceptanceCriteria, SecretRecord, MigrationPlan, MigrationRiskClass, MigrationPreview, DatabaseSchemaInfo, MigrationHistoryEntry, Environment, DeployWorkflow, DeployStep, DriftReport, ServiceControlPlane, Incident, WatchSession, AnomalyEvent, SelfHealingAction, WatchDashboard, MemoryItem, MemoryCategory, MemoryRetrievalResult, MemoryDashboard, Skill, DecisionRecord } from './entities';
+import type { Project, SyncStatus, Account, Mode, OpenRouterModel, ConversationThread, Message, ProjectDevOpsConfig, DeployRun, SshTarget, McpConnection, PlanRecord, RoleAssignment, OrchestrationState, Capability, CapabilityHealth, CapabilityInvocationLog, McpServerConfig, McpToolInfo, McpInvocationResult, ProjectIndex, FileRecord, SymbolRecord, ReferenceEdge, RouteRecord, ApiEndpointRecord, JobRecord, ServiceNode, ServiceEdge, ConfigVariableRecord, ContextPackEnriched, ContextItem, ContextWarning, ContextDashboard, DetectedStack, ImpactAnalysis, EvidenceItem, WorkspaceRun, PatchProposal, FileEdit, SemanticChangeGroup, Checkpoint, ChangeSet, DuplicateWarning, PatternReuseSuggestion, AuditRecord, RollbackPlan, RuntimeExecution, BrowserSession, EvidenceRecord, BeforeAfterComparison, VerificationRun, VerificationCheck, VerificationBundle, AcceptanceCriteria, SecretRecord, MigrationPlan, MigrationRiskClass, MigrationPreview, DatabaseSchemaInfo, MigrationHistoryEntry, Environment, DeployWorkflow, DeployStep, DriftReport, ServiceControlPlane, Incident, WatchSession, AnomalyEvent, SelfHealingAction, WatchDashboard, MemoryItem, MemoryCategory, MemoryRetrievalResult, MemoryDashboard, Skill, DecisionRecord, Mission, MissionLifecycleState, MissionStartArgs } from './entities';
 
 // ── Auth IPC ──────────────────────────────────────────────────────
 
@@ -92,6 +92,8 @@ export interface SendMessageArgs {
   conversationId: string;
   content: string;
   modeId: string;
+  /** When true, routes the message through the mission lifecycle instead of the chat path. */
+  missionMode?: boolean;
 }
 
 export interface StreamTokenData {
@@ -888,6 +890,90 @@ export interface DecisionsChannel {
   seedFromDocs: (projectId: string) => Promise<{ decisions: number; memories: number }>;
 }
 
+// ── Mission Lifecycle IPC (Phase 1 wiring) ────────────────────────────────
+
+/**
+ * Invoke channels (renderer → main).
+ * All return Promises; wired via ipcMain.handle / ipcRenderer.invoke.
+ */
+export interface MissionsChannel {
+  /** Create a new Mission + MissionLifecycleState and kick off the orchestrator. */
+  start: (args: MissionStartArgs) => Promise<Mission>;
+  /** Fetch a mission by ID. */
+  get: (missionId: string) => Promise<Mission | null>;
+  /** Fetch the current lifecycle state for a mission. */
+  getLifecycleState: (missionId: string) => Promise<MissionLifecycleState | null>;
+  /** Signal the orchestrator to cancel and set Mission.status = 'cancelled'. */
+  cancel: (missionId: string) => Promise<void>;
+  /** Reset MissionLifecycleState.currentStep to fromStep and resume orchestration. */
+  retry: (args: { missionId: string; fromStep: number }) => Promise<void>;
+}
+
+/**
+ * Push event payloads (main → renderer).
+ * Sent via webContents.send / ipcRenderer.on.
+ */
+
+/** Emitted after step 3: plan decomposed and ready to display. */
+export interface MissionPlanReadyEvent {
+  missionId: string;
+  plan: PlanRecord;
+}
+
+/** Emitted after step 4: context pack assembled and dashboard computed. */
+export interface MissionContextReadyEvent {
+  missionId: string;
+  pack: ContextPackEnriched;
+  dashboard: ContextDashboard;
+}
+
+/** Emitted at step 7 or 14: mission is paused awaiting human approval. */
+export interface MissionAwaitingApprovalEvent {
+  missionId: string;
+  action: ActionRequest;
+  tier: ApprovalTier;
+}
+
+/** Emitted during steps 8–9: incremental file edits as patches are applied. */
+export interface MissionWorkspaceProgressEvent {
+  missionId: string;
+  workspaceRunId: string;
+  fileEdits: FileEdit[];
+}
+
+/** Emitted after step 10–11: verification complete with full change set. */
+export interface MissionVerificationCompleteEvent {
+  missionId: string;
+  run: VerificationRun;
+  changeSet: ChangeSet;
+}
+
+/** Emitted during steps 12–15: deploy workflow step progress. */
+export interface MissionDeployProgressEvent {
+  missionId: string;
+  workflow: DeployWorkflow;
+}
+
+/** Emitted at step 18: anomaly detected after deploy, rollback may be offered. */
+export interface MissionAnomalyDetectedEvent {
+  missionId: string;
+  anomaly: AnomalyEvent;
+  action: SelfHealingAction;
+}
+
+/** Emitted when the watch window closes cleanly — mission is complete. */
+export interface MissionCompletedEvent {
+  missionId: string;
+  summary: string;
+}
+
+/** Emitted when the orchestrator encounters a terminal error. */
+export interface MissionFailedEvent {
+  missionId: string;
+  reason: string;
+  step: number;
+}
+
 // ── Full window API ──────────────────────────────────────────────
 
 export interface VibeFlowAPI {
@@ -940,4 +1026,6 @@ export interface VibeFlowAPI {
   decisions: DecisionsChannel;
   // SSH Targets (from remote merge)
   sshTargets: SshTargetsApi;
+  // Mission lifecycle (Phase 1 wiring — handlers added in Phase 3)
+  missions?: MissionsChannel;
 }

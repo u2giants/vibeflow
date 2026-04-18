@@ -27,6 +27,7 @@ import type {
   DeployWorkflow, DeployStep, DriftReport,
   WatchSession, WatchProbe, AnomalyEvent, SelfHealingAction,
   MemoryItem, MemoryCategory, MemoryRevision, Skill, SkillStep, SkillVersionEntry, DecisionRecord,
+  MissionLifecycleState, MissionLifecycleStatus,
 } from '../shared-types';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -894,6 +895,19 @@ export class LocalDb {
         enabled INTEGER NOT NULL DEFAULT 1,
         scope TEXT NOT NULL DEFAULT 'global',
         created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      -- ── Mission Lifecycle State (Phase 1 wiring) ──
+      CREATE TABLE IF NOT EXISTS mission_lifecycle_state (
+        mission_id TEXT PRIMARY KEY,
+        current_step INTEGER DEFAULT 1,
+        lifecycle_status TEXT NOT NULL DEFAULT 'idle',
+        risk_assessment_json TEXT,
+        workspace_run_id TEXT,
+        verification_run_id TEXT,
+        deploy_workflow_id TEXT,
+        watch_session_id TEXT,
         updated_at TEXT NOT NULL
       );
 
@@ -3551,5 +3565,61 @@ export class LocalDb {
   deleteMcpConnection(id: string): void {
     this.db!.run('DELETE FROM mcp_connections WHERE id = ?', [id]);
     this.save();
+  }
+
+  // ── Mission Lifecycle State (Phase 1 wiring) ─────────────────────────────
+
+  upsertMissionLifecycleState(state: MissionLifecycleState): void {
+    this.db!.run(
+      `INSERT INTO mission_lifecycle_state
+         (mission_id, current_step, lifecycle_status, risk_assessment_json,
+          workspace_run_id, verification_run_id, deploy_workflow_id,
+          watch_session_id, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(mission_id) DO UPDATE SET
+         current_step        = excluded.current_step,
+         lifecycle_status    = excluded.lifecycle_status,
+         risk_assessment_json = excluded.risk_assessment_json,
+         workspace_run_id    = excluded.workspace_run_id,
+         verification_run_id = excluded.verification_run_id,
+         deploy_workflow_id  = excluded.deploy_workflow_id,
+         watch_session_id    = excluded.watch_session_id,
+         updated_at          = excluded.updated_at`,
+      [
+        state.missionId,
+        state.currentStep,
+        state.lifecycleStatus,
+        state.riskAssessment !== null ? JSON.stringify(state.riskAssessment) : null,
+        state.workspaceRunId,
+        state.verificationRunId,
+        state.deployWorkflowId,
+        state.watchSessionId,
+        state.updatedAt,
+      ]
+    );
+    this.save();
+  }
+
+  getMissionLifecycleState(missionId: string): MissionLifecycleState | null {
+    const result = this.db!.exec(
+      'SELECT * FROM mission_lifecycle_state WHERE mission_id = ?',
+      [missionId]
+    )[0];
+    const objs = this.toObjAll(result);
+    if (!objs.length) return null;
+    const row = objs[0];
+    return {
+      missionId: row.mission_id as string,
+      currentStep: (row.current_step as number) ?? 1,
+      lifecycleStatus: (row.lifecycle_status as MissionLifecycleStatus) ?? 'idle',
+      riskAssessment: row.risk_assessment_json
+        ? JSON.parse(row.risk_assessment_json as string)
+        : null,
+      workspaceRunId: (row.workspace_run_id as string) ?? null,
+      verificationRunId: (row.verification_run_id as string) ?? null,
+      deployWorkflowId: (row.deploy_workflow_id as string) ?? null,
+      watchSessionId: (row.watch_session_id as string) ?? null,
+      updatedAt: row.updated_at as string,
+    };
   }
 }
