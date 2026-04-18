@@ -1,13 +1,14 @@
 /**
  * Projects IPC handlers: projects:list, projects:create, projects:getSelfMaintenance,
- * projects:getVibeFlowRepoPath, projects:pickVibeFlowRepoPath, projects:createSelfMaintenance
+ * projects:getVibeFlowRepoPath, projects:pickVibeFlowRepoPath, projects:createSelfMaintenance,
+ * projects:listAll, projects:getConfig, projects:saveConfig, projects:copyCredential
  */
 
 import { ipcMain, dialog, app } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import * as path from 'path';
 import keytar from 'keytar';
-import type { CreateProjectArgs } from '../../lib/shared-types';
+import type { CreateProjectArgs, ProjectConfig } from '../../lib/shared-types';
 import { localDb, syncEngine, KEYTAR_SERVICE, KEYTAR_VIBEFLOW_REPO_PATH, changeEngine } from './state';
 import { getCurrentUserId } from './helpers';
 import { SecretsStore } from '../../lib/secrets/secrets-store';
@@ -32,14 +33,16 @@ export function registerProjectsHandlers(): void {
       if (!localDb) throw new Error('Local DB not initialized');
 
       const userId = await getCurrentUserId();
+      const now = new Date().toISOString();
       const project = {
         id: crypto.randomUUID(),
         userId,
         name: args.name,
         description: args.description ?? null,
         isSelfMaintenance: false,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        setupComplete: !!args.wizardPayload,
+        createdAt: now,
+        updatedAt: now,
         syncedAt: null,
       };
 
@@ -49,6 +52,90 @@ export function registerProjectsHandlers(): void {
         syncEngine.pushProject(project).catch(err =>
           console.warn('[main] pushProject failed (non-fatal):', err)
         );
+      }
+
+      // ── Wizard payload processing ──────────────────────────────────────
+      if (args.wizardPayload) {
+        const payload = args.wizardPayload;
+
+        // 1. Save non-secret config
+        if (payload.config) {
+          localDb.upsertProjectConfig({
+            projectId: project.id,
+            ...payload.config,
+            updatedAt: now,
+          });
+        }
+
+        // 2. Store each secret in keytar
+        for (const secret of payload.secrets ?? []) {
+          if (secret.value) {
+            await keytar.setPassword(KEYTAR_SERVICE, `project-${project.id}-${secret.credentialType}`, secret.value);
+          }
+        }
+
+        // 3. If GitHub PAT provided, auto-create GitHub MCP server
+        const githubSecret = payload.secrets?.find(s => s.credentialType === 'github-pat');
+        if (githubSecret?.value) {
+          const githubMcpConfig = {
+            id: `mcp-github-${project.id}`,
+            name: 'GitHub',
+            description: 'GitHub MCP server for repo access, PRs, issues, and Actions',
+            command: 'npx',
+            args: ['-y', '@modelcontextprotocol/server-github'],
+            env: { GITHUB_PERSONAL_ACCESS_TOKEN: githubSecret.value },
+            transport: 'stdio' as const,
+            authMethod: null,
+            scope: 'project',
+            enabled: true,
+            projectId: project.id,
+            health: 'unknown' as const,
+            lastHealthCheckAt: null,
+            discoveredTools: [],
+            createdAt: now,
+            updatedAt: now,
+          };
+          localDb.upsertMcpServer(githubMcpConfig);
+        }
+
+        // 4. If SSH target provided, create SshTarget record
+        if (payload.sshTarget) {
+          const sshTarget = {
+            id: `ssh-${project.id}-${Date.now()}`,
+            userId,
+            name: payload.sshTarget.name || payload.sshTarget.hostname,
+            hostname: payload.sshTarget.hostname,
+            username: payload.sshTarget.user,
+            port: payload.sshTarget.port ?? 22,
+            identityFile: payload.sshTarget.identityFile,
+            projectId: project.id,
+            createdAt: now,
+          };
+          localDb.insertSshTarget(sshTarget);
+        }
+
+        // 5. If custom MCP servers provided, create McpServerConfig records
+        for (const mcp of payload.mcpServers ?? []) {
+          const mcpConfig = {
+            id: `mcp-custom-${project.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            name: mcp.name,
+            description: mcp.description || '',
+            command: mcp.command,
+            args: mcp.args ?? [],
+            env: mcp.env ?? {},
+            transport: mcp.transport,
+            authMethod: null,
+            scope: 'project',
+            enabled: true,
+            projectId: project.id,
+            health: 'unknown' as const,
+            lastHealthCheckAt: null,
+            discoveredTools: [],
+            createdAt: now,
+            updatedAt: now,
+          };
+          localDb.upsertMcpServer(mcpConfig);
+        }
       }
 
       return project;
@@ -77,6 +164,44 @@ export function registerProjectsHandlers(): void {
     const repoPath = result.filePaths[0];
     await keytar.setPassword(KEYTAR_SERVICE, KEYTAR_VIBEFLOW_REPO_PATH, repoPath);
     return repoPath;
+  });
+
+  // ── New Project Wizard handlers ──────────────────────────────────────
+
+  ipcMain.handle('projects:listAll', async (): Promise<unknown[]> => {
+    if (!localDb) return [];
+    // listProjects requires a userId; pass empty string to get all rows — the DB query
+    // filters by user_id = '', which returns only unauthenticated rows. Instead, get
+    // the current user's projects plus any with no user by querying directly if possible.
+    // The safest cross-version approach: fetch for current user + '' fallback.
+    const userId = await getCurrentUserId();
+    const userProjects = localDb.listProjects(userId);
+    const anonProjects = userId ? localDb.listProjects('') : [];
+    // Deduplicate by id
+    const seen = new Set<string>();
+    const all: unknown[] = [];
+    for (const p of [...userProjects, ...anonProjects]) {
+      if (!seen.has((p as { id: string }).id)) {
+        seen.add((p as { id: string }).id);
+        all.push(p);
+      }
+    }
+    return all;
+  });
+
+  ipcMain.handle('projects:getConfig', async (_e: IpcMainInvokeEvent, projectId: string): Promise<unknown> => {
+    if (!localDb) return null;
+    return localDb.getProjectConfig(projectId);
+  });
+
+  ipcMain.handle('projects:saveConfig', async (_e: IpcMainInvokeEvent, config: ProjectConfig): Promise<void> => {
+    if (!localDb) throw new Error('DB not initialized');
+    localDb.upsertProjectConfig({ ...config, updatedAt: new Date().toISOString() });
+  });
+
+  ipcMain.handle('projects:copyCredential', async (_e: IpcMainInvokeEvent, sourceProjectId: string, credentialType: string): Promise<string | null> => {
+    const value = await keytar.getPassword(KEYTAR_SERVICE, `project-${sourceProjectId}-${credentialType}`);
+    return value ?? null;
   });
 
   ipcMain.handle('projects:createSelfMaintenance', async (): Promise<unknown> => {
