@@ -307,6 +307,12 @@ const api: VibeFlowAPI = {
     getChangedSinceLastDeploy: (projectId: string) => ipcRenderer.invoke('secrets:getChangedSinceLastDeploy', projectId),
     verify: (id: string) => ipcRenderer.invoke('secrets:verify', id),
     getInventorySummary: (projectId: string) => ipcRenderer.invoke('secrets:getInventorySummary', projectId),
+    // Cloud sync (Track A)
+    setPassphrase: (passphrase: string) => ipcRenderer.invoke('secrets:setPassphrase', passphrase),
+    hasPassphrase: () => ipcRenderer.invoke('secrets:hasPassphrase'),
+    clearPassphrase: () => ipcRenderer.invoke('secrets:clearPassphrase'),
+    syncUp: () => ipcRenderer.invoke('secrets:syncUp'),
+    syncDown: () => ipcRenderer.invoke('secrets:syncDown'),
   },
   migration: {
     createPlan: (plan: Omit<MigrationPlan, 'id' | 'createdAt' | 'updatedAt'>) => ipcRenderer.invoke('migration:createPlan', plan),

@@ -8,6 +8,7 @@ import { app, BrowserWindow } from 'electron';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { mainWindow, localDb, supabase, syncEngine } from './state';
 import { SyncEngine } from '../../lib/sync/sync-engine';
+import { SecretsSync } from '../../lib/secrets/secrets-sync';
 
 export function getSupabaseClient(): SupabaseClient | null {
   if (supabase) return supabase;
@@ -99,6 +100,9 @@ export async function initSyncEngine(userId: string): Promise<void> {
       state.mainWindow.webContents.send('sync:statusChanged', 'degraded');
     }
   }
+
+  // Initialize SecretsSync (passphrase not set yet — user sets it via IPC)
+  state.secretsSync = new SecretsSync(client, userId);
 }
 
 export function createWindow(): void {

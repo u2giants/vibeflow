@@ -11,6 +11,9 @@ import { type SupabaseClient, type RealtimeChannel } from '@supabase/supabase-js
 import type {
   SyncStatus, ConversationThread, Message, Project, RunState, Mode, ApprovalPolicy,
   Mission, EvidenceItem, Capability, Incident, DeployCandidate, Environment,
+  McpServerConfig, SshTarget, MemoryItem, Skill, DecisionRecord,
+  Plan, AcceptanceCriteria, MissionLifecycleState, DeployWorkflow,
+  WatchSession, AnomalyEvent, SelfHealingAction, AuditRecord,
 } from '../shared-types';
 import type { LocalDb } from '../storage/local-db';
 
@@ -105,12 +108,29 @@ export class SyncEngine {
     await this.syncConversations();
     await this.syncMessages();
 
-    // Sync new domain objects
+    // Core domain objects
     await this.syncMissions();
     await this.syncEvidence();
     await this.syncCapabilities();
     await this.syncIncidents();
     await this.syncEnvironments();
+
+    // Track B: full sync tables
+    await this.syncProjectConfigs();
+    await this.syncMcpServers();
+    await this.syncSshTargets();
+    await this.syncMemoryItems();
+    await this.syncSkills();
+    await this.syncDecisionRecords();
+    await this.syncSettings();
+    await this.syncPlans();
+    await this.syncAcceptanceCriteria();
+    await this.syncMissionLifecycleStates();
+    await this.syncDeployWorkflows();
+    await this.syncWatchSessions();
+    await this.syncAnomalyEvents();
+    await this.syncSelfHealingActions();
+    // audit records are push-only — no sync-down (complex riskAssessment shape)
 
     this.setStatus('synced');
   }
@@ -799,6 +819,612 @@ export class SyncEngine {
         console.error('[sync] Listener error:', err);
       }
     }
+  }
+
+  // ── Track B: Full sync methods ────────────────────────────────────
+
+  private async syncProjectConfigs(): Promise<void> {
+    const { data, error } = await this.supabase
+      .from('project_configs')
+      .select('*')
+      .eq('user_id', this.userId);
+    if (error) { console.error('[sync] project_configs:', error.message); return; }
+    for (const row of data ?? []) {
+      this.localDb.upsertProjectConfig({
+        projectId:              row.project_id,
+        repoUrl:                row.repo_url ?? null,
+        localFolderPath:        row.local_folder_path ?? null,
+        coolifyBaseUrl:         row.coolify_base_url ?? null,
+        coolifyAppId:           row.coolify_app_id ?? null,
+        supabaseProjectUrl:     row.supabase_project_url ?? null,
+        supabaseProjectRef:     row.supabase_project_ref ?? null,
+        supabaseAnonKey:        row.supabase_anon_key ?? null,
+        railwayProjectId:       row.railway_project_id ?? null,
+        railwayServiceId:       row.railway_service_id ?? null,
+        cloudflareAccountId:    row.cloudflare_account_id ?? null,
+        cloudflareZoneId:       row.cloudflare_zone_id ?? null,
+        googleOAuthClientId:    row.google_oauth_client_id ?? null,
+        azureOAuthClientId:     row.azure_oauth_client_id ?? null,
+        azureOAuthTenantId:     row.azure_oauth_tenant_id ?? null,
+        enabledIntegrations:    JSON.parse(row.enabled_integrations_json ?? '[]'),
+        updatedAt:              row.updated_at,
+      });
+    }
+  }
+
+  async pushProjectConfig(config: { projectId: string; repoUrl?: string | null; localFolderPath?: string | null; coolifyBaseUrl?: string | null; coolifyAppId?: string | null; supabaseProjectUrl?: string | null; supabaseProjectRef?: string | null; supabaseAnonKey?: string | null; railwayProjectId?: string | null; railwayServiceId?: string | null; cloudflareAccountId?: string | null; cloudflareZoneId?: string | null; googleOAuthClientId?: string | null; azureOAuthClientId?: string | null; azureOAuthTenantId?: string | null; enabledIntegrations?: string[]; updatedAt: string }): Promise<void> {
+    const { error } = await this.supabase.from('project_configs').upsert({
+      project_id:               config.projectId,
+      user_id:                  this.userId,
+      repo_url:                 config.repoUrl,
+      local_folder_path:        config.localFolderPath,
+      coolify_base_url:         config.coolifyBaseUrl,
+      coolify_app_id:           config.coolifyAppId,
+      supabase_project_url:     config.supabaseProjectUrl,
+      supabase_project_ref:     config.supabaseProjectRef,
+      supabase_anon_key:        config.supabaseAnonKey,
+      railway_project_id:       config.railwayProjectId,
+      railway_service_id:       config.railwayServiceId,
+      cloudflare_account_id:    config.cloudflareAccountId,
+      cloudflare_zone_id:       config.cloudflareZoneId,
+      google_oauth_client_id:   config.googleOAuthClientId,
+      azure_oauth_client_id:    config.azureOAuthClientId,
+      azure_oauth_tenant_id:    config.azureOAuthTenantId,
+      enabled_integrations_json: JSON.stringify(config.enabledIntegrations ?? []),
+      updated_at:               config.updatedAt,
+    }, { onConflict: 'project_id,user_id' });
+    if (error) console.error('[sync] push project_config:', error.message);
+  }
+
+  private async syncMcpServers(): Promise<void> {
+    const { data, error } = await this.supabase
+      .from('mcp_servers')
+      .select('*')
+      .eq('user_id', this.userId);
+    if (error) { console.error('[sync] mcp_servers:', error.message); return; }
+    for (const row of data ?? []) {
+      this.localDb.upsertMcpServer({
+        id:             row.id,
+        name:           row.name,
+        description:    row.description ?? '',
+        command:        row.command,
+        args:           JSON.parse(row.args_json ?? '[]'),
+        env:            row.env_json ? JSON.parse(row.env_json) : undefined,
+        transport:      row.transport ?? 'stdio',
+        authMethod:     row.auth_method ?? null,
+        scope:          row.scope ?? 'project',
+        enabled:        row.enabled !== false,
+        projectId:      row.project_id ?? null,
+        health:         row.health ?? 'unknown',
+        lastHealthCheckAt: null,
+        discoveredTools: [],
+        createdAt:      row.created_at,
+        updatedAt:      row.updated_at,
+      });
+    }
+  }
+
+  async pushMcpServer(server: McpServerConfig): Promise<void> {
+    const { error } = await this.supabase.from('mcp_servers').upsert({
+      id:          server.id,
+      user_id:     this.userId,
+      project_id:  server.projectId,
+      name:        server.name,
+      description: server.description,
+      command:     server.command,
+      args_json:   JSON.stringify(server.args),
+      env_json:    server.env ? JSON.stringify(server.env) : null,
+      transport:   server.transport,
+      auth_method: server.authMethod,
+      scope:       server.scope,
+      enabled:     server.enabled,
+      health:      server.health,
+      created_at:  server.createdAt,
+      updated_at:  server.updatedAt,
+    });
+    if (error) console.error('[sync] push mcp_server:', error.message);
+  }
+
+  private async syncSshTargets(): Promise<void> {
+    const { data, error } = await this.supabase
+      .from('ssh_targets')
+      .select('*')
+      .eq('user_id', this.userId);
+    if (error) { console.error('[sync] ssh_targets:', error.message); return; }
+    for (const row of data ?? []) {
+      this.localDb.upsertSshTarget({
+        id:           row.id,
+        userId:       this.userId,
+        projectId:    row.project_id ?? null,
+        name:         row.name,
+        hostname:     row.hostname,
+        username:     row.username,
+        port:         row.port ?? 22,
+        identityFile: row.identity_file ?? null,
+        createdAt:    row.created_at,
+      });
+    }
+  }
+
+  async pushSshTarget(target: SshTarget): Promise<void> {
+    const { error } = await this.supabase.from('ssh_targets').upsert({
+      id:            target.id,
+      user_id:       this.userId,
+      project_id:    target.projectId,
+      name:          target.name,
+      hostname:      target.hostname,
+      username:      target.username,
+      port:          target.port,
+      identity_file: target.identityFile,
+      created_at:    target.createdAt,
+    });
+    if (error) console.error('[sync] push ssh_target:', error.message);
+  }
+
+  private async syncMemoryItems(): Promise<void> {
+    const { data, error } = await this.supabase
+      .from('memory_items')
+      .select('*')
+      .eq('user_id', this.userId);
+    if (error) { console.error('[sync] memory_items:', error.message); return; }
+    for (const row of data ?? []) {
+      const now = new Date().toISOString();
+      this.localDb.upsertMemoryItem({
+        id:                    row.id,
+        projectId:             row.project_id,
+        category:              row.category,
+        title:                 row.title,
+        scope:                 row.scope ?? '',
+        tags:                  JSON.parse(row.tags_json ?? '[]'),
+        description:           row.description ?? '',
+        freeFormNotes:         row.free_form_notes ?? null,
+        examples:              JSON.parse(row.examples_json ?? '[]'),
+        triggerConditions:     JSON.parse(row.trigger_conditions_json ?? '[]'),
+        freshnessNotes:        null,
+        sourceMaterial:        null,
+        owner:                 null,
+        reviewer:              null,
+        lastReviewedAt:        null,
+        revisionHistory:       [],
+        isActive:              row.is_active !== false,
+        createdAt:             row.created_at ?? now,
+        updatedAt:             row.updated_at ?? now,
+      });
+    }
+  }
+
+  async pushMemoryItem(item: MemoryItem): Promise<void> {
+    const { error } = await this.supabase.from('memory_items').upsert({
+      id:                      item.id,
+      user_id:                 this.userId,
+      project_id:              item.projectId,
+      category:                item.category,
+      title:                   item.title,
+      scope:                   item.scope,
+      tags_json:               JSON.stringify(item.tags),
+      description:             item.description,
+      free_form_notes:         item.freeFormNotes,
+      examples_json:           JSON.stringify(item.examples),
+      trigger_conditions_json: JSON.stringify(item.triggerConditions),
+      is_active:               item.isActive,
+      created_at:              item.createdAt,
+      updated_at:              item.updatedAt,
+    });
+    if (error) console.error('[sync] push memory_item:', error.message);
+  }
+
+  private async syncSkills(): Promise<void> {
+    const { data, error } = await this.supabase
+      .from('skills')
+      .select('*')
+      .eq('user_id', this.userId);
+    if (error) { console.error('[sync] skills:', error.message); return; }
+    for (const row of data ?? []) {
+      const now = new Date().toISOString();
+      this.localDb.upsertSkill({
+        id:                  row.id,
+        projectId:           row.project_id,
+        title:               row.title,
+        description:         row.description ?? '',
+        category:            row.category ?? 'skill-runbook',
+        steps:               JSON.parse(row.steps_json ?? '[]'),
+        triggerConditions:   JSON.parse(row.trigger_conditions_json ?? '[]'),
+        version:             row.version ?? 1,
+        versionHistory:      [],
+        owner:               null,
+        reviewer:            null,
+        lastReviewedAt:      null,
+        isActive:            row.is_active !== false,
+        createdAt:           row.created_at ?? now,
+        updatedAt:           row.updated_at ?? now,
+      });
+    }
+  }
+
+  async pushSkill(skill: Skill): Promise<void> {
+    const { error } = await this.supabase.from('skills').upsert({
+      id:                      skill.id,
+      user_id:                 this.userId,
+      project_id:              skill.projectId,
+      title:                   skill.title,
+      description:             skill.description,
+      category:                skill.category,
+      steps_json:              JSON.stringify(skill.steps),
+      trigger_conditions_json: JSON.stringify(skill.triggerConditions),
+      version:                 skill.version,
+      is_active:               skill.isActive,
+      created_at:              skill.createdAt,
+      updated_at:              skill.updatedAt,
+    });
+    if (error) console.error('[sync] push skill:', error.message);
+  }
+
+  private async syncDecisionRecords(): Promise<void> {
+    const { data, error } = await this.supabase
+      .from('decision_records')
+      .select('*')
+      .eq('user_id', this.userId);
+    if (error) { console.error('[sync] decision_records:', error.message); return; }
+    for (const row of data ?? []) {
+      const now = new Date().toISOString();
+      this.localDb.upsertDecisionRecord({
+        id:               row.id,
+        projectId:        row.project_id,
+        decisionNumber:   row.decision_number,
+        title:            row.title,
+        date:             row.date,
+        decidedBy:        row.decided_by ?? '',
+        decision:         row.decision ?? '',
+        alternativesConsidered: JSON.parse(row.alternatives_json ?? '[]'),
+        rationale:        row.rationale ?? '',
+        consequences:     JSON.parse(row.consequences_json ?? '[]'),
+        relatedFiles:     JSON.parse(row.related_files_json ?? '[]'),
+        tags:             JSON.parse(row.tags_json ?? '[]'),
+        isActive:         row.is_active !== false,
+        supersededBy:     null,
+        createdAt:        row.created_at ?? now,
+        updatedAt:        row.updated_at ?? now,
+      });
+    }
+  }
+
+  async pushDecisionRecord(record: DecisionRecord): Promise<void> {
+    const { error } = await this.supabase.from('decision_records').upsert({
+      id:                 record.id,
+      user_id:            this.userId,
+      project_id:         record.projectId,
+      decision_number:    record.decisionNumber,
+      title:              record.title,
+      date:               record.date,
+      decided_by:         record.decidedBy,
+      decision:           record.decision,
+      rationale:          record.rationale,
+      alternatives_json:  JSON.stringify(record.alternativesConsidered),
+      consequences_json:  JSON.stringify(record.consequences),
+      related_files_json: JSON.stringify(record.relatedFiles),
+      tags_json:          JSON.stringify(record.tags),
+      is_active:          record.isActive,
+      created_at:         record.createdAt,
+      updated_at:         record.updatedAt,
+    });
+    if (error) console.error('[sync] push decision_record:', error.message);
+  }
+
+  private async syncSettings(): Promise<void> {
+    const { data, error } = await this.supabase
+      .from('settings')
+      .select('*')
+      .eq('user_id', this.userId);
+    if (error) { console.error('[sync] settings:', error.message); return; }
+    for (const row of data ?? []) {
+      this.localDb.setSetting(row.key as string, row.value as string);
+    }
+  }
+
+  async pushSetting(key: string, value: string): Promise<void> {
+    const { error } = await this.supabase.from('settings').upsert({
+      key,
+      user_id:    this.userId,
+      value,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'key,user_id' });
+    if (error) console.error('[sync] push setting:', error.message);
+  }
+
+  private async syncPlans(): Promise<void> {
+    const { data, error } = await this.supabase
+      .from('plans')
+      .select('*')
+      .eq('user_id', this.userId);
+    if (error) { console.error('[sync] plans:', error.message); return; }
+    for (const row of data ?? []) {
+      const now = new Date().toISOString();
+      this.localDb.upsertPlan({
+        missionId: row.mission_id,
+        steps:     JSON.parse(row.steps_json ?? '[]'),
+        createdAt: row.created_at ?? now,
+        updatedAt: row.updated_at ?? now,
+      });
+    }
+  }
+
+  async pushPlan(plan: Plan): Promise<void> {
+    const { error } = await this.supabase.from('plans').upsert({
+      mission_id: plan.missionId,
+      user_id:    this.userId,
+      steps_json: JSON.stringify(plan.steps),
+      created_at: plan.createdAt,
+      updated_at: plan.updatedAt,
+    }, { onConflict: 'mission_id,user_id' });
+    if (error) console.error('[sync] push plan:', error.message);
+  }
+
+  private async syncAcceptanceCriteria(): Promise<void> {
+    const { data, error } = await this.supabase
+      .from('acceptance_criteria')
+      .select('*')
+      .eq('user_id', this.userId);
+    if (error) { console.error('[sync] acceptance_criteria:', error.message); return; }
+    for (const row of data ?? []) {
+      const now = new Date().toISOString();
+      this.localDb.upsertAcceptanceCriteria({
+        id:                           row.id,
+        missionId:                    row.mission_id,
+        intendedBehavior:             JSON.parse(row.intended_behavior_json ?? '[]'),
+        nonGoals:                     JSON.parse(row.non_goals_json ?? '[]'),
+        pathsThatMustStillWork:       JSON.parse(row.paths_that_must_still_work_json ?? '[]'),
+        comparisonTargets:            JSON.parse(row.comparison_targets_json ?? '[]'),
+        regressionThresholds:         JSON.parse(row.regression_thresholds_json ?? '[]'),
+        rollbackConditions:           JSON.parse(row.rollback_conditions_json ?? '[]'),
+        createdAt:                    row.created_at ?? now,
+        updatedAt:                    row.updated_at ?? now,
+      });
+    }
+  }
+
+  async pushAcceptanceCriteria(ac: AcceptanceCriteria): Promise<void> {
+    const { error } = await this.supabase.from('acceptance_criteria').upsert({
+      id:                              ac.id,
+      user_id:                         this.userId,
+      mission_id:                      ac.missionId,
+      intended_behavior_json:          JSON.stringify(ac.intendedBehavior),
+      non_goals_json:                  JSON.stringify(ac.nonGoals),
+      paths_that_must_still_work_json: JSON.stringify(ac.pathsThatMustStillWork),
+      comparison_targets_json:         JSON.stringify(ac.comparisonTargets),
+      regression_thresholds_json:      JSON.stringify(ac.regressionThresholds),
+      rollback_conditions_json:        JSON.stringify(ac.rollbackConditions),
+      created_at:                      ac.createdAt,
+      updated_at:                      ac.updatedAt,
+    });
+    if (error) console.error('[sync] push acceptance_criteria:', error.message);
+  }
+
+  private async syncMissionLifecycleStates(): Promise<void> {
+    const { data, error } = await this.supabase
+      .from('mission_lifecycle_states')
+      .select('*')
+      .eq('user_id', this.userId);
+    if (error) { console.error('[sync] mission_lifecycle_states:', error.message); return; }
+    for (const row of data ?? []) {
+      this.localDb.upsertMissionLifecycleState({
+        missionId:          row.mission_id,
+        currentStep:        row.current_step ?? 1,
+        lifecycleStatus:    row.lifecycle_status ?? 'idle',
+        riskAssessment:     row.risk_assessment_json ? JSON.parse(row.risk_assessment_json) : null,
+        workspaceRunId:     row.workspace_run_id ?? null,
+        verificationRunId:  row.verification_run_id ?? null,
+        deployWorkflowId:   row.deploy_workflow_id ?? null,
+        watchSessionId:     row.watch_session_id ?? null,
+        updatedAt:          row.updated_at,
+      });
+    }
+  }
+
+  async pushMissionLifecycleState(state: MissionLifecycleState): Promise<void> {
+    const { error } = await this.supabase.from('mission_lifecycle_states').upsert({
+      mission_id:            state.missionId,
+      user_id:               this.userId,
+      current_step:          state.currentStep,
+      lifecycle_status:      state.lifecycleStatus,
+      risk_assessment_json:  state.riskAssessment ? JSON.stringify(state.riskAssessment) : null,
+      workspace_run_id:      state.workspaceRunId,
+      verification_run_id:   state.verificationRunId,
+      deploy_workflow_id:    state.deployWorkflowId,
+      watch_session_id:      state.watchSessionId,
+      updated_at:            state.updatedAt,
+    }, { onConflict: 'mission_id,user_id' });
+    if (error) console.error('[sync] push mission_lifecycle_state:', error.message);
+  }
+
+  private async syncDeployWorkflows(): Promise<void> {
+    const { data, error } = await this.supabase
+      .from('deploy_workflows')
+      .select('*')
+      .eq('user_id', this.userId);
+    if (error) { console.error('[sync] deploy_workflows:', error.message); return; }
+    for (const row of data ?? []) {
+      this.localDb.upsertDeployWorkflow({
+        id:               row.id,
+        candidateId:      row.candidate_id,
+        environmentId:    row.environment_id,
+        steps:            JSON.parse(row.steps_json ?? '[]'),
+        status:           row.status ?? 'pending',
+        verdict:          row.verdict ?? null,
+        verdictReason:    row.verdict_reason ?? null,
+        evidenceIds:      JSON.parse(row.evidence_ids_json ?? '[]'),
+        rollbackOffered:  row.rollback_offered === true,
+        startedAt:        row.started_at,
+        completedAt:      row.completed_at ?? null,
+      });
+    }
+  }
+
+  async pushDeployWorkflowFull(workflow: DeployWorkflow): Promise<void> {
+    const { error } = await this.supabase.from('deploy_workflows').upsert({
+      id:               workflow.id,
+      user_id:          this.userId,
+      candidate_id:     workflow.candidateId,
+      environment_id:   workflow.environmentId,
+      steps_json:       JSON.stringify(workflow.steps),
+      status:           workflow.status,
+      verdict:          workflow.verdict,
+      verdict_reason:   workflow.verdictReason,
+      evidence_ids_json: JSON.stringify(workflow.evidenceIds),
+      rollback_offered: workflow.rollbackOffered,
+      started_at:       workflow.startedAt,
+      completed_at:     workflow.completedAt,
+    });
+    if (error) console.error('[sync] push deploy_workflow:', error.message);
+  }
+
+  private async syncWatchSessions(): Promise<void> {
+    const { data, error } = await this.supabase
+      .from('watch_sessions')
+      .select('*')
+      .eq('user_id', this.userId);
+    if (error) { console.error('[sync] watch_sessions:', error.message); return; }
+    for (const row of data ?? []) {
+      this.localDb.upsertWatchSession({
+        id:                 row.id,
+        projectId:          row.project_id,
+        environmentId:      row.environment_id,
+        deployWorkflowId:   row.deploy_workflow_id,
+        status:             row.status ?? 'active',
+        startedAt:          row.started_at,
+        completedAt:        row.completed_at ?? null,
+        elevatedEvidence:   true,
+        anomalyThreshold:   'elevated',
+        regressionBaseline: null,
+        probes:             [],
+      });
+    }
+  }
+
+  async pushWatchSession(session: WatchSession): Promise<void> {
+    const { error } = await this.supabase.from('watch_sessions').upsert({
+      id:                 session.id,
+      user_id:            this.userId,
+      project_id:         session.projectId,
+      environment_id:     session.environmentId,
+      deploy_workflow_id: session.deployWorkflowId,
+      status:             session.status,
+      started_at:         session.startedAt,
+      completed_at:       session.completedAt,
+    });
+    if (error) console.error('[sync] push watch_session:', error.message);
+  }
+
+  private async syncAnomalyEvents(): Promise<void> {
+    const { data, error } = await this.supabase
+      .from('anomaly_events')
+      .select('*')
+      .eq('user_id', this.userId);
+    if (error) { console.error('[sync] anomaly_events:', error.message); return; }
+    for (const row of data ?? []) {
+      this.localDb.insertAnomalyEvent({
+        id:               row.id,
+        projectId:        row.project_id,
+        environmentId:    row.environment_id,
+        watchSessionId:   row.watch_session_id ?? null,
+        anomalyType:      row.anomaly_type,
+        severity:         row.severity,
+        description:      row.description,
+        correlatedDeployWorkflowId: null,
+        correlatedChangeIds: [],
+        evidenceIds:      [],
+        detectedAt:       row.detected_at,
+        acknowledged:     false,
+        acknowledgedAt:   null,
+        acknowledgedBy:   null,
+      });
+    }
+  }
+
+  async pushAnomalyEvent(event: AnomalyEvent): Promise<void> {
+    const { error } = await this.supabase.from('anomaly_events').upsert({
+      id:              event.id,
+      user_id:         this.userId,
+      project_id:      event.projectId,
+      environment_id:  event.environmentId,
+      watch_session_id: event.watchSessionId,
+      anomaly_type:    event.anomalyType,
+      severity:        event.severity,
+      description:     event.description,
+      detected_at:     event.detectedAt,
+    });
+    if (error) console.error('[sync] push anomaly_event:', error.message);
+  }
+
+  private async syncSelfHealingActions(): Promise<void> {
+    const { data, error } = await this.supabase
+      .from('self_healing_actions')
+      .select('*')
+      .eq('user_id', this.userId);
+    if (error) { console.error('[sync] self_healing_actions:', error.message); return; }
+    for (const row of data ?? []) {
+      this.localDb.upsertSelfHealingAction({
+        id:              row.id,
+        projectId:       row.project_id,
+        environmentId:   row.environment_id,
+        anomalyEventId:  row.anomaly_event_id ?? null,
+        incidentId:      null,
+        actionType:      row.action_type,
+        automatic:       false,
+        status:          row.status ?? 'pending',
+        approvalRequired: false,
+        approvalResult:  null,
+        result:          row.result ?? null,
+        executedAt:      row.executed_at ?? null,
+        auditRecordId:   null,
+      });
+    }
+  }
+
+  async pushSelfHealingAction(action: SelfHealingAction): Promise<void> {
+    const { error } = await this.supabase.from('self_healing_actions').upsert({
+      id:               action.id,
+      user_id:          this.userId,
+      project_id:       action.projectId,
+      environment_id:   action.environmentId,
+      anomaly_event_id: action.anomalyEventId,
+      action_type:      action.actionType,
+      status:           action.status,
+      result:           action.result,
+      executed_at:      action.executedAt,
+    });
+    if (error) console.error('[sync] push self_healing_action:', error.message);
+  }
+
+  async pushDriftReport(report: { id: string; projectId: string; environmentId: string; driftType: string; severity: string; description: string; detectedAt: string; resolved: boolean }): Promise<void> {
+    const { error } = await this.supabase.from('drift_reports').upsert({
+      id:             report.id,
+      user_id:        this.userId,
+      project_id:     report.projectId,
+      environment_id: report.environmentId,
+      drift_type:     report.driftType,
+      severity:       report.severity,
+      description:    report.description,
+      detected_at:    report.detectedAt,
+      resolved:       report.resolved,
+    });
+    if (error) console.error('[sync] push drift_report:', error.message);
+  }
+
+  async pushAuditRecord(record: AuditRecord): Promise<void> {
+    const { error } = await this.supabase.from('audit_records').upsert({
+      id:              record.id,
+      user_id:         this.userId,
+      mission_id:      record.missionId,
+      action_type:     record.actionType,
+      parameters_json: JSON.stringify(record.parameters),
+      risk_class:      record.riskAssessment.riskClass,
+      risk_score:      record.riskAssessment.overallScore,
+      result:          record.result,
+      initiated_by:    record.initiatedBy,
+      initiated_at:    record.initiatedAt,
+      completed_at:    record.completedAt,
+    });
+    if (error) console.error('[sync] push audit_record:', error.message);
   }
 
   // ── Status ────────────────────────────────────────────────────────

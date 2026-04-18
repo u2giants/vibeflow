@@ -1059,6 +1059,16 @@ export class LocalDb {
 
   // ── Settings ────────────────────────────────────────────────────────
 
+  getSetting(key: string): string | null {
+    const row = this.db!.exec('SELECT value FROM settings WHERE key = ?', [key])[0];
+    return row?.values?.[0]?.[0] as string | null;
+  }
+
+  setSetting(key: string, value: string): void {
+    this.db!.run('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [key, value]);
+    this.save();
+  }
+
   getDeviceId(): string | null {
     const row = this.db!.exec('SELECT value FROM settings WHERE key = ?', ['deviceId'])[0];
     return row?.values?.[0]?.[0] as string | null;
@@ -3608,6 +3618,14 @@ export class LocalDb {
   insertSshTarget(t: SshTarget): void {
     this.db!.run(
       'INSERT INTO ssh_targets (id, user_id, project_id, name, hostname, username, port, identity_file, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [t.id, t.userId, t.projectId, t.name, t.hostname, t.username, t.port, t.identityFile, t.createdAt]
+    );
+    this.save();
+  }
+
+  upsertSshTarget(t: SshTarget): void {
+    this.db!.run(
+      'INSERT OR REPLACE INTO ssh_targets (id, user_id, project_id, name, hostname, username, port, identity_file, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [t.id, t.userId, t.projectId, t.name, t.hostname, t.username, t.port, t.identityFile, t.createdAt]
     );
     this.save();

@@ -746,6 +746,12 @@ export interface SecretsChannel {
   getChangedSinceLastDeploy: (projectId: string) => Promise<SecretRecord[]>;
   verify: (id: string) => Promise<{ success: boolean; error?: string }>;
   getInventorySummary: (projectId: string) => Promise<{ total: number; missing: number; verified: number }>;
+  // Cloud sync (Track A)
+  setPassphrase: (passphrase: string) => Promise<{ success: boolean; error?: string }>;
+  hasPassphrase: () => Promise<boolean>;
+  clearPassphrase: () => Promise<{ success: boolean }>;
+  syncUp: () => Promise<{ success: boolean; uploaded: number; error?: string }>;
+  syncDown: () => Promise<{ success: boolean; restored: number; error?: string }>;
 }
 
 // ── Component 18: Migration IPC ─────────────────────────────────────────────

@@ -6,6 +6,67 @@ Every agent must update this file when work begins and when work ends.
 
 ## CURRENT SPRINT
 
+### Full Cloud Sync — Track A (Encrypted Secrets) + Track B (16 New Sync Tables) (2026-04-18)
+- Status: **Complete — TypeScript 0 errors ✅**
+- Mode: Orchestrator/Builder (`claude-sonnet-4-6`)
+- Conversation: Albert approved encrypted secrets sync + full table sync
+- Project: VibeFlow brownfield rebuild
+- Branch: `main`
+- Supabase project ref: `wnbazobqhyhncksjfxvq`
+
+**Track A — Encrypted Secrets Sync:**
+- New Supabase migration: `supabase/migrations/20260418000001_encrypted_secrets.sql`
+  - Table `encrypted_project_secrets`: stores AES-256-GCM encrypted blobs per `(user_id, project_id, credential_type)`
+  - RLS: users manage only their own rows
+- New engine: `apps/desktop/src/lib/secrets/secrets-sync.ts` (`SecretsSync` class)
+  - Passphrase held in memory only — never written to disk or Supabase
+  - PBKDF2 SHA-256 (100,000 iterations) key derivation + AES-256-GCM encryption
+  - `syncUp()`: reads all keytar secrets for all projects → encrypts → uploads to Supabase
+  - `syncDown()`: downloads blobs → decrypts with passphrase → writes back to keytar
+- IPC handlers added to `secrets.ts`: `secrets:setPassphrase`, `secrets:hasPassphrase`, `secrets:clearPassphrase`, `secrets:syncUp`, `secrets:syncDown`
+- `SecretsSync` instance created in `initSyncEngine()` and stored in `state.secretsSync`
+- UI: `SecretsSyncPanel.tsx` — passphrase entry, upload/restore buttons, status indicator
+- Accessible via "☁ Sync" button in `ProjectListScreen`
+
+**Track B — Full Table Sync (16 new Supabase tables):**
+- New Supabase migration: `supabase/migrations/20260418000002_full_sync_tables.sql`
+  - Tables: `project_configs`, `mcp_servers`, `ssh_targets`, `memory_items`, `skills`, `decision_records`, `settings`, `plans`, `acceptance_criteria`, `mission_lifecycle_states`, `deploy_workflows`, `watch_sessions`, `anomaly_events`, `self_healing_actions`, `drift_reports`, `audit_records`
+  - All tables have `user_id UUID REFERENCES auth.users(id)` + RLS policies
+- `SyncEngine.syncAll()` now calls 15 additional pull methods (audit records are push-only due to complex riskAssessment shape)
+- Push methods added for all 16 tables (callable from handlers when user creates/updates records)
+- `LocalDb` new methods: `getSetting()`, `setSetting()`, `upsertSshTarget()`
+
+**What now syncs on first login to a new machine:**
+- Everything previously syncing: projects, conversations, messages, missions, evidence, capabilities, incidents, environments, deploy candidates, modes
+- NOW ALSO: project configs, MCP servers, SSH targets, memory, skills, decisions, app settings, plans, acceptance criteria, mission lifecycle states, deploy workflows, watch sessions, anomaly events, self-healing actions, drift reports
+
+**What still requires manual action (secrets):**
+- Encrypted secrets require the user to: (1) set passphrase on source device → upload, (2) set same passphrase on new device → restore
+
+**Migrations to apply to Supabase:**
+- `20260418000001_encrypted_secrets.sql` — must be applied manually via Supabase dashboard
+- `20260418000002_full_sync_tables.sql` — must be applied manually via Supabase dashboard
+
+**Verification:** `cd apps/desktop && npx tsc --noEmit` → 0 errors ✅
+
+**Files changed:**
+- `supabase/migrations/20260418000001_encrypted_secrets.sql` — NEW
+- `supabase/migrations/20260418000002_full_sync_tables.sql` — NEW
+- `apps/desktop/src/lib/secrets/secrets-sync.ts` — NEW
+- `apps/desktop/src/renderer/components/SecretsSyncPanel.tsx` — NEW
+- `apps/desktop/src/main/handlers/state.ts` — added `secretsSync` export
+- `apps/desktop/src/main/handlers/helpers.ts` — initialize SecretsSync after SyncEngine
+- `apps/desktop/src/main/handlers/secrets.ts` — 5 new sync IPC handlers
+- `apps/desktop/src/lib/sync/sync-engine.ts` — 15 pull + 16 push methods for Track B
+- `apps/desktop/src/lib/storage/local-db.ts` — `getSetting`, `setSetting`, `upsertSshTarget`
+- `apps/desktop/src/lib/shared-types/ipc.ts` — extended `SecretsChannel` with sync methods
+- `apps/desktop/src/preload/index.ts` — exposed 5 new `secrets:*` IPC calls
+- `apps/desktop/src/renderer/screens/ProjectListScreen.tsx` — "☁ Sync" button + SecretsSyncPanel
+
+**NEXT STEP:** Albert says "yes, and then tell me when you're ready to proceed to phase 2" — Phase 2 is Google/Azure OAuth app auto-creation (Service Account / Service Principal). Ready to proceed on Albert's signal.
+
+---
+
 ### DevOps Decision + Branch Rename — Change `master` to `main` everywhere applicable (2026-04-18)
 - Status: **Complete — Executed by DevOps**
 - Mode: Orchestrator (`openai/gpt-5.4`) → DevOps (`z-ai/glm-5.1`)

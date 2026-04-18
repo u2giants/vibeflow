@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { Project } from '../../lib/shared-types';
 import { C, R } from '../theme';
 import NewProjectWizard from '../components/NewProjectWizard';
+import SecretsSyncPanel from '../components/SecretsSyncPanel';
 
 interface ProjectListScreenProps {
   onSignOut: () => void;
@@ -59,6 +60,7 @@ function ProjectCard({ project, onClick }: { project: Project; onClick: () => vo
 export default function ProjectListScreen({ onSignOut, onOpenModes, onOpenProject }: ProjectListScreenProps) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [showNew, setShowNew] = useState(false);
+  const [showSyncPanel, setShowSyncPanel] = useState(false);
 
   const load = useCallback(async () => {
     try { setProjects((await window.vibeflow.projects.list()) as Project[]); }
@@ -105,6 +107,11 @@ export default function ProjectListScreen({ onSignOut, onOpenModes, onOpenProjec
           }}>
             <span>+</span> New Project
           </button>
+          <button onClick={() => setShowSyncPanel(v => !v)} style={{
+            padding: '7px 14px', backgroundColor: showSyncPanel ? C.bg3 : 'transparent', color: C.text2,
+            border: `1px solid ${C.border2}`, borderRadius: R.lg,
+            cursor: 'pointer', fontSize: 13, fontFamily: 'inherit',
+          }}>☁ Sync</button>
           <button onClick={onOpenModes} style={{
             padding: '7px 14px', backgroundColor: C.bg3, color: C.text2,
             border: `1px solid ${C.border2}`, borderRadius: R.lg,
@@ -117,6 +124,16 @@ export default function ProjectListScreen({ onSignOut, onOpenModes, onOpenProjec
           }}>Sign out</button>
         </div>
       </div>
+
+      {/* Cloud sync panel */}
+      {showSyncPanel && (
+        <div style={{
+          marginBottom: 20, border: `1px solid #333`, borderRadius: 8,
+          background: '#1a1a1a', overflow: 'hidden',
+        }}>
+          <SecretsSyncPanel />
+        </div>
+      )}
 
       {/* New project wizard */}
       {showNew && (
