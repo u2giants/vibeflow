@@ -1815,3 +1815,38 @@ Every agent must update this file when work begins and when work ends.
 - missionStatusMessages not persisted to DB — disappear on refresh
 - projectId passed as (args as any) — not in SendMessageArgs type
 - commitSha on DeployCandidate is empty string — no git context at orchestrator layer
+
+---
+
+## New Project Wizard — Complete (2026-04-18)
+
+### Summary
+Replaced the 2-field inline "Create Project" form with a full multi-step guided onboarding wizard.
+
+### Commits
+- `b00d7b4` — Phase 1: ProjectConfig type, WizardPayload, wizard types, project_config DB table
+- `b2bcc94` — Phase 2: projects:create extended, getConfig/saveConfig/copyCredential IPC handlers
+- `12de0a1` — Phase 3: NewProjectWizard.tsx (1,745-line multi-step modal wizard)
+- `07b764b` — Phase 4: ProjectListScreen wired to open wizard
+
+### What the wizard collects (per step)
+- **Basics**: project name, description, local folder path, GitHub repo URL
+- **Checklist**: which integrations apply (github, coolify, railway, supabase, ssh, mcp, cloudflare, brevo, clawdtalk, google oauth, azure oauth)
+- **Per-integration steps** (only shown if checked): full credential set for each service
+- **Summary**: review all configured values → Create Project
+
+### What happens on submit
+1. Project record created (LocalDb + Supabase sync)
+2. Non-secret config saved to project_config table
+3. Secrets written to OS keychain (keytar) keyed as `project-{id}-{credType}`
+4. GitHub MCP server auto-created as McpServerConfig scoped to project
+5. SSH target created as SshTarget record
+6. Custom MCP servers created as McpServerConfig records
+
+### "Copy from project" feature
+Per-integration step: select source project → calls `projects:copyCredential(sourceProjectId, credType)` → pre-fills fields from OS keychain
+
+### Known gaps (not blocking)
+- Duplicate project name detection not wired (wizard won't warn if name already exists)
+- OAuth automation (Google/Azure app creation via service account) is Phase 2
+- Railway and Brevo connection testing not implemented (just stores the key)
