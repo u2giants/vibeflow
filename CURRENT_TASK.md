@@ -7,8 +7,8 @@ Every agent must update this file when work begins and when work ends.
 ## CURRENT SPRINT
 
 ### Bug Fix — Sync status indicator stuck on Offline (2026-04-18)
-- Status: Complete — Ready for Review
-- Mode: Builder (`z-ai/glm-5.1`) → Reviewer-Pusher
+- Status: Complete — Reviewed & Pushed (`43fd9e6`)
+- Mode: Builder (`z-ai/glm-5.1`) → Reviewer-Pusher (`z-ai/glm-5.1`)
 - Conversation: Fix sync badge stuck on Offline even when sync engine is initialized
 - Project: VibeFlow brownfield rebuild
 - Branch: `master`
