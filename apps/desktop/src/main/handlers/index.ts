@@ -18,6 +18,7 @@ export { registerApprovalHandlers } from './approval';
 export { registerChangeEngineHandlers } from './change-engine';
 export { registerSecretsHandlers } from './secrets';
 export { registerOAuthHandlers } from './oauth';
+export { registerConnectionTestHandlers } from './connection-test';
 export { registerMigrationHandlers } from './migration';
 export { registerDeployHandlers } from './deploy';
 export { registerEnvironmentHandlers } from './environment';

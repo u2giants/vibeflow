@@ -318,6 +318,11 @@ const api: VibeFlowAPI = {
     createAzureApp: (args: { sp: { tenantId: string; clientId: string; clientSecret: string }; appDisplayName: string; redirectUris: string[] }) =>
       ipcRenderer.invoke('oauth:createAzureApp', args),
   },
+  connectionTest: {
+    railway: (apiKey: string) => ipcRenderer.invoke('connectionTest:railway', apiKey),
+    brevo: (apiKey: string) => ipcRenderer.invoke('connectionTest:brevo', apiKey),
+    clawdtalk: (apiKey: string) => ipcRenderer.invoke('connectionTest:clawdtalk', apiKey),
+  },
   migration: {
     createPlan: (plan: Omit<MigrationPlan, 'id' | 'createdAt' | 'updatedAt'>) => ipcRenderer.invoke('migration:createPlan', plan),
     getPlan: (id: string) => ipcRenderer.invoke('migration:getPlan', id),

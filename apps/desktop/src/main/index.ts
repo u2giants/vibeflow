@@ -63,6 +63,7 @@ import {
   registerChangeEngineHandlers,
   registerSecretsHandlers,
   registerOAuthHandlers,
+  registerConnectionTestHandlers,
   registerMigrationHandlers,
   registerDeployHandlers,
   registerEnvironmentHandlers,
@@ -163,6 +164,7 @@ app.whenReady().then(async () => {
   registerChangeEngineHandlers();
   registerSecretsHandlers();
   registerOAuthHandlers();
+  registerConnectionTestHandlers();
   registerMigrationHandlers();
   registerDeployHandlers();
   registerEnvironmentHandlers();

@@ -754,6 +754,19 @@ export interface SecretsChannel {
   syncDown: () => Promise<{ success: boolean; restored: number; error?: string }>;
 }
 
+// ── Connection Test IPC ───────────────────────────────────────────────────────
+
+export interface ConnectionTestResult {
+  success: boolean;
+  message: string;
+}
+
+export interface ConnectionTestChannel {
+  railway: (apiKey: string) => Promise<ConnectionTestResult>;
+  brevo: (apiKey: string) => Promise<ConnectionTestResult>;
+  clawdtalk: (apiKey: string) => Promise<ConnectionTestResult>;
+}
+
 // ── OAuth Automation IPC ─────────────────────────────────────────────────────
 
 export interface OAuthChannel {
@@ -1032,6 +1045,7 @@ export interface VibeFlowAPI {
   // Component 18: Secrets and Migration
   secrets: SecretsChannel;
   oauth: OAuthChannel;
+  connectionTest: ConnectionTestChannel;
   migration: MigrationChannel;
   // Component 17: Deploy, Environment, Drift
   deploy: DeployChannel;

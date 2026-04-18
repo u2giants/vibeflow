@@ -426,11 +426,19 @@ export default function NewProjectWizard({
   const [cloudflareApiToken, setCloudflareApiToken] = useState('');
   const [cloudflareZoneId, setCloudflareZoneId] = useState('');
 
+  // Railway connection test
+  const [railwayTesting, setRailwayTesting] = useState(false);
+  const [railwayTestResult, setRailwayTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
   // Brevo
   const [brevoApiKey, setBrevoApiKey] = useState('');
+  const [brevoTesting, setBrevoTesting] = useState(false);
+  const [brevoTestResult, setBrevoTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   // ClawdTalk
   const [clawdtalkApiKey, setClawdtalkApiKey] = useState('');
+  const [clawdtalkTesting, setClawdtalkTesting] = useState(false);
+  const [clawdtalkTestResult, setClawdtalkTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   // Google OAuth
   const [googleClientId, setGoogleClientId] = useState('');
@@ -881,6 +889,14 @@ export default function NewProjectWizard({
     </div>
   );
 
+  const handleRailwayTest = async () => {
+    setRailwayTesting(true);
+    setRailwayTestResult(null);
+    const r = await window.vibeflow.connectionTest.railway(railwayApiKey);
+    setRailwayTestResult(r);
+    setRailwayTesting(false);
+  };
+
   const renderRailway = () => (
     <div>
       <h2 style={sectionHeading}>Railway</h2>
@@ -892,7 +908,7 @@ export default function NewProjectWizard({
         <MaskedInput
           id="railway-key"
           value={railwayApiKey}
-          onChange={setRailwayApiKey}
+          onChange={(v) => { setRailwayApiKey(v); setRailwayTestResult(null); }}
           showSecrets={showSecrets}
           setShowSecrets={setShowSecrets}
         />
@@ -923,6 +939,31 @@ export default function NewProjectWizard({
           style={inputStyle}
         />
       </Field>
+
+      <div style={{ marginBottom: 16 }}>
+        <button
+          onClick={handleRailwayTest}
+          disabled={railwayTesting || !railwayApiKey.trim()}
+          style={{
+            padding: '7px 14px', background: 'transparent',
+            border: `1px solid ${C.border2}`, borderRadius: R.md,
+            color: C.text2, fontSize: 12, cursor: railwayTesting || !railwayApiKey.trim() ? 'default' : 'pointer',
+            opacity: !railwayApiKey.trim() ? 0.5 : 1,
+          }}
+        >
+          {railwayTesting ? 'Testing…' : 'Test connection'}
+        </button>
+        {railwayTestResult && (
+          <div style={{
+            marginTop: 8, padding: '6px 10px', borderRadius: R.md, fontSize: 12,
+            backgroundColor: railwayTestResult.success ? C.greenBg : C.redBg,
+            color: railwayTestResult.success ? C.green : C.red,
+            border: `1px solid ${railwayTestResult.success ? C.greenBd : C.redBd}`,
+          }}>
+            {railwayTestResult.message}
+          </div>
+        )}
+      </div>
 
       <CopyFromProject
         existingProjects={existingProjects}
@@ -1325,6 +1366,14 @@ export default function NewProjectWizard({
     </div>
   );
 
+  const handleBrevoTest = async () => {
+    setBrevoTesting(true);
+    setBrevoTestResult(null);
+    const r = await window.vibeflow.connectionTest.brevo(brevoApiKey);
+    setBrevoTestResult(r);
+    setBrevoTesting(false);
+  };
+
   const renderBrevo = () => (
     <div>
       <h2 style={sectionHeading}>Brevo (email)</h2>
@@ -1336,11 +1385,36 @@ export default function NewProjectWizard({
         <MaskedInput
           id="brevo-key"
           value={brevoApiKey}
-          onChange={setBrevoApiKey}
+          onChange={(v) => { setBrevoApiKey(v); setBrevoTestResult(null); }}
           showSecrets={showSecrets}
           setShowSecrets={setShowSecrets}
         />
       </Field>
+
+      <div style={{ marginBottom: 16 }}>
+        <button
+          onClick={handleBrevoTest}
+          disabled={brevoTesting || !brevoApiKey.trim()}
+          style={{
+            padding: '7px 14px', background: 'transparent',
+            border: `1px solid ${C.border2}`, borderRadius: R.md,
+            color: C.text2, fontSize: 12, cursor: brevoTesting || !brevoApiKey.trim() ? 'default' : 'pointer',
+            opacity: !brevoApiKey.trim() ? 0.5 : 1,
+          }}
+        >
+          {brevoTesting ? 'Testing…' : 'Test connection'}
+        </button>
+        {brevoTestResult && (
+          <div style={{
+            marginTop: 8, padding: '6px 10px', borderRadius: R.md, fontSize: 12,
+            backgroundColor: brevoTestResult.success ? C.greenBg : C.redBg,
+            color: brevoTestResult.success ? C.green : C.red,
+            border: `1px solid ${brevoTestResult.success ? C.greenBd : C.redBd}`,
+          }}>
+            {brevoTestResult.message}
+          </div>
+        )}
+      </div>
 
       <CopyFromProject
         existingProjects={existingProjects}
@@ -1351,6 +1425,14 @@ export default function NewProjectWizard({
       />
     </div>
   );
+
+  const handleClawdtalkTest = async () => {
+    setClawdtalkTesting(true);
+    setClawdtalkTestResult(null);
+    const r = await window.vibeflow.connectionTest.clawdtalk(clawdtalkApiKey);
+    setClawdtalkTestResult(r);
+    setClawdtalkTesting(false);
+  };
 
   const renderClawdtalk = () => (
     <div>
@@ -1363,11 +1445,36 @@ export default function NewProjectWizard({
         <MaskedInput
           id="clawdtalk-key"
           value={clawdtalkApiKey}
-          onChange={setClawdtalkApiKey}
+          onChange={(v) => { setClawdtalkApiKey(v); setClawdtalkTestResult(null); }}
           showSecrets={showSecrets}
           setShowSecrets={setShowSecrets}
         />
       </Field>
+
+      <div style={{ marginBottom: 16 }}>
+        <button
+          onClick={handleClawdtalkTest}
+          disabled={clawdtalkTesting || !clawdtalkApiKey.trim()}
+          style={{
+            padding: '7px 14px', background: 'transparent',
+            border: `1px solid ${C.border2}`, borderRadius: R.md,
+            color: C.text2, fontSize: 12, cursor: clawdtalkTesting || !clawdtalkApiKey.trim() ? 'default' : 'pointer',
+            opacity: !clawdtalkApiKey.trim() ? 0.5 : 1,
+          }}
+        >
+          {clawdtalkTesting ? 'Testing…' : 'Test connection'}
+        </button>
+        {clawdtalkTestResult && (
+          <div style={{
+            marginTop: 8, padding: '6px 10px', borderRadius: R.md, fontSize: 12,
+            backgroundColor: clawdtalkTestResult.success ? C.greenBg : C.redBg,
+            color: clawdtalkTestResult.success ? C.green : C.red,
+            border: `1px solid ${clawdtalkTestResult.success ? C.greenBd : C.redBd}`,
+          }}>
+            {clawdtalkTestResult.message}
+          </div>
+        )}
+      </div>
 
       <CopyFromProject
         existingProjects={existingProjects}
