@@ -12,6 +12,7 @@ import ProjectListScreen from './screens/ProjectListScreen';
 import ProjectScreen from './screens/ProjectScreen';
 import ModesScreen from './screens/ModesScreen';
 import McpScreen from './screens/McpScreen';
+import DevOpsScreen from './screens/DevOpsScreen';
 import TopBar from './components/TopBar';
 import BottomBar from './components/BottomBar';
 import UpdateBanner from './components/UpdateBanner';
@@ -19,6 +20,10 @@ import LeftRail, { type LeftRailSection } from './components/LeftRail';
 import ProjectHeader from './components/ProjectHeader';
 import EvidenceRail from './components/EvidenceRail';
 import PanelWorkspace from './components/PanelWorkspace';
+import EnvironmentPanel from './components/panels/EnvironmentPanel';
+import WatchPanel from './components/panels/WatchPanel';
+import MemoryPanel from './components/panels/MemoryPanel';
+import AuditPanel from './components/panels/AuditPanel';
 import { useUiState } from './hooks/useUiState';
 
 type Screen = 'projects' | 'modes' | 'project' | 'mcp';
@@ -79,6 +84,13 @@ export default function App() {
     setScreen('projects');
   };
 
+  // Navigate back to project list when "Projects" is clicked in the left rail
+  useEffect(() => {
+    if (uiState.leftRailSection === 'projects' && screen === 'project') {
+      handleBackToProjects();
+    }
+  }, [uiState.leftRailSection]);
+
   if (loading) {
     return <div style={{ padding: 20 }}>Loading...</div>;
   }
@@ -128,8 +140,26 @@ export default function App() {
             ) : uiState.leftRailSection === 'capabilities' ? (
               /* Component 14: MCP server management screen */
               <McpScreen />
+            ) : uiState.leftRailSection === 'deploys' ? (
+              /* DevOps / deploy controls and history */
+              <DevOpsScreen
+                projectId={activeProject.id}
+                onBack={() => setLeftRailSection('missions')}
+              />
+            ) : uiState.leftRailSection === 'environments' ? (
+              /* Environment management for the active project */
+              <EnvironmentPanel projectId={activeProject.id} />
+            ) : uiState.leftRailSection === 'incidents' ? (
+              /* Incidents, anomalies, and watch session status */
+              <WatchPanel projectId={activeProject.id} />
+            ) : uiState.leftRailSection === 'memory-packs' ? (
+              /* Memory items, skills, and decision records */
+              <MemoryPanel projectId={activeProject.id} />
+            ) : uiState.leftRailSection === 'audit-rollback' ? (
+              /* Audit log, checkpoints, and rollback history */
+              <AuditPanel projectId={activeProject.id} />
             ) : (
-              /* Legacy project screen for other sections (preserves existing behavior) */
+              /* Safety-net fallback for unknown sections */
               <ProjectScreen
                 project={activeProject}
                 email={email}
