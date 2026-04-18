@@ -1794,8 +1794,15 @@ Every agent must update this file when work begins and when work ends.
   3. Only ONE new DB table needed: `mission_lifecycle_state` (step tracking for crash recovery)
   4. MVP slice = steps 1–11 (intent → plan → context → risk → approval → workspace changes → validity → verification → changeset view), no deploy/watch yet
   5. 2 new files to create, 8 existing files to modify, 4 new types, 13 new IPC channels
-- Pending: Albert review + approval → Builder implementation in 4 phases:
-  - Phase 1: Types + storage (entities.ts, ipc.ts, local-db.ts)
-  - Phase 2: MissionOrchestrator coordinator (main/mission-orchestrator.ts, steps 1-11)
-  - Phase 3: IPC handlers (missions.ts, conversations.ts fork)
-  - Phase 4: UI minimal wiring (ConversationScreen mission mode toggle + push event subscriptions)
+- Implementation: **ALL 4 PHASES COMPLETE** — commits d0b59cc, 1f7b773, cf4975d, a2a5790
+  - Phase 1 (d0b59cc): Types + storage — MissionLifecycleState, MissionStartArgs, MissionProgressEvent, MissionLifecycleStatus in entities.ts; MissionsChannel + push event types in ipc.ts; mission_lifecycle_state table + upsert/get methods in local-db.ts
+  - Phase 2 (1f7b773): MissionOrchestrator coordinator — apps/desktop/src/main/mission-orchestrator.ts (527 lines); 18-step lifecycle, steps 1-11 implemented, 12-18 stubbed; crash recovery via currentStep persistence; approval suspension via Promise + Map
+  - Phase 3 (cf4975d): IPC handlers — missions.ts handler file; conversations.ts missionMode fork; preload missions API; index.ts barrel registration
+  - Phase 4 (a2a5790): UI — Chat/Mission toggle in ConversationScreen; push event subscriptions; MissionApprovalButtons component
+
+### Known remaining work after lifecycle MVP:
+- Steps 12-18 (deploy, watch, self-healing) are stubbed — mission completes immediately after verification
+- contextPackAssembler is null in missions.ts (ContextPackAssembler not in state.ts) — step 4 skipped
+- missionStatusMessages not persisted to DB — disappear on refresh
+- projectId passed as (args as any) — not in SendMessageArgs type
+- ~40 docs/README files from prior sessions remain unstaged (unrelated to this sprint)
