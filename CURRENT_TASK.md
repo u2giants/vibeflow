@@ -7,7 +7,7 @@ Every agent must update this file when work begins and when work ends.
 ## CURRENT SPRINT
 
 ### Bug Fix — New conversation fails with conversation_leases RLS error (2026-04-18)
-- Status: Fixed (round 2 — race condition identified and patched)
+- Status: Complete — Reviewed & Pushed (`a5d07ff`)
 - Mode: DevOps (`z-ai/glm-5.1`) → Reviewer-Pusher (`z-ai/glm-5.1`) → Orchestrator (`openai/gpt-5.4`) → Builder (`z-ai/glm-5.1`)
 - Conversation: Typing in a new conversation fails with `new row violates row-level security policy for table "conversation_leases"`
 - Project: VibeFlow brownfield rebuild
@@ -24,7 +24,7 @@ Every agent must update this file when work begins and when work ends.
 - Verification (round 2): `cd apps/desktop && npx tsc --noEmit` exits with code 0, zero errors ✅
 
 ### Bug Fix — Green conversations button does nothing (2026-04-18)
-- Status: Complete — Reviewed & Approved
+- Status: Complete — Reviewed & Pushed (`a5d07ff`)
 - Mode: Builder (`z-ai/glm-5.1`) → Reviewer-Pusher (`z-ai/glm-5.1`)
 - Conversation: Clicking the green conversations button does not open or switch to conversations
 - Project: VibeFlow brownfield rebuild
