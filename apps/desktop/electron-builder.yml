@@ -8,7 +8,9 @@ files:
   - out/**/*
   - node_modules/**/*
   - package.json
-  - .env
+extraResources:
+  - from: "../../docs/idiosyncrasies.md"
+    to: "docs/idiosyncrasies.md"
 npmRebuild: true
 nativeRebuilder: sequential
 asarUnpack:
