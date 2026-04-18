@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Project } from '../../lib/shared-types';
 import { C, R } from '../theme';
+import NewProjectWizard from '../components/NewProjectWizard';
 
 interface ProjectListScreenProps {
   onSignOut: () => void;
@@ -58,9 +59,6 @@ function ProjectCard({ project, onClick }: { project: Project; onClick: () => vo
 export default function ProjectListScreen({ onSignOut, onOpenModes, onOpenProject }: ProjectListScreenProps) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [showNew, setShowNew] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newDesc, setNewDesc] = useState('');
-  const [creating, setCreating] = useState(false);
 
   const load = useCallback(async () => {
     try { setProjects((await window.vibeflow.projects.list()) as Project[]); }
@@ -68,17 +66,6 @@ export default function ProjectListScreen({ onSignOut, onOpenModes, onOpenProjec
   }, []);
 
   useEffect(() => { load(); }, [load]);
-
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newName.trim()) return;
-    setCreating(true);
-    try {
-      await window.vibeflow.projects.create({ name: newName.trim(), description: newDesc.trim() || undefined });
-      setNewName(''); setNewDesc(''); setShowNew(false);
-      await load();
-    } finally { setCreating(false); }
-  };
 
   const handleSignOut = async () => { await window.vibeflow.auth.signOut(); onSignOut(); };
 
@@ -98,13 +85,6 @@ export default function ProjectListScreen({ onSignOut, onOpenModes, onOpenProjec
       alert(`Could not open VibeFlow project: ${String(err)}`);
     }
   }, [onOpenProject]);
-
-  const iStyle: React.CSSProperties = {
-    width: '100%', padding: '8px 12px',
-    backgroundColor: C.bg3, color: C.text1,
-    border: `1px solid ${C.border2}`, borderRadius: R.md,
-    fontSize: 13, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit',
-  };
 
   return (
     <div style={{ flex: 1, overflow: 'auto', backgroundColor: C.bg1, padding: '28px 24px' }}>
@@ -138,35 +118,17 @@ export default function ProjectListScreen({ onSignOut, onOpenModes, onOpenProjec
         </div>
       </div>
 
-      {/* New project form */}
+      {/* New project wizard */}
       {showNew && (
-        <form onSubmit={handleCreate} style={{
-          padding: 20, marginBottom: 20,
-          backgroundColor: C.bg2, border: `1px solid ${C.border2}`,
-          borderRadius: R.xl, animation: 'fadeIn 0.15s ease',
-        }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: C.text1, marginBottom: 14 }}>New project</div>
-          <div style={{ marginBottom: 10 }}>
-            <input type="text" placeholder="Project name" value={newName}
-              onChange={e => setNewName(e.target.value)} required autoFocus style={iStyle} />
-          </div>
-          <div style={{ marginBottom: 14 }}>
-            <input type="text" placeholder="Description (optional)" value={newDesc}
-              onChange={e => setNewDesc(e.target.value)} style={iStyle} />
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button type="submit" disabled={creating} style={{
-              padding: '7px 16px', backgroundColor: C.accent, color: '#fff',
-              border: 'none', borderRadius: R.md, cursor: creating ? 'not-allowed' : 'pointer',
-              fontSize: 13, fontWeight: 500, fontFamily: 'inherit',
-            }}>{creating ? 'Creating…' : 'Create'}</button>
-            <button type="button" onClick={() => setShowNew(false)} style={{
-              padding: '7px 16px', backgroundColor: 'transparent', color: C.text2,
-              border: `1px solid ${C.border2}`, borderRadius: R.md,
-              cursor: 'pointer', fontSize: 13, fontFamily: 'inherit',
-            }}>Cancel</button>
-          </div>
-        </form>
+        <NewProjectWizard
+          existingProjects={projects}
+          onCreated={(_project) => {
+            setShowNew(false);
+            load();
+            onOpenProject(_project);
+          }}
+          onCancel={() => setShowNew(false)}
+        />
       )}
 
       {/* Project list */}
