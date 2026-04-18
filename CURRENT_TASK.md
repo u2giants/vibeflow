@@ -6,6 +6,36 @@ Every agent must update this file when work begins and when work ends.
 
 ## CURRENT SPRINT
 
+### DevOps Decision + Branch Rename — Change `master` to `main` everywhere applicable (2026-04-18)
+- Status: **Complete — Executed by DevOps**
+- Mode: Orchestrator (`openai/gpt-5.4`) → DevOps (`z-ai/glm-5.1`)
+- Project: VibeFlow brownfield rebuild
+- Branch: `main` (renamed from `master`)
+- Execution summary:
+  1. **Updated workflow branch refs** (commit `6c797ea` on `master`, pushed before rename):
+     - [`.github/workflows/build.yml`](.github/workflows/build.yml:6): changed `branches: - master` → `- main`
+     - [`.github/workflows/ci.yml`](.github/workflows/ci.yml:5): changed `branches: [master, main]` → `[main]` (both push and PR triggers)
+  2. **Renamed GitHub default branch** via `gh api -X POST /repos/u2giants/vibeflow/branches/master/rename -f new_name=main`
+     - GitHub confirmed: `HEAD branch: main`, protection: none
+  3. **Updated local git tracking**:
+     - `git branch -m master main`
+     - `git branch -u origin/main main`
+     - `git remote set-head origin main`
+     - Pruned stale `origin/master` ref
+  4. **Verified final state**:
+     - Local branch: `main` tracking `origin/main`
+     - Remote HEAD: `origin/main`
+     - No `master` refs remain locally or remotely
+- Files changed: `.github/workflows/build.yml`, `.github/workflows/ci.yml`
+- Commits pushed: `6c797ea` (chore: update workflow branch refs from master to main (pre-rename))
+- Not changed (intentionally excluded):
+  - `rebuild/` files — "master spec" = specification document, not git branch
+  - `docs/decisions.md` — "master spec" references, not git branch
+  - Historical task log entries in `CURRENT_TASK.md` — per scope exclusion
+  - `.github/workflows/release.yml` — tag-based, no branch reference
+  - `apps/desktop/electron-builder.yml` — no branch dependency
+- No manual steps remaining
+
 ### Bug Fix — New conversation fails with conversation_leases RLS error (2026-04-18)
 - Status: Complete — Reviewed & Pushed (`a5d07ff`)
 - Mode: DevOps (`z-ai/glm-5.1`) → Reviewer-Pusher (`z-ai/glm-5.1`) → Orchestrator (`openai/gpt-5.4`) → Builder (`z-ai/glm-5.1`)
