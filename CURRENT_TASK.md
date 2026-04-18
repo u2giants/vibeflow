@@ -6,6 +6,44 @@ Every agent must update this file when work begins and when work ends.
 
 ## CURRENT SPRINT
 
+### Bug Fix — New conversation fails with conversation_leases RLS error (2026-04-18)
+- Status: Fixed (round 2 — race condition identified and patched)
+- Mode: DevOps (`z-ai/glm-5.1`) → Reviewer-Pusher (`z-ai/glm-5.1`) → Orchestrator (`openai/gpt-5.4`) → Builder (`z-ai/glm-5.1`)
+- Conversation: Typing in a new conversation fails with `new row violates row-level security policy for table "conversation_leases"`
+- Project: VibeFlow brownfield rebuild
+- Branch: `master`
+- Root cause (round 1 — RLS policy): The RLS policy `"Users can manage own leases"` on `public.conversation_leases` used `FOR ALL` with only a `USING` clause. Since `conversation_leases` has no `user_id` column, ownership is determined via a subquery to `conversations`. A subquery-based `USING` expression does not reliably satisfy `WITH CHECK` for INSERT/UPSERT in PostgreSQL/Supabase RLS, causing all inserts to be rejected. Fix: added explicit `WITH CHECK` clause.
+- Root cause (round 2 — race condition): Even after the RLS policy fix, the first message in a brand-new conversation still fails. The race: `conversations:create` creates the conversation locally and fire-and-forgets `syncEngine.pushConversation(conv)`. The renderer's `handleSend` immediately calls `acquireLease()`, which upserts into `conversation_leases`. The RLS `WITH CHECK` subquery `SELECT user_id FROM conversations WHERE id = conversation_id` returns NULL because the conversation row hasn't landed in Supabase yet. The lease insert is rejected.
+- Fix (round 2): Added a guard at the top of `SyncEngine.acquireLease()` that looks up the conversation from local DB and calls `pushConversation()` (idempotent upsert) before attempting the lease upsert. This serializes the dependency: the conversation row is guaranteed to exist in Supabase before the lease RLS check runs.
+- Files changed (round 2):
+  - [`apps/desktop/src/lib/sync/sync-engine.ts`](apps/desktop/src/lib/sync/sync-engine.ts:571) — Added conversation-ensure-remote guard at top of `acquireLease()`
+- Files changed (round 1, already applied):
+  - [`docs/supabase-migration-m4.sql`](docs/supabase-migration-m4.sql:72) — Added `WITH CHECK` clause to the `"Users can manage own leases"` policy
+  - [`docs/supabase-migration-m4-hotfix-rls.sql`](docs/supabase-migration-m4-hotfix-rls.sql) — New standalone hotfix SQL for manual application
+  - [`supabase/migrations/20260418000000_conversation_leases_rls_hotfix.sql`](supabase/migrations/20260418000000_conversation_leases_rls_hotfix.sql) — Supabase CLI migration (applied to live DB)
+- Verification (round 2): `cd apps/desktop && npx tsc --noEmit` exits with code 0, zero errors ✅
+
+### Bug Fix — Green conversations button does nothing (2026-04-18)
+- Status: Complete — Reviewed & Approved
+- Mode: Builder (`z-ai/glm-5.1`) → Reviewer-Pusher (`z-ai/glm-5.1`)
+- Conversation: Clicking the green conversations button does not open or switch to conversations
+- Project: VibeFlow brownfield rebuild
+- Branch: `master`
+- Root cause: The green "Conversations" button only called `setShowConversation(true)`, but the conversation view only renders when `showConversation && activeConversation`. If zero conversations exist, `activeConversation` stays `null`, so the condition is always false and clicking the button produces no visible result.
+- Fix:
+  - Added `handleOpenConversations()` function that ensures `activeConversation` is set before showing the conversation view:
+    - If an active conversation is already selected → just open the view
+    - If conversations exist but none is selected → pick the first one
+    - If no conversations exist yet → auto-create one via `handleNewConversation()`
+  - Wired the green button's `onClick` to call `handleOpenConversations()` instead of bare `setShowConversation(true)`
+- Files changed:
+  - [`apps/desktop/src/renderer/components/PanelWorkspace.tsx`](apps/desktop/src/renderer/components/PanelWorkspace.tsx) — Added `handleOpenConversations()` handler; updated button onClick
+- Verification: `cd apps/desktop && npx tsc --noEmit` exits with code 0, zero errors ✅
+- Reviewer-Pusher result:
+  - Approved the fix as safe and complete
+  - Confirmed the three expected paths work: existing active conversation, existing list with no selection, and zero-conversation auto-create path
+  - Confirmed no obvious regressions in the surrounding conversation flow
+
 ### Bug Fix — Sync status indicator stuck on Offline (2026-04-18)
 - Status: Complete — Reviewed & Pushed (`43fd9e6`)
 - Mode: Builder (`z-ai/glm-5.1`) → Reviewer-Pusher (`z-ai/glm-5.1`)

@@ -111,6 +111,22 @@ export default function PanelWorkspace({
     setActiveConversation(conv);
   };
 
+  /** Ensure an active conversation exists before showing the conversation view.
+   *  - If one is already selected, just open the view.
+   *  - If conversations exist but none is selected, pick the first.
+   *  - If no conversations exist yet, create one automatically.
+   */
+  const handleOpenConversations = async () => {
+    if (!activeConversation) {
+      if (conversations.length > 0) {
+        setActiveConversation(conversations[0]);
+      } else {
+        await handleNewConversation();
+      }
+    }
+    setShowConversation(true);
+  };
+
   // If the user has opened the conversation view, render it full-width here
   if (showConversation && activeConversation) {
     return (
@@ -196,7 +212,7 @@ export default function PanelWorkspace({
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      setShowConversation(true);
+                      handleOpenConversations();
                     }}
                     style={{
                       padding: '2px 8px',

@@ -569,6 +569,16 @@ export class SyncEngine {
   // ── Lease Management ──────────────────────────────────────────────
 
   async acquireLease(conversationId: string): Promise<{ success: boolean; error?: string }> {
+    // Ensure the conversation row exists in Supabase before the lease upsert.
+    // The RLS policy on conversation_leases checks ownership via a subquery to
+    // conversations, so the conversation must be present remotely.  If the
+    // conversation was just created locally and pushConversation hasn't finished
+    // yet (fire-and-forget in conversations:create), this guarantees it's there.
+    const localConv = this.localDb.getConversation(conversationId);
+    if (localConv) {
+      await this.pushConversation(localConv);
+    }
+
     // Check if there's an existing active lease
     const existingLease = await this.getLease(conversationId);
     if (existingLease) {

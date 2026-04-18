@@ -73,6 +73,9 @@ create policy "Users can manage own leases"
   on public.conversation_leases for all
   using (
     auth.uid() = (select user_id from public.conversations where id = conversation_id)
+  )
+  with check (
+    auth.uid() = (select user_id from public.conversations where id = conversation_id)
   );
 
 -- ── Enable Realtime ─────────────────────────────────────────────────
