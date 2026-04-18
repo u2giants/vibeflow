@@ -1,6 +1,12 @@
 # @vibeflow/git-manager
 
-## What This Package Does
+> **Status: Stub package — canonical code lives elsewhere**
+>
+> The actual implementation lives in [`apps/desktop/src/lib/git-manager/`](../../apps/desktop/src/lib/git-manager/).
+> This package is not imported via `workspace:*` dependencies (exFAT drive, pnpm symlinks don't work).
+> See [`docs/idiosyncrasies.md`](../../docs/idiosyncrasies.md) entry #12.
+
+## What This Package Is For
 
 This package wraps all Git operations. It uses the local `git` binary (not a JS git library) to ensure compatibility with the user's existing git configuration, credentials, and SSH setup.
 

@@ -1,6 +1,12 @@
 # @vibeflow/core-orchestrator
 
-## What This Package Does
+> **Status: Stub package — canonical code lives elsewhere**
+>
+> The actual implementation lives in [`apps/desktop/src/lib/orchestration/`](../../apps/desktop/src/lib/orchestration/).
+> This package is not imported via `workspace:*` dependencies (exFAT drive, pnpm symlinks don't work).
+> See [`docs/idiosyncrasies.md`](../../docs/idiosyncrasies.md) entry #12.
+
+## What This Package Is For
 
 This package contains the Orchestrator logic: the brain that receives user messages, decides which Mode should handle each task, dispatches work to specialist Modes, collects results, and synthesizes a final response.
 

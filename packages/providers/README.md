@@ -1,6 +1,12 @@
 # @vibeflow/providers
 
-## What This Package Does
+> **Status: Stub package — canonical code lives elsewhere**
+>
+> The actual implementation lives in [`apps/desktop/src/lib/openrouter/`](../../apps/desktop/src/lib/openrouter/).
+> This package is not imported via `workspace:*` dependencies (exFAT drive, pnpm symlinks don't work).
+> See [`docs/idiosyncrasies.md`](../../docs/idiosyncrasies.md) entry #12.
+
+## What This Package Is For
 
 This package handles all AI provider communication. OpenRouter is the primary provider. The package abstracts provider details behind a clean interface so other providers can be added later without changing the rest of the codebase.
 

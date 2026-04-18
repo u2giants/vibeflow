@@ -1,6 +1,12 @@
 # @vibeflow/tooling
 
-## What This Package Does
+> **Status: Stub package — canonical code lives elsewhere**
+>
+> The actual implementation lives in [`apps/desktop/src/lib/tooling/`](../../apps/desktop/src/lib/tooling/).
+> This package is not imported via `workspace:*` dependencies (exFAT drive, pnpm symlinks don't work).
+> See [`docs/idiosyncrasies.md`](../../docs/idiosyncrasies.md) entry #12.
+
+## What This Package Is For
 
 This package provides clean wrappers for all local machine capabilities: file operations, terminal command execution, diff generation, build runs, and test runs. It runs in the Electron main process and is called via IPC from the renderer.
 

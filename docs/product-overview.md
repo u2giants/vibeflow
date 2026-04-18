@@ -1,6 +1,6 @@
 # VibeFlow — Product Overview
 
-Last updated: 2026-04-14
+Last updated: 2026-04-18
 
 ---
 
@@ -10,7 +10,7 @@ VibeFlow is a Windows desktop application that lets you build and maintain real 
 
 You open a project, start a conversation, and talk to an AI called the **Orchestrator**. The Orchestrator understands your project, delegates work to specialist AI Modes (like a Coder, a Debugger, or a DevOps assistant), and reports back to you in plain English. You can see the code, the terminal, the logs, and the deployment state at all times.
 
-Everything is designed to sync to the cloud automatically. If you sign in on a second computer, you should have the same projects, conversations, and settings. (Note: cloud sync is currently disabled while a database issue is being resolved — see "Current Rough Edges" below.)
+Everything syncs to the cloud automatically. If you sign in on a second computer, you have the same projects, conversations, and settings. Cloud sync is active as of 2026-04-18.
 
 VibeFlow is **not** a chat app with a code sidebar. It is **not** a VS Code extension. It is a standalone desktop application where the conversation is the center of gravity, and the AI does the heavy lifting while you supervise.
 
@@ -113,17 +113,20 @@ When a Tier 3 action is needed, you see a plain-English approval card explaining
 
 ---
 
-## Cloud Sync (Design Intent)
+## Cloud Sync
 
-VibeFlow is designed to sync everything to the cloud using Supabase:
+VibeFlow syncs everything to the cloud using Supabase:
 - All your projects and conversations
 - Mode definitions and settings
 - DevOps templates and deploy history
 - Handoff artifacts
+- Sprint/task state, capabilities, environments, memory, missions, plans
 
-When working, you should be able to sign in on a second computer and immediately have the same working environment. If a conversation is running on one computer, you can watch it live on another in read-only mode.
+When working, you can sign in on a second computer and immediately have the same working environment. If a conversation is running on one computer, you can watch it live on another in read-only mode.
 
-**Current state:** Cloud sync was implemented in Milestone 4 but is currently **disabled** in the main process to keep the app stable while a database migration issue is being resolved. The app works fully in local-only mode. The sync indicator in the top bar shows 🔴 Offline. See [`docs/what-is-left.md`](what-is-left.md) for the re-enablement plan.
+**Current state:** Cloud sync is **active** as of 2026-04-18. The SyncEngine starts on app launch, registers the device, syncs all data to Supabase, and subscribes to Realtime updates. The sync indicator shows 🟢 Synced when healthy.
+
+**Note:** Two-device sync has been implemented but not yet validated with two physical devices. See [`docs/what-is-left.md`](what-is-left.md) item #3.
 
 ---
 
@@ -153,7 +156,7 @@ VibeFlow can work on its own source code. When you click "🔧 Work on VibeFlow 
 
 ## What the User Can Do Today
 
-As of 2026-04-14, a user can:
+As of 2026-04-18, a user can:
 
 1. ✅ Launch the app and sign in with GitHub
 2. ✅ Create and manage projects
@@ -171,26 +174,36 @@ As of 2026-04-14, a user can:
 14. ✅ Configure DevOps templates and deploy via Coolify
 15. ✅ Monitor GitHub Actions workflow runs
 16. ✅ Run health checks against any URL
-17. ✅ See the three-tier approval system in action
+17. ✅ See the three-tier approval system in action (now with 6 risk classes)
 18. ✅ Generate handoff packages for fresh AI sessions
 19. ✅ See real build metadata (version, commit, date, channel) in the top bar
 20. ✅ Work on VibeFlow's own source code in self-maintenance mode
+21. ✅ Sync state to the cloud automatically on every save
+22. ✅ Define and track Missions with measurable success criteria
+23. ✅ Manage Plans with Milestones and Tasks
+24. ✅ Use the Change Engine to propose, validate, and apply code changes with checkpoints
+25. ✅ Run verification suites (acceptance criteria checks) against changes
+26. ✅ Manage environments (dev/staging/prod) with variable sets
+27. ✅ Store and retrieve secrets securely with per-environment scoping
+28. ✅ Browse and search project Memory (facts, decisions, context)
+29. ✅ Access MCP server tools from within AI Modes
+30. ✅ Monitor app health with the observability panel (watch sessions, anomaly detection)
 
 ---
 
 ## Current Rough Edges
 
-These are honest limitations as of 2026-04-14:
+These are honest limitations as of 2026-04-18:
 
 | Area | Status | Detail |
 |---|---|---|
-| **Cloud sync** | 🔴 Disabled | Sync is intentionally disabled. The app works locally only. The sync indicator shows "Offline". |
+| **Two-device sync** | ⚠️ Not validated | Sync code is complete and active, but has never been tested with two physical devices signed into the same account. |
 | **Database** | ⚠️ Workaround | Using `sql.js` (pure JavaScript) instead of `better-sqlite3` (native) because native bindings could not be built on the dev machine. Works but is slower for large datasets. |
 | **Packaging** | ⚠️ Not verified | The app has not been packaged into an installer and tested by Albert yet. `pnpm dev` works; `electron-builder` output is untested. |
 | **Auto-update** | ⚠️ Partially verified | Auto-updater code exists but has not been tested with a real GitHub Release. |
-| **Multi-device** | 🔴 Not tested | Two-device sync has never been tested because sync is disabled. |
-| **Orchestrator intelligence** | ⚠️ Basic | The Orchestrator calls OpenRouter and streams a response, but does not yet do sophisticated multi-Mode delegation or tool orchestration. |
+| **Orchestrator intelligence** | ⚠️ Basic | The Orchestrator calls OpenRouter and streams a response, but does not yet do sophisticated multi-Mode delegation or task routing. |
 | **Layout** | ⚠️ Fixed but fragile | Multiple flex/overflow layout bugs were fixed (Sprints 15–18). The layout works but could regress if CSS is changed carelessly. |
+| **Test suite** | ⚠️ Not wired | ~90+ `.test.cjs` files exist but are not wired to `pnpm test`. CI does not run them. |
 
 ---
 

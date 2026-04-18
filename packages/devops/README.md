@@ -1,6 +1,12 @@
 # @vibeflow/devops
 
-## What This Package Does
+> **Status: Stub package — canonical code lives elsewhere**
+>
+> The actual implementation lives in [`apps/desktop/src/lib/devops/`](../../apps/desktop/src/lib/devops/).
+> This package is not imported via `workspace:*` dependencies (exFAT drive, pnpm symlinks don't work).
+> See [`docs/idiosyncrasies.md`](../../docs/idiosyncrasies.md) entry #12.
+
+## What This Package Is For
 
 This package is the DevOps subsystem. It manages deployment templates, deploy runs, GitHub Actions visibility, Coolify integration, health checks, and secret mapping. It is the "DevOps hand-holding" layer for non-programmer operators.
 

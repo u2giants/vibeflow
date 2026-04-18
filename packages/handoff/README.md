@@ -1,6 +1,12 @@
 # @vibeflow/handoff
 
-## What This Package Does
+> **Status: Stub package — canonical code lives elsewhere**
+>
+> The actual implementation lives in [`apps/desktop/src/lib/handoff/`](../../apps/desktop/src/lib/handoff/).
+> This package is not imported via `workspace:*` dependencies (exFAT drive, pnpm symlinks don't work).
+> See [`docs/idiosyncrasies.md`](../../docs/idiosyncrasies.md) entry #12.
+
+## What This Package Is For
 
 This package generates handoff artifacts: the documents and prompts that allow a brand-new AI session to continue a project without confusion. It also triggers updates to the architecture and idiosyncrasies documentation before generating the handoff.
 

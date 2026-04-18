@@ -1,9 +1,9 @@
 # VibeFlow — Handoff Document
 
-Last updated: 2026-04-14
-Written by: Architect (Documentation Hardening Sprint)
+Last updated: 2026-04-18
+Written by: Architect (updated after brownfield rebuild Components 10–22 and sync re-enablement)
 
-This is the single best file for a new developer or AI session to read to understand where VibeFlow is and what to do next.
+**This is the single best file for a new developer or AI session to read to understand where VibeFlow is and what to do next.**
 
 ---
 
@@ -13,15 +13,15 @@ VibeFlow is a Windows desktop Electron app that lets non-programmers build and m
 
 **Tech stack:** Electron + TypeScript + React + Vite + Supabase + OpenRouter + sql.js + keytar
 
-**Repo:** `d:/repos/vibeflow` (on an exFAT drive — this matters, see idiosyncrasies)
+**Repo:** `d:/repos/vibeflow` (on an exFAT drive — this matters, see idiosyncrasies #3)
+
+**Default branch:** `main`
 
 ---
 
-## Current State of the App (2026-04-14)
+## Current State of the App (2026-04-18)
 
-**All 10 MVP milestones are complete.** The app launches, you can sign in with GitHub, create projects, chat with the AI, manage Modes, deploy via DevOps, and generate handoffs.
-
-**However, there are significant caveats:**
+All 10 MVP milestones are complete. The brownfield rebuild (Components 10–22) is also complete. Cloud sync is re-enabled.
 
 | Area | State |
 |---|---|
@@ -36,68 +36,172 @@ VibeFlow is a Windows desktop Electron app that lets non-programmers build and m
 | Git status/commit/push | ✅ Works |
 | SSH discovery + connection testing | ✅ Works |
 | DevOps templates + Coolify deploy | ✅ Works |
-| Three-tier approval system | ✅ Works |
+| Three-tier approval system (extended to 6 risk classes) | ✅ Works |
 | Handoff generation | ✅ Works |
 | Build metadata in top bar | ✅ Works |
 | Self-maintenance mode | ✅ Works |
-| **Cloud sync** | **🔴 Disabled** |
-| **Packaged installer** | **⚠️ Not tested** |
+| MCP server connections | ✅ Works (Component 14) |
+| Project intelligence / context packs | ✅ Works (Component 11) |
+| Orchestration engine with role routing | ✅ Works (Component 12) |
+| Change engine + checkpoint manager | ✅ Works (Component 13) |
+| Verification + acceptance criteria | ✅ Works (Component 16) |
+| Environments + deploy workflow tracking | ✅ Works (Component 17) |
+| Secrets / migration safety | ✅ Works (Component 18) |
+| Persistent audit history + rollback | ✅ Works (Component 19) |
+| Memory / skills / decision knowledge | ✅ Works (Component 20) |
+| Observability / self-healing | ✅ Works (Component 21) |
+| **Cloud sync** | **✅ Re-enabled 2026-04-18** |
+| **Two-device sync validation** | **⚠️ Not yet tested in practice** |
+| **Packaged installer** | **⚠️ Not tested on clean machine** |
 | **Auto-update** | **⚠️ Not tested with real release** |
-| **Multi-Mode orchestration** | **⚠️ Basic (single-Mode only)** |
 
 ---
 
-## What Was Finished, Milestone by Milestone
+## What Was Finished, Phase by Phase
 
-| # | Milestone | Sprint | Key Deliverable |
-|---|---|---|---|
-| 1 | Electron Shell + Auth + Projects | 2 | App launches, GitHub OAuth, project list, local SQLite |
-| 2 | Mode System + OpenRouter | 3 | 6 Modes, soul editor, model picker, API key in keytar |
-| 3 | Conversation UI + Orchestrator | 4 | 5-panel layout, chat, streaming AI responses, conversation history |
-| 4 | Cloud Sync + Realtime + Device Ownership | 5 | Sync engine implemented (but later disabled), lease/heartbeat model |
-| 5 | Local Tooling | 6 | File, terminal, git, SSH services + right panel + bottom panel |
-| 6 | DevOps Subsystem | 7 | Templates, GitHub Actions, Coolify, health checks, DevOps screen |
-| 7 | Approval System | 8 | Three-tier approval, second-model review, approval cards |
-| 8 | Handoff System | 9 | One-click handoff, copy-to-clipboard, Supabase Storage |
-| 9 | Build Metadata + Auto-Update | 10 | Metadata injection, UpdateBanner, electron-updater |
-| 10 | Self-Maintenance Mode | 13 | Self-maintenance project, Tier 3 forced, yellow banner |
+### Phase 1 — MVP Milestones (Sprints 2–13)
+
+| # | Milestone | Key Deliverable |
+|---|---|---|
+| 1 | Electron Shell + Auth + Projects | App launches, GitHub OAuth, project list, local SQLite |
+| 2 | Mode System + OpenRouter | 6 Modes, soul editor, model picker, API key in keytar |
+| 3 | Conversation UI + Orchestrator | 5-panel layout, chat, streaming AI responses, conversation history |
+| 4 | Cloud Sync + Realtime + Device Ownership | Sync engine, lease/heartbeat model |
+| 5 | Local Tooling | File, terminal, git, SSH services + right panel + bottom panel |
+| 6 | DevOps Subsystem | Templates, GitHub Actions, Coolify, health checks |
+| 7 | Approval System | Three-tier approval, second-model review, approval cards |
+| 8 | Handoff System | One-click handoff, copy-to-clipboard, Supabase Storage |
+| 9 | Build Metadata + Auto-Update | Metadata injection, UpdateBanner, electron-updater |
+| 10 | Self-Maintenance Mode | Self-maintenance project, Tier 3 forced, yellow banner |
+
+### Phase 2 — Brownfield Rebuild (Components 10–22, Sprints 14–28+)
+
+| Component | Subsystem Added |
+|---|---|
+| C10 | Product shell: LeftRail (8 sections), PanelWorkspace (9 collapsible panels), EvidenceRail, useUiState, ErrorBoundary |
+| C11 | Project intelligence: context-pack-assembler, framework-detector, impact-analyzer, indexing-pipeline, topology-builder |
+| C12 | Agent orchestration: OrchestrationEngine with role routing (replaces simple orchestrator.ts) |
+| C13 | Change engine: change-engine, checkpoint-manager, patch-applier, semantic-grouper, validity-pipeline, workspace-manager |
+| C14 | Capability fabric + MCP: capability-registry, capability-adapter, mcp-connection-manager, mcp-tool-registry, mcp-tool-executor |
+| C15 | Runtime execution: browser-automation-service (Playwright, stubbed if not installed), evidence-capture-engine, runtime-execution-service |
+| C16 | Verification + acceptance: verification-engine, 5-level bundles, acceptance-criteria-generator, VerificationPanel, AcceptancePanel |
+| C17 | Environments + deploy: environment-manager, deploy-engine, service-control-plane, drift-detector, EnvironmentPanel |
+| C18 | Secrets + migration safety: secrets-store, migration-safety, SecretsPanel, MigrationPanel |
+| C19 | Approval expansion: 6 risk classes, audit-store (persistent SQLite), checkpoint-linked rollback, AuditPanel |
+| C20 | Memory + skills: memory-lifecycle, memory-retriever, memory-seed, MemoryPanel |
+| C21 | Observability: watch-engine, anomaly-detector, self-healing-engine, WatchPanel |
+| C22 | Sync re-enablement: SyncEngine constructor fix, Supabase migration run, handoffs bucket, RLS hotfix |
 
 ---
 
 ## Major Bugs Hit and How They Were Solved
 
 ### 1. better-sqlite3 native compilation failure
-- **Problem:** `better-sqlite3` requires native C++ compilation via `node-gyp`. On Albert's machine, this repeatedly failed (missing Visual Studio build tools, ABI mismatch, NAPI version conflicts).
-- **Solution:** Replaced with `sql.js` — a pure JavaScript SQLite implementation. Zero native compilation needed. Required rewriting the entire database layer (`local-db.ts`) to use sql.js API patterns.
-- **Impact:** Sync was disabled as a stability measure during the transition.
+- **Problem:** `node-gyp` native builds failed repeatedly on Albert's machine.
+- **Solution:** Replaced with `sql.js` — pure JavaScript SQLite, zero native compilation needed. Entire `local-db.ts` rewritten to use sql.js API. A custom `sql-js.d.ts` type declaration was written.
 
 ### 2. GitHub OAuth "No auth code received"
-- **Problem:** The original OAuth handler only checked for PKCE code flow (`?code=` query parameter). Supabase was returning tokens via implicit flow as a hash fragment (`#access_token=...`), which browsers don't send to servers.
-- **Solution:** Added dual-flow support. The callback handler now serves an HTML page with JavaScript that extracts the hash fragment client-side, then POSTs the tokens to a `/callback-tokens` endpoint on the localhost server.
-- **File:** [`apps/desktop/src/main/index.ts`](../apps/desktop/src/main/index.ts) — auth handler
+- **Problem:** Supabase returned tokens as a hash fragment (`#access_token=...`), not a `?code=` query param. Browsers don't send hash fragments to servers.
+- **Solution:** Dual-flow support. The callback handler serves an HTML page that extracts the hash client-side, then POSTs tokens to `/callback-tokens`. Supports both PKCE and implicit flow.
 
 ### 3. ELECTRON_RUN_AS_NODE environment variable
-- **Problem:** A pre-existing `ELECTRON_RUN_AS_NODE=1` environment variable on Albert's machine caused Electron to run as plain Node.js, crashing on `app.whenReady()`.
-- **Solution:** Unset the environment variable. Documented in idiosyncrasies.
+- **Problem:** Pre-existing `ELECTRON_RUN_AS_NODE=1` env var caused Electron to run as plain Node.js, crashing on `app.whenReady()`.
+- **Solution:** Unset the env var. See idiosyncrasies #2.
 
 ### 4. OpenRouter returning 349+ models
-- **Problem:** The model list endpoint `/api/v1/models` returned the full OpenRouter catalog, overwhelming the UI.
-- **Solution:** Changed to `/api/v1/models/user` which returns only user-accessible models (~31).
-- **File:** [`apps/desktop/src/main/index.ts`](../apps/desktop/src/main/index.ts) — lines ~514, ~536
+- **Solution:** Changed endpoint from `/api/v1/models` to `/api/v1/models/user`. Returns only user-accessible models (~31). See idiosyncrasies #8.
 
 ### 5. Streaming token duplication (listener stacking)
-- **Problem:** `ipcRenderer.on()` in the preload script accumulated listeners on re-render, causing each token to be appended N times (producing `7a7a7a7a...`).
-- **Solution:** Added `ipcRenderer.removeAllListeners()` before each `ipcRenderer.on()` call.
-- **File:** [`apps/desktop/src/preload/index.ts`](../apps/desktop/src/preload/index.ts) — lines ~52–65
+- **Problem:** `ipcRenderer.on()` accumulated listeners on re-render, causing tokens to be repeated N times.
+- **Solution:** `ipcRenderer.removeAllListeners()` before each `ipcRenderer.on()` in preload. See idiosyncrasies #10.
 
-### 6. Modes screen layout bugs (Sprints 15–18)
-- **Problem:** Nested flex children with `min-height: auto` caused overflow, pushing the bottom bar off-screen. Default browser margin on `body` caused `100vh` to overflow.
-- **Solution:** Added global CSS reset (`html, body, #root { margin: 0; height: 100%; overflow: hidden }`), replaced `100vh` with `100%`, added `minHeight: 0` to flex children.
-- **Files:** `index.html`, `App.tsx`, `ModesScreen.tsx`, `ProjectScreen.tsx`
+### 6. Layout bugs (Sprints 15–18)
+- **Problem:** Nested flex children with `min-height: auto` caused overflow; `100vh` + body margin caused overflow.
+- **Solution:** Global CSS reset, `height: '100%'` instead of `100vh`, `minHeight: 0` on flex children.
 
-### 7. DevTools auto-opening
-- **Problem:** Chromium DevTools auto-opened on every app launch, disrupting the UI.
-- **Solution:** Removed `mainWindow.webContents.openDevTools()` from the development startup path.
+### 7. conversation_leases RLS race condition
+- **Problem:** A missing WITH CHECK clause allowed lease-acquire to fail silently under concurrent writes.
+- **Solution:** M4 hotfix RLS applied; `acquireLease()` in SyncEngine now has an `ensure-remote` guard (calls `pushConversation` at the top of every lease acquire). See idiosyncrasies #11.
+
+### 8. SQL comments using `//` instead of `--`
+- **Problem:** sql.js parses `//` as a division operator, causing `near "/": syntax error` on boot.
+- **Solution:** All SQL uses `--` for comments. See idiosyncrasies #16.
+
+### 9. `listProjects('')` returning empty rows
+- **Problem:** Accidentally passing empty string as user ID caused WHERE clause to match nothing.
+- **Solution:** All `localDb.listProjects(userId)` call sites now pass a real user ID via `getCurrentUserId()`. See idiosyncrasies #17.
+
+### 10. Duplicate IPC handler blocks
+- **Problem:** `main/index.ts` had 5 duplicate `secrets:*`/`migration:*` handler blocks (461 lines). App crashed at boot with `Attempted to register a second handler`.
+- **Solution:** Removed duplicates. See idiosyncrasies #15.
+
+---
+
+## Where the Code Lives
+
+### Main Application Entry Points
+
+| Component | Path | Lines | Purpose |
+|---|---|---|---|
+| Main process | [`apps/desktop/src/main/index.ts`](../apps/desktop/src/main/index.ts) | ~2,441 | IPC handler registry, app lifecycle |
+| Preload bridge | [`apps/desktop/src/preload/index.ts`](../apps/desktop/src/preload/index.ts) | ~200+ | window.vibeflow API |
+| React app root | [`apps/desktop/src/renderer/App.tsx`](../apps/desktop/src/renderer/App.tsx) | ~150 | Screen routing |
+
+### Screens (8)
+
+| Screen | Purpose |
+|---|---|
+| `SignInScreen.tsx` | GitHub OAuth sign-in |
+| `ProjectListScreen.tsx` | Create/list projects, self-maintenance button |
+| `ProjectScreen.tsx` | 5-panel layout, conversation sidebar, mission workspace |
+| `ConversationScreen.tsx` | Chat, streaming, execution stream, approval overlay |
+| `ModesScreen.tsx` | Mode editor, soul editor, model picker |
+| `DevOpsScreen.tsx` | 4-tab DevOps management |
+| `SshScreen.tsx` | SSH host discovery, connection testing |
+| `McpScreen.tsx` | MCP server connection management |
+
+### Libraries (in `apps/desktop/src/lib/`)
+
+| Library | Purpose |
+|---|---|
+| `storage/local-db.ts` | Local SQLite database (sql.js) |
+| `storage/supabase-client.ts` | Supabase client wrapper |
+| `sync/sync-engine.ts` | Full sync engine (active) |
+| `orchestrator/orchestration-engine.ts` | OrchestrationEngine with role routing |
+| `orchestrator/orchestrator.ts` | Legacy wrapper for IPC compatibility |
+| `modes/default-modes.ts` | 6 default Mode definitions |
+| `approval/approval-engine.ts` | Tier classification + 6-class risk scoring + second-model review |
+| `approval/audit-store.ts` | Persistent approval audit history |
+| `handoff/handoff-generator.ts` | Handoff document + prompt generation |
+| `handoff/handoff-storage.ts` | Supabase Storage save |
+| `tooling/file-service.ts` | File read/write/list/diff |
+| `tooling/terminal-service.ts` | Command execution + streaming |
+| `tooling/git-service.ts` | Git operations |
+| `tooling/ssh-service.ts` | SSH discovery + testing |
+| `capability-fabric/capability-registry.ts` | Capability registry |
+| `change-engine/change-engine.ts` | Change proposals and application |
+| `change-engine/checkpoint-manager.ts` | Checkpoint-linked rollback |
+| `mcp-manager/mcp-connection-manager.ts` | MCP connections |
+| `mcp-manager/mcp-tool-registry.ts` | Tool listing from MCP servers |
+| `memory/memory-lifecycle.ts` | Memory write/read lifecycle |
+| `observability/watch-engine.ts` | Post-deploy watching |
+| `observability/anomaly-detector.ts` | Anomaly detection |
+| `observability/self-healing-engine.ts` | Self-healing actions |
+| `project-intelligence/context-pack-assembler.ts` | Context pack assembly |
+| `runtime-execution/browser-automation-service.ts` | Playwright-based browser automation (stubbed if not installed) |
+| `runtime-execution/evidence-capture-engine.ts` | Test evidence capture |
+| `secrets/secrets-store.ts` | Secrets management |
+| `secrets/migration-safety.ts` | Database migration safety checks |
+| `verification/verification-engine.ts` | Layered verification runs |
+| `environment-manager.ts` | Environment + deploy workflow tracking |
+| `deploy-engine.ts` | Deploy candidate selection + rollout |
+| `drift-detector.ts` | Config/schema drift detection |
+| `service-control-plane.ts` | Service dependency view |
+| `devops/coolify-client.ts` | Coolify API |
+| `devops/github-actions-client.ts` | GitHub Actions API |
+| `devops/health-check.ts` | URL health monitoring |
+| `updater/auto-updater.ts` | electron-updater wrapper |
+| `build-metadata/index.ts` | Version/commit/date export |
 
 ---
 
@@ -105,98 +209,11 @@ VibeFlow is a Windows desktop Electron app that lets non-programmers build and m
 
 See [`docs/what-is-left.md`](what-is-left.md) for the full list. The critical items are:
 
-1. **Re-enable cloud sync** — Run Supabase migration, adapt sync engine for sql.js, test with two devices
-2. **Test packaged build** — Run `electron-builder`, install on a clean machine, verify everything works
-3. **Test auto-update** — Publish a real GitHub Release, verify the update flow
-4. **Enhance Orchestrator intelligence** — Multi-Mode routing, task analysis, context management
-5. **Fix handoff path for packaged builds** — The relative path to `docs/idiosyncrasies.md` will break
-
----
-
-## Where the Code Lives
-
-### Main Application
-
-| Component | Path | Lines | Purpose |
-|---|---|---|---|
-| Main process | [`apps/desktop/src/main/index.ts`](../apps/desktop/src/main/index.ts) | 959 | IPC handler registry, app lifecycle |
-| Preload bridge | [`apps/desktop/src/preload/index.ts`](../apps/desktop/src/preload/index.ts) | ~120 | window.vibeflow API |
-| React app root | [`apps/desktop/src/renderer/App.tsx`](../apps/desktop/src/renderer/App.tsx) | ~110 | Screen routing |
-| HTML shell | [`apps/desktop/src/renderer/index.html`](../apps/desktop/src/renderer/index.html) | ~30 | Global CSS reset |
-
-### Screens
-
-| Screen | Path | Purpose |
-|---|---|---|
-| Sign In | [`SignInScreen.tsx`](../apps/desktop/src/renderer/screens/SignInScreen.tsx) | GitHub OAuth sign-in |
-| Project List | [`ProjectListScreen.tsx`](../apps/desktop/src/renderer/screens/ProjectListScreen.tsx) | Create/list projects, self-maintenance button |
-| Project | [`ProjectScreen.tsx`](../apps/desktop/src/renderer/screens/ProjectScreen.tsx) | 5-panel layout, conversation sidebar |
-| Conversation | [`ConversationScreen.tsx`](../apps/desktop/src/renderer/screens/ConversationScreen.tsx) | Chat, streaming, execution stream, approval overlay |
-| Modes | [`ModesScreen.tsx`](../apps/desktop/src/renderer/screens/ModesScreen.tsx) | Mode editor, soul editor, model picker |
-| DevOps | [`DevOpsScreen.tsx`](../apps/desktop/src/renderer/screens/DevOpsScreen.tsx) | 4-tab DevOps management |
-| SSH | [`SshScreen.tsx`](../apps/desktop/src/renderer/screens/SshScreen.tsx) | SSH host discovery, connection testing |
-
-### Libraries (in `apps/desktop/src/lib/`)
-
-| Library | Path | Purpose |
-|---|---|---|
-| Storage | `lib/storage/local-db.ts` | Local SQLite database (sql.js), 489 lines |
-| Storage | `lib/storage/supabase-client.ts` | Supabase client wrapper |
-| Sync | `lib/sync/sync-engine.ts` | Full sync engine (disabled), 501 lines |
-| Orchestrator | `lib/orchestrator/orchestrator.ts` | OpenRouter streaming call |
-| Modes | `lib/modes/default-modes.ts` | 6 default Mode definitions |
-| Approval | `lib/approval/approval-engine.ts` | Tier classification + second-model review |
-| Approval | `lib/approval/approval-logger.ts` | In-memory approval audit log |
-| Handoff | `lib/handoff/handoff-generator.ts` | Handoff document + prompt generation |
-| Handoff | `lib/handoff/handoff-storage.ts` | Supabase Storage save |
-| Tooling | `lib/tooling/file-service.ts` | File read/write/list/diff |
-| Tooling | `lib/tooling/terminal-service.ts` | Command execution + streaming |
-| Tooling | `lib/tooling/git-service.ts` | Git operations |
-| Tooling | `lib/tooling/ssh-service.ts` | SSH discovery + testing |
-| DevOps | `lib/devops/devops-templates.ts` | Template definitions |
-| DevOps | `lib/devops/github-actions-client.ts` | GitHub Actions API |
-| DevOps | `lib/devops/coolify-client.ts` | Coolify API |
-| DevOps | `lib/devops/health-check.ts` | URL health monitoring |
-| Updater | `lib/updater/auto-updater.ts` | electron-updater wrapper |
-| Build Metadata | `lib/build-metadata/index.ts` | Version/commit/date export |
-| Types | `lib/shared-types/` | All TypeScript interfaces |
-
-### Configuration
-
-| File | Purpose |
-|---|---|
-| [`electron.vite.config.ts`](../apps/desktop/electron.vite.config.ts) | Vite config with @vibeflow/* resolveId plugin |
-| [`electron-builder.yml`](../apps/desktop/electron-builder.yml) | Packaging config (GitHub Releases) |
-| [`tsconfig.json`](../apps/desktop/tsconfig.json) | TypeScript config with @vibeflow/* paths |
-| [`.npmrc`](../.npmrc) | `node-linker=hoisted` (no symlinks) |
-| [`.env.example`](../.env.example) | Environment variable template |
-
-### Documentation
-
-| File | Purpose |
-|---|---|
-| [`AGENTS.md`](../AGENTS.md) | AI agent team rules |
-| [`PROJECT_SOUL.md`](../PROJECT_SOUL.md) | Product vision and non-negotiables |
-| [`CURRENT_TASK.md`](../CURRENT_TASK.md) | Sprint state and history |
-| [`docs/product-overview.md`](product-overview.md) | What VibeFlow is |
-| [`docs/architecture.md`](architecture.md) | Technical architecture |
-| [`docs/decisions.md`](decisions.md) | Decision log with alternatives and tradeoffs |
-| [`docs/risks.md`](risks.md) | Current risks |
-| [`docs/idiosyncrasies.md`](idiosyncrasies.md) | Intentional weirdness |
-| [`docs/what-is-left.md`](what-is-left.md) | Remaining work |
-| [`docs/troubleshooting.md`](troubleshooting.md) | Diagnosis and recovery |
-
----
-
-## Known Weak Spots
-
-1. **`main/index.ts` is 959 lines** — It's the IPC handler registry. Works but could be split into domain-specific handler files.
-2. **Sync engine untested** — 501 lines of sync code that has never run against a real Supabase instance with the current sql.js database.
-3. **Handoff path breaks in packaged builds** — The relative path `../../../../docs/idiosyncrasies.md` won't resolve correctly when the app is packaged.
-4. **No automated tests** — There are no unit tests, integration tests, or E2E tests. The test plan exists (`docs/test-plan.md`) but no tests have been written.
-5. **Layout is fragile** — The flex/overflow fixes work but are spread across multiple files and could regress.
-6. **Orchestrator is single-Mode** — It calls OpenRouter directly without routing to specialist Modes.
-7. **No conversation summarization** — Long conversations will exceed context limits without warning.
+1. **Test packaged build** — Run `electron-builder`, install on a clean machine, verify everything works
+2. **Fix .env loading for packaged builds** — The `.env` load path needs `app.isPackaged` guard
+3. **Validate two-device sync** — Sync is on and implemented; run the test with two devices
+4. **Test auto-update** — Publish a real GitHub Release, verify the update flow
+5. **Wire `pnpm test`** — ~90+ scoped `.test.cjs` tests exist but are not yet wired to a test runner
 
 ---
 
@@ -220,19 +237,18 @@ node node_modules/electron/install.js
 ```bash
 pnpm dev
 ```
-This runs `inject-build-metadata.js` first, then `electron-vite dev`.
 
 ### What You Should See
 1. Electron window opens with the sign-in screen
 2. Click "Sign in with GitHub" → browser opens → authorize → redirected back to app
 3. Project list screen appears with your email in the top bar
-4. Sync indicator shows 🔴 Offline (this is expected — sync is disabled)
+4. Sync indicator shows 🟢 Synced (or 🟡 Syncing briefly) — Offline would indicate a problem
 
 ---
 
 ## Exact Files to Read First
 
-If you are a new developer or AI session, read these files in this order:
+If you are a new developer or AI session, read these in order:
 
 1. [`AGENTS.md`](../AGENTS.md) — Team structure and rules
 2. [`PROJECT_SOUL.md`](../PROJECT_SOUL.md) — Product vision and non-negotiables
@@ -247,11 +263,15 @@ If you are a new developer or AI session, read these files in this order:
 
 ## Important Warnings
 
-1. **Do NOT add `workspace:*` dependencies** — The repo is on an exFAT drive. Symlinks don't work. See idiosyncrasies entry #3.
-2. **Do NOT rename `electron.vite.config.ts`** — electron-vite requires this exact filename. See idiosyncrasies entry #1.
-3. **Do NOT remove `removeAllListeners()` from preload** — This prevents the streaming token duplication bug. See idiosyncrasies entry #10.
+1. **Do NOT add `workspace:*` dependencies** — The repo is on an exFAT drive. Symlinks don't work. See idiosyncrasies #3.
+2. **Do NOT rename `electron.vite.config.ts`** — electron-vite requires this exact filename. See idiosyncrasies #1.
+3. **Do NOT remove `removeAllListeners()` from preload** — This prevents the streaming token duplication bug. See idiosyncrasies #10.
 4. **Do NOT change the OAuth port (54321)** without also updating Supabase Dashboard redirect URLs.
-5. **Do NOT use `/api/v1/models`** for OpenRouter — use `/api/v1/models/user` instead.
-6. **Sync is disabled on purpose** — Do not try to "fix" the offline indicator without first running the Supabase migration and adapting the sync engine.
-7. **The `ELECTRON_RUN_AS_NODE` env var must NOT be set** — Check with `echo %ELECTRON_RUN_AS_NODE%` before debugging startup crashes.
-8. **Layout changes are risky** — The flex/overflow fixes are fragile. Test on the Modes screen (most complex layout) after any CSS changes.
+5. **Do NOT use `/api/v1/models`** for OpenRouter — use `/api/v1/models/user` instead. See idiosyncrasies #8.
+6. **Do NOT remove the `ensure-remote` guard in `acquireLease()`** — It is a load-bearing race-condition fix. See idiosyncrasies #11.
+7. **Do NOT use `//` in SQL strings** — sql.js parses them as division operators. Use `--`. See idiosyncrasies #16.
+8. **Always pass a real user ID to `listProjects()`** — Passing `''` returns zero rows silently. See idiosyncrasies #17.
+9. **Do NOT register duplicate IPC handlers** — The app will crash at boot with `Attempted to register a second handler`. See idiosyncrasies #15.
+10. **The `ELECTRON_RUN_AS_NODE` env var must NOT be set** — See idiosyncrasies #2.
+11. **Layout changes are risky** — Test on the Modes screen (most complex layout) after any CSS changes. See idiosyncrasies #6 in risks.md.
+12. **`apps/desktop/src/lib/` is authoritative** — Do not look for code in `packages/` (except shared-types, storage, build-metadata).

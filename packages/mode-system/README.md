@@ -1,6 +1,12 @@
 # @vibeflow/mode-system
 
-## What This Package Does
+> **Status: Stub package — canonical code lives elsewhere**
+>
+> The actual implementation lives in [`apps/desktop/src/lib/mode-system/`](../../apps/desktop/src/lib/mode-system/).
+> This package is not imported via `workspace:*` dependencies (exFAT drive, pnpm symlinks don't work).
+> See [`docs/idiosyncrasies.md`](../../docs/idiosyncrasies.md) entry #12.
+
+## What This Package Is For
 
 This package manages Mode definitions, souls (instructions), configuration, and per-mode model assignments. It is the registry of all Modes in the system.
 

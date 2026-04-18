@@ -1,7 +1,7 @@
 # VibeFlow — Architecture Reference
 
-Last updated: 2026-04-14
-Status: Approved by Albert (original 2026-04-11, expanded 2026-04-14)
+Last updated: 2026-04-18
+Status: Updated to reflect brownfield rebuild Components 10–22 and sync re-enablement
 
 ---
 
@@ -38,9 +38,9 @@ Status: Approved by Albert (original 2026-04-11, expanded 2026-04-14)
 │                         SUPABASE CLOUD                              │
 │                                                                     │
 │  Auth (accounts, sessions, devices)                                 │
-│  Postgres (all synced state)                                        │
+│  Postgres (all synced state — 21+ tables)                           │
 │  Realtime (live push to all clients)                                │
-│  Storage (large artifacts, handoff docs)                            │
+│  Storage (handoff artifacts)                                        │
 └─────────────────────────────────────────────────────────────────────┘
                               │
                               │ API calls
@@ -82,7 +82,7 @@ VibeFlow needs cloud sync, authentication, real-time updates, and file storage. 
 
 **Alternatives considered:** Firebase (vendor lock-in, less SQL-friendly), Railway + custom backend (more moving parts), Cloudflare Workers + D1 (too new, limited Realtime). Supabase won because it minimizes moving parts for a solo builder using AI, and it's open-source and self-hostable if needed later.
 
-**Current state:** Supabase Auth works (GitHub OAuth sign-in). Supabase Postgres tables are defined but the migration has not been run. Sync is disabled in the main process. The app works fully in local-only mode using sql.js.
+**Current state:** Supabase Auth works (GitHub OAuth). All Postgres tables have been created and verified (migration run 2026-04-18). Sync is active and real — the app registers devices, pushes conversations to Supabase, and subscribes to Realtime. The Supabase project ref is `wnbazobqhyhncksjfxvq`.
 
 ---
 
@@ -97,21 +97,7 @@ VibeFlow needs access to multiple AI models (Claude, GPT-4, Gemini, etc.) throug
 
 The provider abstraction layer means other providers (direct Anthropic, OpenAI, etc.) can be added later without rewriting the core.
 
-**Important:** The model list endpoint must use `/api/v1/models/user`, not `/api/v1/models`. The latter returns the full catalog (349+ models), which is overwhelming and includes models the user may not have access to. This was a bug that was fixed in Sprint 14.
-
----
-
-## Why the App Is Conversation-Centric
-
-Most AI coding tools put the editor first and chat second. VibeFlow inverts this: **conversation is the center of gravity**.
-
-The reasoning:
-1. VibeFlow's target user is a non-programmer. They think in terms of "what I want to build," not "which file to edit."
-2. The Orchestrator pattern (one AI coordinates multiple specialists) requires a conversation-first interface.
-3. The code editor is always visible in the right panel, but the user's primary interaction is talking to the Orchestrator.
-4. This matches how non-technical users naturally work with AI — they describe what they want, not how to implement it.
-
-The five-panel layout ensures the code is always visible even though conversation is primary. This is a deliberate design tension: conversation-first but code-always-visible.
+**Important:** The model list endpoint must use `/api/v1/models/user`, not `/api/v1/models`. The latter returns the full catalog (349+ models). This is documented in idiosyncrasies #8.
 
 ---
 
@@ -123,23 +109,20 @@ Electron enforces a security boundary between the main process and the renderer:
 - Runs in Node.js with full OS access
 - Handles all IPC requests from the renderer
 - Manages: file I/O, terminal execution, git operations, SSH, keytar secrets, auto-updater, database
-- Creates the BrowserWindow
-- Initializes the local SQLite database on startup
+- Creates the BrowserWindow and initializes the local SQLite database on startup
 - Seeds default Modes on first run
-- **959 lines** — the largest single file in the codebase (acceptable because it's the IPC handler registry)
+- **~2,441 lines** — intentionally large; it is an IPC handler registry, not business logic. Business logic lives in `src/lib/`. See [`docs/what-is-left.md`](what-is-left.md) for the planned split.
 
 ### Preload Script ([`apps/desktop/src/preload/index.ts`](../apps/desktop/src/preload/index.ts))
 - Runs in a special context between main and renderer
 - Exposes a typed `window.vibeflow` API to the renderer via `contextBridge`
-- The renderer can only call methods exposed here — it cannot access Node.js directly
-- Groups API by domain: `auth`, `projects`, `modes`, `openrouter`, `conversations`, `sync`, `files`, `terminal`, `git`, `ssh`, `devops`, `approval`, `handoff`, `buildMetadata`, `updater`
+- Groups API by domain: `auth`, `projects`, `modes`, `openrouter`, `conversations`, `sync`, `files`, `terminal`, `git`, `ssh`, `devops`, `approval`, `handoff`, `buildMetadata`, `updater`, `orchestrator`, `capabilities`, `mcp`, `runtime`, `browser`, `evidence`, `verification`, `acceptance`, `secrets`, `migration`, `deploy`, `environment`, `drift`, `memory`, `skills`, `decisions`, `audit`, `rollback`, `watch`, `anomaly`, `incident`, `selfHealing`, `projectIntelligence`, `contextPacks`
 
 ### Renderer Process ([`apps/desktop/src/renderer/`](../apps/desktop/src/renderer/))
 - Runs in sandboxed Chromium
 - React application with screens and components
 - Calls `window.vibeflow.*` for all privileged operations
 - No direct Node.js access, no direct file system access
-- Communicates with main process exclusively through the preload bridge
 
 ```
 Renderer (React)  →  window.vibeflow.*  →  preload/index.ts  →  ipcMain.handle()  →  Main Process
@@ -165,39 +148,33 @@ Each Mode is stored in the local SQLite `modes` table with these fields:
 | `icon` | string | Emoji icon |
 | `color` | string | Hex color for UI |
 | `soul` | string | Full instructions text (editable by user) |
-| `model_id` | string | OpenRouter model ID (e.g., `anthropic/claude-3.5-sonnet`) |
+| `model_id` | string | OpenRouter model ID |
 | `fallback_model_id` | string? | Fallback model if primary is unavailable |
 | `temperature` | number | Inference temperature |
 | `approval_policy` | JSON string | Per-mode approval tier overrides |
 | `is_built_in` | boolean | Whether this is a default Mode (cannot be deleted) |
 
-### Mode Lifecycle
+### Default Modes
 
-1. On first launch, 6 default Modes are seeded from [`default-modes.ts`](../apps/desktop/src/lib/modes/default-modes.ts)
-2. User can edit any Mode's soul, model assignment, and approval policy via the Modes screen
-3. Changes are persisted to local SQLite immediately
-4. When sync is re-enabled, Mode changes will sync to Supabase
+6 default Modes: Orchestrator, Architect, Coder, Debugger, DevOps, Reviewer. Seeded on first launch from [`default-modes.ts`](../apps/desktop/src/lib/modes/default-modes.ts).
 
-### Mode Routing (Future)
+### Orchestration Engine
 
-The Orchestrator is intended to route tasks to specialist Modes based on the task type. Currently, the Orchestrator handles all tasks directly via OpenRouter. Multi-Mode delegation is a future enhancement.
-
-### Key Files
-
-| File | Purpose |
-|---|---|
-| [`apps/desktop/src/lib/modes/default-modes.ts`](../apps/desktop/src/lib/modes/default-modes.ts) | 6 default Mode definitions |
-| [`apps/desktop/src/lib/storage/local-db.ts`](../apps/desktop/src/lib/storage/local-db.ts) | Mode CRUD in SQLite |
-| [`apps/desktop/src/renderer/screens/ModesScreen.tsx`](../apps/desktop/src/renderer/screens/ModesScreen.tsx) | Mode editor UI |
-| [`apps/desktop/src/main/index.ts`](../apps/desktop/src/main/index.ts) | Mode IPC handlers |
+[`apps/desktop/src/lib/orchestrator/orchestration-engine.ts`](../apps/desktop/src/lib/orchestrator/orchestration-engine.ts) — implements role-based routing, dispatching sub-tasks to specialist Modes based on task type. The legacy `orchestrator.ts` wrapper is still present for backward-compatible IPC channel compatibility.
 
 ---
 
 ## Sync Architecture
 
-### Design
+### Current State (as of 2026-04-18)
 
-The sync system is designed around a local-first architecture:
+Cloud sync is **active**. The full sequence was completed:
+
+1. Supabase migration SQL run — all tables created and verified (projects, conversations, messages, conversation_leases, plus 17 tables from Components 10–22)
+2. Handoffs storage bucket created with 4 RLS policies
+3. `conversation_leases` RLS hotfix applied (WITH CHECK clause + race-condition guard in `acquireLease()`)
+4. `SyncEngine` constructor now accepts an already-authenticated `SupabaseClient` (not raw URL + key) — critical for RLS to work
+5. `initSyncEngine()` is a real implementation — creates the SyncEngine, starts it, subscribes to Realtime
 
 ```
 [Device A]                          [Supabase]                    [Device B]
@@ -211,226 +188,199 @@ The sync system is designed around a local-first architecture:
 ```
 
 - **Supabase Postgres** is the canonical cloud source of truth
-- **Local SQLite** is the local cache for speed and offline resilience
+- **Local SQLite** (sql.js) is the local cache for speed and offline resilience
 - **Supabase Realtime** pushes changes to all connected clients
 - **Lease/heartbeat model** ensures only one device actively drives a conversation at a time
 
-### Current State
+### Known Gap
 
-**Sync is intentionally disabled.** The [`initSyncEngine()`](../apps/desktop/src/main/index.ts:94) function in the main process is a no-op that logs a message and sends `'offline'` status to the renderer. All sync IPC handlers return stub values.
-
-This was done because:
-1. `better-sqlite3` (the original SQLite library) could not be built on the dev machine due to native binding compilation failures
-2. The app was migrated to `sql.js` (pure JavaScript SQLite) which works but required changes to the database layer
-3. Sync was disabled to stabilize the app while the database migration was in progress
-4. The Supabase migration SQL (`docs/supabase-migration-m4.sql`) has not been run yet
-
-The app works fully in local-only mode. All data is stored in a local SQLite file managed by sql.js.
-
-### Sync Re-enablement Plan
-
-1. Run the Supabase migration SQL to create cloud tables
-2. Re-implement `initSyncEngine()` to actually start the SyncEngine
-3. Test with two devices
-4. Remove the stub IPC handlers
+Two-device sync has not yet been tested in practice. The implementation is complete; the validation test with two real devices is outstanding. See [`docs/what-is-left.md`](what-is-left.md).
 
 ### Key Files
 
 | File | Purpose |
 |---|---|
-| [`apps/desktop/src/lib/sync/sync-engine.ts`](../apps/desktop/src/lib/sync/sync-engine.ts) | Full sync engine (501 lines, implemented but not called) |
-| [`apps/desktop/src/lib/storage/local-db.ts`](../apps/desktop/src/lib/storage/local-db.ts) | Local SQLite database (489 lines) |
+| [`apps/desktop/src/lib/sync/sync-engine.ts`](../apps/desktop/src/lib/sync/sync-engine.ts) | Full sync engine (re-enabled 2026-04-18) |
+| [`apps/desktop/src/lib/storage/local-db.ts`](../apps/desktop/src/lib/storage/local-db.ts) | Local SQLite database (sql.js) |
 | [`apps/desktop/src/lib/storage/supabase-client.ts`](../apps/desktop/src/lib/storage/supabase-client.ts) | Supabase client wrapper |
-| [`docs/supabase-migration-m4.sql`](supabase-migration-m4.sql) | Migration SQL for sync tables |
 | [`docs/cloud-sync.md`](cloud-sync.md) | Full sync architecture design |
 
 ---
 
 ## Approval Architecture
 
-The approval system has three tiers designed to minimize human interruption:
+The approval system has been extended from 3 tiers (Component 7) to 6 risk classes (Component 19):
 
-### Tier Classification
+### Tier / Risk Classification
 
-| Tier | Trigger | Examples |
-|---|---|---|
-| **Tier 1 (Auto)** | Safe, read-only actions | `file:read`, `terminal:run` (read-only) |
-| **Tier 2 (Second-Model)** | Reversible write actions | `file:write`, `git:commit`, `git:push-branch`, `ssh:connect` |
-| **Tier 3 (Human)** | Irreversible or high-risk actions | `file:delete`, `git:push-main`, `deploy:trigger`, `deploy:restart`, `deploy:stop` |
+| Original Tier | Risk Class | Trigger | Examples |
+|---|---|---|---|
+| **Tier 1 (Auto)** | informational / low | Safe, read-only actions | `file:read`, `terminal:run` (read-only) |
+| **Tier 2 (Second-Model)** | medium | Reversible write actions | `file:write`, `git:commit`, `git:push-branch` |
+| **Tier 3 (Human)** | high / destructive / privileged-production | Irreversible or high-risk actions | `file:delete`, `git:push-main`, `deploy:trigger` |
 
-### Second-Model Review
+Risk scoring considers: subsystem, environment, data risk, blast radius, reversibility, and evidence completeness.
 
-Tier 2 actions are reviewed by a fast, cheap AI model (`google/gemini-flash-1.5` via OpenRouter). The reviewer receives the action description, affected resources, and requesting Mode, then returns `approve`, `escalate_to_human`, or `reject` with a plain-English reason.
-
-### Self-Maintenance Override
-
-When working on VibeFlow's own source code (self-maintenance mode), all file writes and deletes are forced to Tier 3 (human approval) regardless of the normal tier classification.
+All approval decisions are now persisted to SQLite audit history (survives app restarts) and linked to checkpoints for rollback recovery.
 
 ### Key Files
 
 | File | Purpose |
 |---|---|
-| [`apps/desktop/src/lib/approval/approval-engine.ts`](../apps/desktop/src/lib/approval/approval-engine.ts) | Tier classification + second-model review |
-| [`apps/desktop/src/lib/approval/approval-logger.ts`](../apps/desktop/src/lib/approval/approval-logger.ts) | In-memory approval audit log |
-| [`apps/desktop/src/renderer/components/ApprovalCard.tsx`](../apps/desktop/src/renderer/components/ApprovalCard.tsx) | Human approval UI |
-| [`apps/desktop/src/renderer/components/ApprovalQueue.tsx`](../apps/desktop/src/renderer/components/ApprovalQueue.tsx) | Approval queue indicator |
+| [`apps/desktop/src/lib/approval/approval-engine.ts`](../apps/desktop/src/lib/approval/approval-engine.ts) | Tier classification + second-model review + 6-class risk scoring |
+| [`apps/desktop/src/lib/approval/audit-store.ts`](../apps/desktop/src/lib/approval/audit-store.ts) | Persistent audit history (SQLite) |
+| [`apps/desktop/src/lib/approval/approval-logger.ts`](../apps/desktop/src/lib/approval/approval-logger.ts) | In-memory approval log |
 | [`docs/approval-policy.md`](approval-policy.md) | Full approval policy documentation |
+
+---
+
+## Brownfield Rebuild Components (10–22)
+
+The brownfield rebuild added major subsystems. Each component has a binding spec in `rebuild/` and an implementation analysis file.
+
+| Component | Subsystem | Key Files |
+|---|---|---|
+| **10** | Product Shell | `LeftRail`, `PanelWorkspace`, 14 panels, `useUiState` |
+| **11** | Project Intelligence | `project-intelligence/` (context-pack-assembler, framework-detector, impact-analyzer, indexing-pipeline, topology-builder) |
+| **12** | Agent Orchestration / Mode System | `orchestrator/orchestration-engine.ts` with role routing |
+| **13** | Change Engine / Code Operations | `change-engine/` (change-engine, checkpoint-manager, patch-applier, semantic-grouper, validity-pipeline, workspace-manager, duplicate-detector) |
+| **14** | Capability Fabric / MCP | `capability-fabric/`, `mcp-manager/` (connection-manager, tester, health-monitor, tool-executor, tool-registry) |
+| **15** | Runtime Execution / Debugging | `runtime-execution/` (browser-automation-service, evidence-capture-engine, runtime-execution-service) |
+| **16** | Verification / Acceptance | `verification/` (verification-engine, bundles, acceptance-criteria-generator, flow-runner, test-runner, policy-check-runner, deploy-check-runner) |
+| **17** | Environments / Deploy / Service Control | `environment-manager.ts`, `deploy-engine.ts`, `service-control-plane.ts`, `drift-detector.ts` |
+| **18** | Secrets / Config / Migration Safety | `secrets/` (secrets-store, migration-safety) |
+| **19** | Approval / Risk / Audit / Rollback | `audit-store.ts`, 6-class risk scoring, checkpoint-linked rollback, `AuditPanel` |
+| **20** | Memory / Skills / Decision Knowledge | `memory/` (memory-lifecycle, memory-retriever, memory-seed) |
+| **21** | Observability / Incident / Self-Healing | `observability/` (watch-engine, anomaly-detector, self-healing-engine) |
+| **22** | Sync / Collaboration | Sync re-enablement, `SyncEngine` constructor change, M4 hotfix RLS |
+
+---
+
+## Repository Structure (Actual)
+
+```
+vibeflow/
+├── apps/desktop/                    ← Electron app
+│   ├── electron.vite.config.ts      ← Vite config (MUST be this name, not vite.config.ts)
+│   ├── electron-builder.yml         ← Packaging config (GitHub Releases publish)
+│   ├── package.json                 ← App dependencies
+│   ├── tsconfig.json                ← TypeScript config with @vibeflow/* paths
+│   └── src/
+│       ├── main/index.ts            ← Main process entry (~2,441 lines, IPC handler registry)
+│       ├── preload/index.ts         ← Preload bridge (window.vibeflow API)
+│       ├── renderer/                ← React app
+│       │   ├── App.tsx              ← Root component, screen routing
+│       │   ├── screens/             ← 8 full-page screens
+│       │   │   ├── ConversationScreen.tsx
+│       │   │   ├── DevOpsScreen.tsx
+│       │   │   ├── McpScreen.tsx
+│       │   │   ├── ModesScreen.tsx
+│       │   │   ├── ProjectListScreen.tsx
+│       │   │   ├── ProjectScreen.tsx
+│       │   │   ├── SignInScreen.tsx
+│       │   │   └── SshScreen.tsx
+│       │   └── components/          ← Reusable components + 14 panels
+│       │       ├── LeftRail.tsx
+│       │       ├── PanelWorkspace.tsx
+│       │       ├── TopBar.tsx
+│       │       ├── BottomBar.tsx
+│       │       ├── ApprovalCard.tsx
+│       │       ├── ApprovalQueue.tsx
+│       │       ├── HandoffDialog.tsx
+│       │       ├── EvidenceRail.tsx
+│       │       ├── UpdateBanner.tsx
+│       │       └── panels/          ← 14 mission workspace panels
+│       │           ├── MissionPanel.tsx
+│       │           ├── PlanPanel.tsx
+│       │           ├── ContextPanel.tsx
+│       │           ├── EvidencePanel.tsx
+│       │           ├── ChangePanel.tsx
+│       │           ├── VerificationPanel.tsx
+│       │           ├── AcceptancePanel.tsx
+│       │           ├── AuditPanel.tsx
+│       │           ├── EnvironmentPanel.tsx
+│       │           ├── SecretsPanel.tsx
+│       │           ├── CapabilitiesPanel.tsx
+│       │           ├── MemoryPanel.tsx
+│       │           ├── WatchPanel.tsx
+│       │           └── MigrationPanel.tsx
+│       └── lib/                     ← ALL authoritative app library code
+│           ├── shared-types/        ← TypeScript interfaces (entities, IPC)
+│           ├── storage/             ← LocalDb (sql.js), Supabase client, sql-js.d.ts
+│           ├── sync/                ← SyncEngine (active)
+│           ├── orchestrator/        ← OrchestrationEngine + orchestrator wrapper
+│           ├── modes/               ← Default mode definitions
+│           ├── approval/            ← Approval engine, audit store, logger
+│           ├── handoff/             ← Handoff generator + Supabase Storage
+│           ├── tooling/             ← File, terminal, git, SSH services
+│           ├── devops/              ← DevOps templates, GitHub Actions, Coolify, health check
+│           ├── updater/             ← Auto-updater wrapper
+│           ├── build-metadata/      ← Version/commit/date injection
+│           ├── capability-fabric/   ← Capability registry and adapter
+│           ├── change-engine/       ← Change engine, checkpoint, patch applier
+│           ├── mcp-manager/         ← MCP connections, tool registry, executor
+│           ├── memory/              ← Memory lifecycle, retriever, seed
+│           ├── observability/       ← Anomaly detector, self-healing, watch
+│           ├── project-intelligence/ ← Context packs, framework detector, indexing
+│           ├── providers/           ← OpenRouter provider
+│           ├── runtime-execution/   ← Browser automation, evidence capture
+│           ├── secrets/             ← Secrets store, migration safety
+│           ├── verification/        ← Verification engine, acceptance criteria
+│           ├── deploy-engine.ts
+│           ├── drift-detector.ts
+│           ├── environment-manager.ts
+│           └── service-control-plane.ts
+├── packages/                        ← Canonical sources for 3 packages (NOT used via workspace:*)
+│   ├── shared-types/                ← Canonical type definitions
+│   ├── storage/                     ← Canonical storage code
+│   ├── build-metadata/              ← Canonical build metadata code
+│   └── (others: README stubs only)
+├── rebuild/                         ← Binding spec files for Components 10–22
+├── docs/                            ← All documentation
+├── scripts/                         ← Build and dev scripts
+├── supabase/                        ← Migration SQL files
+└── .github/workflows/               ← CI/CD (ci.yml, release.yml, build.yml)
+```
+
+**Important:** Due to the exFAT drive limitation, `packages/*` source files are copied into `apps/desktop/src/lib/` rather than linked via `workspace:*`. The `packages/` directory contains the canonical source for only 3 packages; the app builds from `apps/desktop/src/lib/`. See [`docs/idiosyncrasies.md`](idiosyncrasies.md) entry #3.
 
 ---
 
 ## Tooling Architecture (Files / Terminal / Git / SSH)
 
-All tool actions run in the Electron main process for security. The renderer never has direct access to the filesystem, terminal, or git.
+All tool actions run in the Electron main process for security. The renderer never has direct access.
 
 ### File Service ([`apps/desktop/src/lib/tooling/file-service.ts`](../apps/desktop/src/lib/tooling/file-service.ts))
 - Read, write, list, exists operations
 - Diff generation (unified diff format)
-- Path traversal protection (prevents reading outside project directory)
+- Path traversal protection
 
 ### Terminal Service ([`apps/desktop/src/lib/tooling/terminal-service.ts`](../apps/desktop/src/lib/tooling/terminal-service.ts))
 - Run commands with streaming output via IPC events
 - Kill running processes
-- Output streams back to the renderer's bottom panel in real time
 
 ### Git Service ([`apps/desktop/src/lib/tooling/git-service.ts`](../apps/desktop/src/lib/tooling/git-service.ts))
-- Status: branch, staged, unstaged, untracked files
-- Diff: unified diff output
-- Commit: stage and commit with message
-- Push: push to remote (with branch specification)
-- Log: recent commit history
-- Uses the local `git` binary (not a JS library)
+- Status, diff, commit, push, log
+- Uses the local `git` binary
 
 ### SSH Service ([`apps/desktop/src/lib/tooling/ssh-service.ts`](../apps/desktop/src/lib/tooling/ssh-service.ts))
 - Discover hosts from `~/.ssh/config`
-- Discover SSH keys from `~/.ssh/`
-- Test connections (returns success/failure with latency)
-- Uses the local `ssh` binary
-
-### IPC Pattern
-
-All tool calls follow the same pattern:
-1. Renderer calls `window.vibeflow.files.read(path)` (or similar)
-2. Preload forwards to `ipcRenderer.invoke('files:read', path)`
-3. Main process handler executes the operation
-4. Result returns to renderer via the invoke promise
-5. For streaming operations (terminal), main process sends events via `webContents.send()`
-
----
-
-## DevOps Subsystem Architecture
-
-The DevOps subsystem provides deployment guidance and automation:
-
-### Components
-
-| Component | File | Purpose |
-|---|---|---|
-| **Templates** | [`devops-templates.ts`](../apps/desktop/src/lib/devops/devops-templates.ts) | Standard and Albert deployment templates |
-| **GitHub Actions Client** | [`github-actions-client.ts`](../apps/desktop/src/lib/devops/github-actions-client.ts) | Fetch workflow runs from GitHub API |
-| **Coolify Client** | [`coolify-client.ts`](../apps/desktop/src/lib/devops/coolify-client.ts) | Deploy, restart, stop via Coolify REST API |
-| **Health Check** | [`health-check.ts`](../apps/desktop/src/lib/devops/health-check.ts) | URL-based health monitoring |
-| **DevOps Screen** | [`DevOpsScreen.tsx`](../apps/desktop/src/renderer/screens/DevOpsScreen.tsx) | 4-tab UI (Overview, GitHub Actions, Deploy, Health) |
-
-### Data Storage
-
-- `project_devops_configs` table in local SQLite: stores per-project DevOps configuration
-- `deploy_runs` table in local SQLite: stores deploy run history
-- GitHub token and Coolify API key stored in keytar (Windows Credential Manager)
-
-### Templates
-
-Two built-in templates:
-1. **Standard** — Feature branch → PR → merge to main → GitHub Actions → Docker → GHCR → Coolify
-2. **Albert** — Push directly to main → GitHub Actions → Docker → GHCR → Coolify
-
-See [`docs/devops-templates.md`](devops-templates.md) for full details.
-
----
-
-## Handoff Subsystem Architecture
-
-The handoff system generates complete context packages for fresh AI sessions:
-
-### Components
-
-| Component | File | Purpose |
-|---|---|---|
-| **Generator** | [`handoff-generator.ts`](../apps/desktop/src/lib/handoff/handoff-generator.ts) | Pure functions: `generateHandoffDoc()` and `generateHandoffPrompt()` |
-| **Storage** | [`handoff-storage.ts`](../apps/desktop/src/lib/handoff/handoff-storage.ts) | Save to Supabase Storage bucket (`handoffs`) |
-| **Dialog** | [`HandoffDialog.tsx`](../apps/desktop/src/renderer/components/HandoffDialog.tsx) | Modal with copy-to-clipboard and cloud save status |
-
-### Flow
-
-1. User clicks 📋 Handoff button in conversation header
-2. User fills in current goal, next step, and optional warnings
-3. Main process reads `docs/idiosyncrasies.md` from the repo
-4. Generator creates a handoff document and a ready-to-paste prompt
-5. Document is saved to Supabase Storage (if available)
-6. User copies the prompt and pastes it into a new AI session
-
-### Self-Maintenance Handoff
-
-When generating a handoff for self-maintenance work, the document is labeled "🔧 VibeFlow Self-Maintenance Handoff" and includes the VibeFlow repo path.
-
----
-
-## Self-Maintenance Architecture
-
-VibeFlow can work on its own source code with extra safety:
-
-### How It Works
-
-1. A special "self-maintenance" project is created with `isSelfMaintenance: true`
-2. The project's local path points to the VibeFlow repo root
-3. The approval engine checks `isSelfMaintenance` and forces Tier 3 for all file writes/deletes
-4. The UI shows a yellow warning banner and 🔧 prefix
-5. Handoff documents are labeled for self-maintenance
-
-### Key Files
-
-| File | Purpose |
-|---|---|
-| [`apps/desktop/src/lib/storage/local-db.ts`](../apps/desktop/src/lib/storage/local-db.ts) | `getSelfMaintenanceProject()`, `isSelfMaintenance` field |
-| [`apps/desktop/src/lib/approval/approval-engine.ts`](../apps/desktop/src/lib/approval/approval-engine.ts) | `classifyAction()` with `isSelfMaintenance` option |
-| [`apps/desktop/src/renderer/screens/ProjectScreen.tsx`](../apps/desktop/src/renderer/screens/ProjectScreen.tsx) | Yellow self-maintenance banner |
+- Test connections using the local `ssh` binary
 
 ---
 
 ## Build Metadata Architecture
 
-Build metadata is injected at build time so the top bar always shows real version info:
-
-### Injection Flow
-
 1. [`scripts/inject-build-metadata.js`](../scripts/inject-build-metadata.js) runs before `pnpm dev` and `pnpm build`
-2. It reads version from `apps/desktop/package.json`, gets commit SHA and date from git, reads `RELEASE_CHANNEL` from environment
-3. It writes [`apps/desktop/src/lib/build-metadata/generated.ts`](../apps/desktop/src/lib/build-metadata/generated.ts) (gitignored)
-4. [`apps/desktop/src/lib/build-metadata/index.ts`](../apps/desktop/src/lib/build-metadata/index.ts) exports `BUILD_METADATA` with a try/catch fallback if generated.ts doesn't exist
+2. Reads version from `apps/desktop/package.json`, commit SHA and date from git, `RELEASE_CHANNEL` from env
+3. Writes [`apps/desktop/src/lib/build-metadata/generated.ts`](../apps/desktop/src/lib/build-metadata/generated.ts) (gitignored)
+4. [`apps/desktop/src/lib/build-metadata/index.ts`](../apps/desktop/src/lib/build-metadata/index.ts) exports `BUILD_METADATA` with a try/catch fallback
 
 ### Auto-Update
 
-- [`apps/desktop/src/lib/updater/auto-updater.ts`](../apps/desktop/src/lib/updater/auto-updater.ts) uses `electron-updater` configured for GitHub Releases
 - `autoDownload = false` — user decides when to download
 - Only runs in packaged builds (`app.isPackaged` check)
 - Checks for updates 5 seconds after startup
-- [`UpdateBanner.tsx`](../apps/desktop/src/renderer/components/UpdateBanner.tsx) shows a non-intrusive banner below the top bar
-
----
-
-## Where the App Is Intentionally Simplified Right Now
-
-These are areas where the architecture is deliberately simpler than the full design:
-
-| Area | Current State | Full Design |
-|---|---|---|
-| **Orchestrator routing** | Orchestrator calls OpenRouter directly, no multi-Mode delegation | Orchestrator analyzes task, routes to specialist Modes, collects results |
-| **Cloud sync** | Disabled; all data local only | Full Supabase sync with Realtime push and lease/heartbeat |
-| **Database** | sql.js (pure JS, in-memory with file persistence) | better-sqlite3 (native, faster) or sql.js with proper migration |
-| **Approval second-model** | Calls OpenRouter for review | Could cache common approval patterns to reduce API calls |
-| **Mode tool permissions** | All Modes have access to all tools | Per-Mode tool permission configuration |
-| **Conversation summarization** | Not implemented | Auto-summarize long conversations to stay within context limits |
-| **MCP integration** | Package exists but not implemented | Connect to external MCP servers for additional tools |
-| **Custom Modes** | Can edit built-in Modes but creating new ones is limited | Full Mode creation, duplication, import/export |
 
 ---
 
@@ -440,7 +390,6 @@ These are areas where the architecture is deliberately simpler than the full des
 |---|---|---|
 | OpenRouter API key | keytar (OS-secure) | Never synced by default |
 | SSH private keys | Local `~/.ssh/` | Never synced |
-| SSH target metadata | Supabase Postgres (when sync enabled) | Synced (no key material) |
 | Supabase anon key | App bundle (`.env` file) | Public, safe to include |
 | Supabase service key | Never in desktop app | Server-side only |
 | GitHub token (DevOps) | keytar (OS-secure) | Never synced by default |
@@ -450,57 +399,13 @@ These are areas where the architecture is deliberately simpler than the full des
 
 ---
 
-## Repository Structure
+## Where the App Is Intentionally Simplified Right Now
 
-```
-vibeflow/
-├── apps/desktop/                    ← Electron app
-│   ├── electron.vite.config.ts      ← Vite config (MUST be this name, not vite.config.ts)
-│   ├── electron-builder.yml         ← Packaging config (GitHub Releases publish)
-│   ├── package.json                 ← App dependencies (sql.js, keytar, electron-updater, etc.)
-│   ├── tsconfig.json                ← TypeScript config with @vibeflow/* paths
-│   └── src/
-│       ├── main/index.ts            ← Main process entry (959 lines, IPC handler registry)
-│       ├── preload/index.ts         ← Preload bridge (window.vibeflow API)
-│       ├── renderer/                ← React app
-│       │   ├── App.tsx              ← Root component, screen routing
-│       │   ├── main.tsx             ← React entry point
-│       │   ├── index.html           ← HTML shell with CSS reset
-│       │   ├── screens/             ← Full-page screens
-│       │   │   ├── SignInScreen.tsx
-│       │   │   ├── ProjectListScreen.tsx
-│       │   │   ├── ProjectScreen.tsx
-│       │   │   ├── ConversationScreen.tsx
-│       │   │   ├── ModesScreen.tsx
-│       │   │   ├── DevOpsScreen.tsx
-│       │   │   └── SshScreen.tsx
-│       │   └── components/          ← Reusable components
-│       │       ├── TopBar.tsx
-│       │       ├── BottomBar.tsx
-│       │       ├── UpdateBanner.tsx
-│       │       ├── ApprovalCard.tsx
-│       │       ├── ApprovalQueue.tsx
-│       │       └── HandoffDialog.tsx
-│       └── lib/                     ← Shared libraries (copied from packages/ due to exFAT)
-│           ├── shared-types/        ← TypeScript interfaces
-│           ├── storage/             ← LocalDb (sql.js), Supabase client
-│           ├── sync/                ← SyncEngine (implemented but disabled)
-│           ├── orchestrator/        ← Orchestrator logic
-│           ├── modes/               ← Default mode definitions
-│           ├── approval/            ← Approval engine + logger
-│           ├── handoff/             ← Handoff generator + storage
-│           ├── tooling/             ← File, terminal, git, SSH services
-│           ├── devops/              ← DevOps templates, GitHub Actions, Coolify, health check
-│           ├── updater/             ← Auto-updater
-│           └── build-metadata/      ← Version/commit/date injection
-├── packages/                        ← Shared packages (source of truth, but NOT used via workspace:*)
-│   ├── shared-types/                ← Canonical type definitions
-│   ├── storage/                     ← Canonical storage code
-│   ├── build-metadata/              ← Canonical build metadata code
-│   └── (others: README stubs only)
-├── docs/                            ← All documentation
-├── scripts/                         ← Build and dev scripts
-└── .github/workflows/               ← CI/CD (ci.yml, release.yml)
-```
-
-**Important:** Due to the exFAT drive limitation, `packages/*` source files are copied into `apps/desktop/src/lib/` rather than linked via `workspace:*`. The `packages/` directory contains the canonical source, but the app builds from `apps/desktop/src/lib/`. See [`docs/idiosyncrasies.md`](idiosyncrasies.md) for details.
+| Area | Current State | Full Design |
+|---|---|---|
+| **Cloud sync** | Active but two-device validation not yet done | Full verified multi-device sync |
+| **Database** | sql.js (pure JS, in-memory with file persistence) | better-sqlite3 (native, faster) — blocked by native compilation issues |
+| **Approval second-model** | Calls OpenRouter for review | Could cache common approval patterns to reduce API calls |
+| **Conversation summarization** | Not implemented | Auto-summarize long conversations |
+| **Packaged installer** | Not yet tested | Verified NSIS installer on clean machine |
+| **main/index.ts split** | ~2,441-line monolith (intentional IPC registry) | Split into domain handler files |

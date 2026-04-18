@@ -1,28 +1,27 @@
 # VibeFlow — Risks
 
-Last updated: 2026-04-14
+Last updated: 2026-04-18
 
 This file documents real, current risks to the project. Each risk includes likelihood, impact, current status, and mitigation.
 
 ---
 
-## R1 — Cloud Sync Is Currently Disabled (Offline State)
+## R1 — Two-Device Sync Not Yet Validated in Practice
 
-**Likelihood:** Certain (it is disabled right now)
+**Likelihood:** Medium
 **Impact:** High
-**Status:** 🔴 Active risk
+**Status:** ⚠️ Validation Pending
 
-**Description:** Cloud sync was intentionally disabled in the main process to stabilize the app after the `better-sqlite3` → `sql.js` migration. The app works fully in local-only mode, but:
-- No multi-device sync
-- No cloud backup of data
-- If the local SQLite file is lost or corrupted, all data is lost
-- The sync indicator permanently shows 🔴 Offline
+**Description:** Cloud sync was re-enabled on 2026-04-18 (Decision 16). The implementation is complete — the SyncEngine starts, registers the device, pushes conversations to Supabase, and subscribes to Realtime. However, the sync system has never been tested with two real devices signed into the same account. Potential issues:
+- Supabase Realtime may have latency or reliability issues for the 15-second heartbeat
+- The lease takeover flow may have edge cases
+- Conflict resolution (last-write-wins) may behave unexpectedly
 
 **Mitigation:**
-- The sync engine code is fully implemented and preserved (501 lines in [`sync-engine.ts`](../apps/desktop/src/lib/sync/sync-engine.ts))
-- Re-enabling requires: running the Supabase migration SQL, adapting the sync engine for sql.js API, and testing with two devices
-- In the meantime, the local SQLite file should be backed up periodically
-- See [`docs/what-is-left.md`](what-is-left.md) for the re-enablement plan
+- The sync architecture is documented in [`docs/cloud-sync.md`](cloud-sync.md)
+- The lease/heartbeat model uses a generous 45-second stale threshold
+- Albert confirmed he has a second Windows device for testing
+- Two-device validation is listed as a priority item in [`docs/what-is-left.md`](what-is-left.md)
 
 ---
 
@@ -91,19 +90,19 @@ This file documents real, current risks to the project. Each risk includes likel
 
 **Likelihood:** Medium
 **Impact:** High
-**Status:** ⚠️ Active risk
+**Status:** ⚠️ Active risk (updated reason — sync is now on, but two-device test not done)
 
-**Description:** The sync architecture (lease/heartbeat, Realtime subscriptions, conflict resolution) was designed and implemented but has never been tested with two real devices because sync is disabled. Potential issues:
-- Supabase Realtime may have latency or reliability issues for the 15-second heartbeat
-- Conflict resolution (last-write-wins) may cause unexpected data loss
-- The lease takeover flow may have edge cases
-- The Supabase migration SQL has not been run
+**Description:** Sync is now enabled (R1 updated). But the sync engine has never been exercised with two physical devices. Potential issues remain:
+- Supabase Realtime latency or reliability for 15-second heartbeat
+- Conflict resolution (last-write-wins) behavior under concurrent edits
+- Lease takeover edge cases
+- New brownfield tables (added in Components 10–22) may not all have push methods wired to Supabase
 
 **Mitigation:**
-- The sync engine is fully implemented and ready to test
 - The lease/heartbeat model uses a generous 45-second stale threshold (3 missed heartbeats)
 - Conflict strategy is documented in [`docs/cloud-sync.md`](cloud-sync.md)
 - Albert confirmed he has a second Windows device for testing
+- The Supabase project is live and all tables are created
 
 ---
 
@@ -183,14 +182,15 @@ These fixes are fragile — any CSS change to the layout containers could re-int
 
 **Likelihood:** Low
 **Impact:** Medium
-**Status:** ⚠️ Technical debt
+**Status:** ⚠️ Technical debt (size has grown significantly)
 
-**Description:** [`apps/desktop/src/main/index.ts`](../apps/desktop/src/main/index.ts) is 959 lines and growing. It contains all IPC handler registrations. While this is acceptable for now (it's essentially a handler registry), it could become unwieldy.
+**Description:** [`apps/desktop/src/main/index.ts`](../apps/desktop/src/main/index.ts) is now ~2,441 lines (up from 959 at MVP). It contains all IPC handler registrations across 30+ domains and 100+ handlers. While the file is well-organized (it delegates immediately to `src/lib/` services), it is increasingly hard to navigate.
 
 **Mitigation:**
-- The file is well-organized with clear section comments
-- A future refactor could split IPC handlers into separate files by domain (auth, projects, modes, etc.)
+- The file is structured with clear section comments per domain
+- A future refactor should split into `src/main/handlers/*.ts` files (see [`docs/what-is-left.md`](what-is-left.md) item #7)
 - This is not blocking any functionality
+- Adding a duplicate handler registration will crash the app at boot (see idiosyncrasies #15)
 
 ---
 
@@ -212,3 +212,34 @@ This means the app works as a single-Mode AI chat, not as the multi-Mode orchest
 - The Mode system infrastructure is in place (6 Modes, per-Mode model assignment, approval policies)
 - Multi-Mode routing is a future enhancement, not a blocker for the current MVP
 - The Orchestrator can be enhanced incrementally
+
+---
+
+## R12 — Brownfield Migration Backfill Debt
+
+**Likelihood:** Low
+**Impact:** Medium
+**Status:** ⚠️ Technical debt
+
+**Description:** The `capabilities` table (and possibly a few others) now has both old columns (`type`, `permissions_json`) and new columns (`class`, `owner`, `description`, `scope`, `actions_json`) coexisting. Rows created before Component 14 have values in the old columns but are empty in the new columns. Until old rows are back-filled to the new schema, UI components reading new columns may show empty/null values for legacy rows.
+
+**Mitigation:**
+- The old columns are preserved to avoid data loss (see idiosyncrasies #14)
+- The dual-schema is documented so developers know not to "clean up" old columns prematurely
+- Back-fill migration is listed in [`docs/what-is-left.md`](what-is-left.md)
+
+---
+
+## R13 — conversation_leases RLS Race Condition Is Load-Bearing
+
+**Likelihood:** Low
+**Impact:** High
+**Status:** ⚠️ Mitigated but fragile
+
+**Description:** The `ensure-remote` guard in `SyncEngine.acquireLease()` — a call to `pushConversation()` at the top of every lease-acquire operation — looks like redundant work. If it is removed (e.g., during a "cleanup" pass), lease acquisition will silently fail with FK violations when the conversation hasn't synced to Supabase yet.
+
+**Mitigation:**
+- The guard is documented in idiosyncrasies #11
+- Any code review that "cleans up" the `acquireLease()` method must preserve this guard
+- The guard is cheap — it is a no-op if the conversation row already exists in Supabase
+

@@ -225,6 +225,8 @@ Disabling sync was the safest path to a working app. The sync engine code ([`syn
 - All data is stored in a local SQLite file only — if the file is lost, data is lost
 - Re-enabling sync requires: running the Supabase migration, adapting the sync engine for sql.js, and testing with two devices
 
+**UPDATE 2026-04-18:** Sync re-enabled. See Decision 16.
+
 ---
 
 ## Decision 11 — GitHub OAuth: Localhost Callback with Implicit Flow Support
@@ -366,3 +368,115 @@ The `/api/v1/models/user` endpoint returns only models the user's API key has ac
 **Files updated:**
 - [`rebuild/04_PROJECT_IMPLEMENTATION_PLAN.md`](../rebuild/04_PROJECT_IMPLEMENTATION_PLAN.md) (v1.0 → v1.1)
 - [`rebuild/06_CURRENT_PROGRAM_STATE.md`](../rebuild/06_CURRENT_PROGRAM_STATE.md) (v1.0 → v1.1)
+
+
+---
+
+## Decision 16 — Cloud Sync Re-Enabled
+
+**Date:** 2026-04-18
+**Decision:** Re-enable cloud sync. `initSyncEngine()` is now a real implementation. The SyncEngine constructor now accepts an already-authenticated `SupabaseClient` (not raw credentials) so RLS policies work correctly.
+**Decided by:** Builder + Orchestrator
+
+**What was done:**
+1. Ran all Supabase migration SQL on the live Supabase instance — all 6 original tables plus ~15 brownfield tables created and verified
+2. Created the `handoffs` Supabase Storage bucket with 4 RLS policies
+3. Applied the M4 hotfix RLS: `conversation_leases` policy updated with WITH CHECK clause
+4. Added the `ensure-remote` race-condition guard in `SyncEngine.acquireLease()` — calls `pushConversation()` before attempting lease insert to satisfy FK constraint
+5. Changed `SyncEngine` constructor to accept an authenticated `SupabaseClient` instead of raw URL + anon key
+6. Re-implemented `initSyncEngine()` to create and start the SyncEngine with the authenticated client
+7. Updated `before-quit` handler to call `syncEngine.stop()`
+8. Removed all stub sync IPC handlers
+
+**Consequences:**
+- App now syncs to Supabase on startup
+- The sync indicator shows 🟢 Synced (or 🟡 Syncing briefly) instead of 🔴 Offline
+- The `ensure-remote` guard is load-bearing — do NOT remove it (see idiosyncrasies #11)
+- Two-device validation has not been done yet — this is still a pending test
+
+---
+
+## Decision 17 — Default Branch Renamed master → main
+
+**Date:** 2026-04-18
+**Decision:** Rename the default git branch from `master` to `main`.
+**Decided by:** DevOps
+
+**What was done:**
+1. `.github/workflows/build.yml` and `ci.yml` updated to use `main` in branch refs
+2. GitHub default branch renamed to `main`
+3. Local tracking branch updated
+4. Historical `CURRENT_TASK.md` entries referencing `master` are intentionally preserved as historical record
+
+**Consequences:**
+- All new branches should be based on `main`, not `master`
+- Any CI/CD references to `master` are now broken; update to `main`
+- Old `master` entries in `CURRENT_TASK.md` are historical only — do not update them
+
+---
+
+## Decision 18 — Brownfield Rebuild Components 10–22 Completed
+
+**Date:** 2026-04-14 to 2026-04-18
+**Decision:** Execute the fixed 13-component implementation order. All 13 components (10, 22, 12, 14, 11, 13, 19, 15, 16, 18, 17, 21, 20) completed.
+**Decided by:** Architect + Builder
+
+**What was added:**
+- ~21 new SQLite tables
+- 100+ new IPC handlers
+- 14 panel components (`MissionPanel` through `MigrationPanel`)
+- 2 new screens (`McpScreen`, plus enhanced `ProjectScreen`)
+- OrchestrationEngine with role routing
+- Capability fabric (capability-registry, capability-adapter)
+- MCP management (connection-manager, tool-registry, tool-executor)
+- Project intelligence (context-pack-assembler, framework-detector, indexing)
+- Change engine (change-engine, checkpoint-manager, patch-applier)
+- Verification engine (5-level bundles, acceptance-criteria-generator)
+- Runtime execution (browser-automation with Playwright stub, evidence capture)
+- Environments + deploy workflow tracking + drift detection
+- Secrets store + migration safety
+- Memory lifecycle + retriever
+- Observability (watch-engine, anomaly-detector, self-healing-engine)
+- Persistent audit history (linked to checkpoints for rollback)
+- 6-class risk scoring (expanded from 3 tiers)
+
+**Consequences:**
+- The codebase is now ~200+ source files and well over 10,000 lines
+- `main/index.ts` has grown to ~2,441 lines — splitting into domain handler files is the next refactor priority
+- The rebuild spec in `rebuild/` remains the binding design source of truth
+- The `capabilities` table has dual schema (old columns + new columns) pending back-fill migration (see idiosyncrasies #14)
+
+---
+
+## Decision 19 — Handoff Path Packaging Fix
+
+**Date:** 2026-04-17
+**Decision:** Fix the handoff system's path to `docs/idiosyncrasies.md` so it works in both dev mode and packaged builds.
+**Decided by:** Builder
+
+**What was done:**
+1. Added `app.isPackaged` guard to the handoff IPC handlers
+2. In dev mode: use the repo-relative path (same as before)
+3. In packaged builds: use `process.resourcesPath` + `/docs/idiosyncrasies.md`
+4. Added `docs/idiosyncrasies.md` to `extraResources` in `electron-builder.yml`
+
+**Consequences:**
+- Handoff generation now works correctly in both dev and packaged builds
+- The relative path hack (`../../../../docs/idiosyncrasies.md`) is still present for dev mode — this is correct behavior
+
+---
+
+## Decision 20 — getCurrentUserId() Required at All User-Scoped Read Sites
+
+**Date:** 2026-04-17
+**Decision:** All calls to user-scoped database methods (`listProjects`, `listConversations`, etc.) must pass the result of `getCurrentUserId()` as the user ID. Passing `''` (empty string) is a silent data loss bug.
+**Decided by:** Builder (after debugging "projects list is always empty")
+
+**Why:**
+The sql.js `WHERE user_id = ?` clause with an empty string returns zero rows without an error. Two separate bugs of this shape were found on 2026-04-17: one in the project list on startup, one in a conversation fetch. The fix is to always call `getCurrentUserId()` and never pass a literal empty string.
+
+**Consequences:**
+- All existing call sites have been fixed
+- Any future call site that passes `''` will silently return empty results — there is no compile-time protection
+- The rule is enforced only by convention and idiosyncrasies #17
+

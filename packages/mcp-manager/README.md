@@ -1,6 +1,12 @@
 # @vibeflow/mcp-manager
 
-## What This Package Does
+> **Status: Stub package — canonical code lives elsewhere**
+>
+> The actual implementation lives in [`apps/desktop/src/lib/mcp-manager/`](../../apps/desktop/src/lib/mcp-manager/).
+> This package is not imported via `workspace:*` dependencies (exFAT drive, pnpm symlinks don't work).
+> See [`docs/idiosyncrasies.md`](../../docs/idiosyncrasies.md) entry #12.
+
+## What This Package Is For
 
 This package manages MCP (Model Context Protocol) server connections. MCP allows AI Modes to use external tools and data sources through a standard protocol. This package handles connecting to MCP servers, listing available tools, and executing MCP tool calls.
 

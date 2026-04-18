@@ -1,6 +1,6 @@
 # VibeFlow — Approval Policy
 
-Last updated: 2026-04-11
+Last updated: 2026-04-18
 
 ---
 
@@ -166,3 +166,33 @@ Every approval decision is recorded in the audit log with:
 3. **No surprise actions** — The execution stream always shows what the AI is doing, even for auto-approved actions
 4. **Reversibility matters** — The approval card always states how easy or hard rollback is
 5. **Provenance always** — Every action is attributed to a Mode, a model, a conversation, and a timestamp
+
+---
+
+## Component 19 Expansion — Six Risk Classes (2026-04-18)
+
+In the brownfield rebuild (Component 19), the approval system was extended from three tiers to six named risk classes. The tiers still exist, but each action is now classified by risk class first; the risk class determines the tier.
+
+| Risk Class | Tier | Examples |
+|---|---|---|
+| `read_only` | Tier 1 (auto) | Reading files, viewing git status, listing directories |
+| `code_change` | Tier 2 (second-model review) | Writing files, applying diffs, running builds |
+| `production_deploy` | Tier 3 (human approval) | Deploying to production, triggering Coolify deploy |
+| `auth_security` | Tier 3 (human approval) | Modifying auth config, changing GitHub Secrets |
+| `data_destruction` | Tier 3 (human approval) | Deleting files, dropping database tables, `rm -rf` |
+| `critical_infrastructure` | Tier 3 (human approval) + mandatory delay | Changes to CI/CD pipelines, DNS, TLS certs |
+
+### Audit History with Checkpoints
+
+Every Tier 3 approval now:
+1. Creates a **Checkpoint** — a snapshot of project state before the action
+2. Records the approval decision in the **AuditHistory** table with checkpoint reference
+3. Links the checkpoint to the action record for easy rollback
+
+This means every human-approved action can be rolled back to the pre-action state using the checkpoint. The UI shows a "Rollback to checkpoint" option for recent Tier 3 actions.
+
+### Per-Mode Risk Class Overrides
+
+Individual Modes can override the default tier for a risk class. For example, the DevOps Mode can be configured to auto-approve `production_deploy` actions (if Albert explicitly enables this). The default for all Modes is the table above.
+
+The approval policy for each Mode is editable in the GUI (Modes screen → Mode → Approval Policy tab).

@@ -1,6 +1,12 @@
 # @vibeflow/ssh-manager
 
-## What This Package Does
+> **Status: Stub package — canonical code lives elsewhere**
+>
+> The actual implementation lives in [`apps/desktop/src/lib/ssh-manager/`](../../apps/desktop/src/lib/ssh-manager/).
+> This package is not imported via `workspace:*` dependencies (exFAT drive, pnpm symlinks don't work).
+> See [`docs/idiosyncrasies.md`](../../docs/idiosyncrasies.md) entry #12.
+
+## What This Package Is For
 
 This package handles SSH operations: discovering the user's existing SSH configuration, listing available identities/keys, and testing SSH connections. It uses the local `ssh` binary and reads `~/.ssh/config` directly.
 

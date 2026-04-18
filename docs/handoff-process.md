@@ -1,6 +1,6 @@
 # VibeFlow — Handoff Process
 
-Last updated: 2026-04-11
+Last updated: 2026-04-18
 
 ---
 
@@ -151,3 +151,17 @@ The Orchestrator checks:
 If yes, these are added to `/docs/idiosyncrasies.md` before the handoff document is generated.
 
 See `/docs/idiosyncrasies.md` for the format of each entry.
+
+---
+
+## Implementation Notes (2026-04-18)
+
+The handoff system is implemented in `apps/desktop/src/lib/handoff/`. The IPC handler is in `apps/desktop/src/main/index.ts` under the `handoff:generate` channel.
+
+**Key implementation details:**
+
+- Handoff artifacts are saved to **Supabase Storage** in the `handoffs` bucket (created during Component 22 migration)
+- The `handoffs` bucket is configured with **authenticated access only** (not public)
+- The path to `docs/idiosyncrasies.md` for the handoff generator is resolved using `app.isPackaged ? path.join(process.resourcesPath, 'docs/idiosyncrasies.md') : path.resolve(__dirname, '../../../../docs/idiosyncrasies.md')` — this handles both dev and packaged builds (see idiosyncrasies #9, now resolved)
+- The handoff generator reads `docs/idiosyncrasies.md` at handoff time (not at startup) so it always gets the current content
+- In self-maintenance mode, handoff documents are automatically labeled with "🔧 VibeFlow Self-Maintenance Handoff" in the title

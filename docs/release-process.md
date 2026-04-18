@@ -74,7 +74,7 @@ Releases are published automatically by GitHub Actions when a git tag is pushed.
 1. Update the version in `apps/desktop/package.json` (e.g., `1.2.0`)
 2. Commit the version bump: `git commit -m "chore: bump version to 1.2.0"`
 3. Tag the commit: `git tag v1.2.0`
-4. Push the tag: `git push origin v1.2.0`
+4. Push the tag: `git push origin v1.2.0` (branch is `main`)
 5. GitHub Actions runs the release workflow automatically
 
 **What the release workflow does:**

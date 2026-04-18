@@ -47,26 +47,41 @@ Also read PROJECT_SOUL.md and CURRENT_TASK.md before starting any work.
 
 ```
 vibeflow/
-├── apps/desktop/          ← Electron app (main + renderer + preload)
-├── packages/              ← Shared TypeScript modules
-│   ├── shared-types/      ← All TypeScript interfaces and types
-│   ├── core-orchestrator/ ← Orchestrator logic and Mode routing
-│   ├── mode-system/       ← Mode definitions, souls, config
-│   ├── providers/         ← OpenRouter and future AI providers
-│   ├── storage/           ← Local SQLite cache + Supabase sync client
-│   ├── sync/              ← Sync engine, conflict resolution, lease/heartbeat
-│   ├── tooling/           ← File, terminal, diff, build, test actions
-│   ├── git-manager/       ← Git operations
-│   ├── ssh-manager/       ← SSH config discovery and connection testing
-│   ├── mcp-manager/       ← MCP server connections
-│   ├── devops/            ← DevOps templates, deploy runs, health checks
-│   ├── handoff/           ← Handoff artifact generation
-│   ├── approval/          ← Approval tiers and second-model review
-│   └── build-metadata/    ← Version/commit/time injection
-├── docs/                  ← All documentation (Architect maintains)
-├── scripts/               ← Dev, build, and release scripts
-└── .github/workflows/     ← GitHub Actions (DevOps maintains)
+├── apps/desktop/                  ← Electron app (main + renderer + preload + ALL lib code)
+│   └── src/lib/                   ← Authoritative application code (NOT packages/)
+│       ├── approval/              ← Approval engine, audit store
+│       ├── capability-fabric/     ← Capability registry
+│       ├── change-engine/         ← Change engine, checkpoint manager
+│       ├── devops/                ← Coolify, GitHub Actions, health check
+│       ├── handoff/               ← Handoff generator + storage
+│       ├── mcp-manager/           ← MCP connections, tool registry, executor
+│       ├── memory/                ← Memory lifecycle, retriever
+│       ├── modes/                 ← Default mode definitions
+│       ├── observability/         ← Anomaly detector, self-healing, watch
+│       ├── orchestrator/          ← OrchestrationEngine + orchestrator
+│       ├── project-intelligence/  ← Context packs, framework detector
+│       ├── providers/             ← OpenRouter provider
+│       ├── runtime-execution/     ← Browser automation, evidence capture
+│       ├── secrets/               ← Secrets store, migration safety
+│       ├── shared-types/          ← TypeScript interfaces
+│       ├── storage/               ← LocalDb (sql.js), Supabase client
+│       ├── sync/                  ← SyncEngine (re-enabled 2026-04-18)
+│       ├── tooling/               ← File, terminal, git, SSH services
+│       ├── updater/               ← Auto-updater
+│       └── verification/          ← Verification engine, acceptance criteria
+├── packages/                      ← Canonical shared packages (source of truth for 3 packages)
+│   ├── shared-types/              ← CANONICAL type definitions
+│   ├── storage/                   ← CANONICAL storage code
+│   ├── build-metadata/            ← CANONICAL build metadata code
+│   └── (others: README stubs only — code lives in apps/desktop/src/lib/)
+├── rebuild/                       ← Binding spec files for Components 10–22 brownfield rebuild
+├── docs/                          ← All documentation (Architect maintains)
+├── scripts/                       ← inject-build-metadata.js and build helpers
+├── supabase/                      ← Supabase migration SQL files
+└── .github/workflows/             ← GitHub Actions (DevOps maintains)
 ```
+
+**Important:** `apps/desktop/src/lib/` is the authoritative code. `packages/` is the canonical source for `shared-types`, `storage`, and `build-metadata` only — copied into `apps/desktop/src/lib/` due to the exFAT symlink workaround (see idiosyncrasies #3). All other `packages/*` directories are README stubs only.
 
 ---
 
@@ -76,7 +91,7 @@ vibeflow/
 - **Cloud backend:** Hosted Supabase (Auth + Postgres + Realtime + Storage)
 - **AI provider:** OpenRouter (primary, day one)
 - **Local secrets:** keytar (Windows Credential Manager)
-- **Local cache:** SQLite via better-sqlite3
+- **Local cache:** SQLite via sql.js (pure JavaScript — no native compilation; see idiosyncrasies #6)
 - **Packaging:** electron-builder
 - **Auto-update:** electron-updater + GitHub Releases
 - **CI/CD:** GitHub Actions

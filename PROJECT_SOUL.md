@@ -101,7 +101,7 @@ The top bar always shows the current version, commit SHA, commit date, and relea
 | Cloud backend | Hosted Supabase (Auth + Postgres + Realtime + Storage) |
 | AI provider | OpenRouter (primary) |
 | Local secrets | keytar (Windows Credential Manager) |
-| Local cache | SQLite via better-sqlite3 |
+| Local cache | SQLite via sql.js (pure JS; see idiosyncrasies #6) |
 | Packaging | electron-builder |
 | Auto-update | electron-updater + GitHub Releases |
 | CI/CD | GitHub Actions |

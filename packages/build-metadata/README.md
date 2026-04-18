@@ -1,5 +1,9 @@
 # @vibeflow/build-metadata
 
+> **Status: Canonical package** — this package is used directly by `apps/desktop` via TypeScript
+> path aliases. The inject script is `scripts/inject-build-metadata.js` (plain Node.js, not TypeScript).
+> See [`docs/idiosyncrasies.md`](../../docs/idiosyncrasies.md) for the full build metadata system.
+
 ## What This Package Does
 
 This package provides the build metadata (version, commit SHA, commit date, release channel) to the rest of the application. The metadata is injected at build time by `scripts/inject-build-metadata.ts` and exported from a generated file.

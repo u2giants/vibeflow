@@ -1,68 +1,38 @@
 # VibeFlow — Owner Dashboard
 
-Last updated: 2026-04-16 (Component 17: Environments, Deployments, and Service Control Plane Complete)
+Last updated: 2026-04-18 (All Components 10–22 complete; cloud sync re-enabled)
 
 ---
 
 ## Current Sprint
 
-**Sprint 28 — Component 17: Environments, Deployments, and Service Control Plane**
-Status: ✅ Complete — Explicit environment objects, deploy workflow tracking, drift detection, service control plane linkage, and guarded deploy/rollback flow
+**Sprint 35 — Component 22: Cloud Sync Re-Enablement + Doc Audit**
+Status: ✅ Complete — SyncEngine constructor fixed, Supabase migration run, RLS hotfix applied, cloud sync active, full doc audit completed
 
 **What was done:**
-- Turned environments into richer tracked objects with host/platform, deploy mechanism, required secrets, linked services, protections, rollback method, and mutability rules
-- Added deploy workflow tracking so the app can record candidate selection, safety checks, approval gating, rollout progress, health checks, verdicts, and rollback offers
-- Added a service control plane view so environments can be linked to the services they depend on
-- Added drift detection for missing secrets, version mismatch, config drift, schema mismatch, and provider-auth drift
-- Upgraded the environment UI so it is no longer a placeholder and now reflects real environment and deploy state
-- Reused the existing approval, verification, checkpoint, secrets, and health-check systems instead of inventing parallel versions
-- TypeScript compilation passes with zero errors
-- Reviewer-Pusher approved the work before any push
+- Fixed `SyncEngine` constructor to accept an authenticated `SupabaseClient` (not raw credentials) so RLS policies work correctly
+- Ran pending Supabase migration on live database — all 6 new tables created with RLS + Realtime
+- Created `handoffs` Supabase Storage bucket with proper RLS policies
+- Applied RLS hotfix to `conversation_leases` table (WITH CHECK clause + race-condition guard)
+- Fixed green "Conversations" button not responding in `PanelWorkspace.tsx`
+- Renamed default branch `master` → `main`; updated all workflow files
+- Completed comprehensive documentation audit — updated 20+ files to reflect current code reality
+- Cloud sync indicator now shows 🟢 Synced on launch (was permanently 🔴 Offline)
 
-**Previous Sprint:**
-**Sprint 27 — Component 16: Verification and Acceptance System**
-Status: ✅ Complete — Layered verification engine, acceptance criteria generation, risk-based verification bundles, and Verification/Acceptance panel UI
-
-**What was done:**
-- Built layered verification engine that checks code changes across 5 levels: instant validity (syntax/typecheck/lint), impacted tests, browser acceptance flows, policy/safety checks, and deploy-specific checks
-- Verification bundles automatically select the right checks based on risk level (low/medium/high/destructive)
-- Acceptance criteria generator creates explicit "what must work" checklists for each mission
-- Verification panel shows all verification runs with pass/fail/warning status and plain-English verdicts (promote/block/needs-review)
-- Acceptance panel shows intended behavior, non-goals, paths that must still work, and rollback conditions
-- 19 scoped unit tests for bundle selection, verdict logic, test discovery, and data structures — all passing
-- TypeScript compilation passes with zero errors
-- No drift into Component 17 (deploy execution), Component 18 (secrets management), or Component 21 (post-deploy monitoring)
-
-**Previous Sprint:**
-**Sprint 26 — Component 19: Approval, Risk, Audit, and Rollback**
-Status: ✅ Complete — Risk classification engine, persistent audit history, checkpoint-linked rollback, and Audit panel UI
-
-**What was done:**
-- Expanded approval system from 3 tiers to 6 risk classes (informational, low, medium, high, destructive, privileged-production)
-- Risk scoring considers subsystem, environment, data risk, blast radius, reversibility, and evidence completeness
-- All approval decisions now persist to SQLite audit history (survives app restarts)
-- Audit records link to checkpoints for rollback recovery
-- New Audit panel shows audit history with color-coded risk badges, checkpoint list, and rollback options
-- Rollback preview shows what will/won't be reversed before executing
-- Approval cards now display risk level alongside rollback difficulty
-- 21 unit tests for risk assessment engine — all passing
-- Backward compatible: existing 3-tier approval flow continues to work
-
-**Previous Sprint:**
-Sprint 19 — Documentation Hardening & Handoff Package — ✅ Complete
-
-**What was done:**
-- Expanded `docs/product-overview.md` into a comprehensive product description
-- Expanded `docs/architecture.md` into a detailed architecture reference
-- Expanded `docs/decisions.md` with all major decisions including sql.js migration, sync disablement, OAuth fixes
-- Updated `docs/risks.md` to reflect the real current situation
-- Updated `docs/idiosyncrasies.md` with all 10 known intentional oddities
-- Created `docs/handoff.md` — the single best file for a new developer/AI to read
-- Created `docs/what-is-left.md` — explicit list of remaining work after MVP
-- Created `docs/troubleshooting.md` — diagnosis and recovery guide for common issues
-
-**Previous Sprint:**
-Sprint 13 — Milestone 10: Self-Maintenance Mode — ✅ Complete
+**Previous Sprints (summary):**
+- Sprint 34 — Component 21: Skill Library ✅
+- Sprint 33 — Component 20: Self-Healing Engine ✅
+- Sprint 32 — Component 19: Approval Risk Classes + Audit History + Checkpoints ✅
+- Sprint 31 — Component 18: Observability + Watch Sessions + Anomaly Detection ✅
+- Sprint 30 — Component 17: Memory Manager ✅
+- Sprint 29 — Component 16: Secrets Manager ✅
+- Sprint 28 — Component 17: Environments + Deployments + Service Control Plane ✅
+- Sprint 27 — Component 16: Verification + Acceptance System ✅
+- Sprint 26 — Component 15: MCP Manager ✅
+- Sprint 25 — Component 14: Capability Registry ✅
+- Sprint 24 — Component 13: Change Engine ✅
+- Sprint 23 — Component 12: Evidence + Context Pack ✅
+- Sprint 22 — Component 11: Mission + Plan + OrchestrationEngine ✅
 
 ---
 
@@ -97,7 +67,12 @@ Each Mode has its own "soul" (detailed instructions) that you can edit, and you 
 OpenRouter is the service that provides the AI models (like Claude, Gemini, etc.). You need an API key from OpenRouter to use AI features. The key is stored securely in your Windows Credential Manager — never in plain text.
 
 **Next step:**
-- Move to the next planned rebuild component after Component 17: post-deploy monitoring / incident-watch work, while keeping packaging fixes and cloud-sync reactivation as separate follow-up tracks
+- Validate two-device sync: sign in on Albert's second Windows device and verify projects/conversations sync, ownership banner shows, lease takeover works
+- Test packaged `electron-builder` output on a clean machine
+- Fix `.env` loading for packaged builds (`app.isPackaged` check)
+- Wire `pnpm test` to the ~90+ existing `.test.cjs` files
+
+See [`docs/what-is-left.md`](what-is-left.md) for the full list.
 
 ---
 
@@ -185,9 +160,9 @@ Mode definitions (including their editable "soul" instructions) are stored in a 
 
 ## Current Version / Commit
 
-Version: 0.1.0 (development)
-Commit: In progress
-Built: N/A
+Version: 0.1.16
+Commit: See top bar after launching the app
+Built: auto-incremented by CI on each push to main
 
 ---
 
@@ -205,7 +180,7 @@ After that, you'll see a list of available AI models with pricing and can assign
 
 ## Sync Status Summary
 
-Cloud sync was implemented in Milestone 4. The sync indicator in the top bar shows 🟢 Synced, 🟡 Syncing, or 🔴 Offline.
+Cloud sync is **active** as of 2026-04-18 (Component 22). The sync indicator in the top bar shows 🟢 Synced when healthy, 🟡 Syncing while pushing changes, and 🔴 Offline if disconnected from Supabase. If you see 🔴 Offline, check your internet connection and `.env` file. Two-device validation is still pending.
 
 ---
 

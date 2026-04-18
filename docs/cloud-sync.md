@@ -1,16 +1,19 @@
 # VibeFlow — Cloud Sync Architecture
 
-Last updated: 2026-04-11
+Last updated: 2026-04-18 (sync re-enabled; updated from design-intent to current reality)
 
 ---
 
 ## Overview
 
-VibeFlow syncs everything to the cloud using Supabase. This means:
-- Install on any computer, sign in, and immediately have the same working environment
-- Active conversations are visible on all devices in real time
+VibeFlow syncs to the cloud using Supabase. As of 2026-04-18, cloud sync is **active**:
+- The SyncEngine starts on app launch with an authenticated SupabaseClient
+- Devices are registered and conversations are pushed to Supabase
+- Supabase Realtime subscriptions receive live updates
 - Only one device can actively drive a conversation at a time (ownership model)
-- The app works offline using a local cache and reconciles when reconnected
+- The app works offline using a local SQLite cache and reconciles when reconnected
+
+**Note:** Two-device sync has not yet been validated in practice. The implementation is complete; the test with two real devices is the outstanding gap.
 
 ---
 
@@ -230,3 +233,34 @@ For encrypted sync:
 - Local SQLite cache is stored in the app's user data directory (not accessible to other users on the same machine)
 - The Supabase service key is never included in the desktop app bundle
 - Row-level security (RLS) policies in Supabase ensure users can only access their own data
+
+---
+
+## What's Actually Wired Today (2026-04-18)
+
+The following sync operations have active push methods in [`apps/desktop/src/lib/sync/sync-engine.ts`](../apps/desktop/src/lib/sync/sync-engine.ts):
+
+| Operation | Status |
+|---|---|
+| `registerDevice()` | ✅ Active |
+| `syncAll()` — initial full sync on startup | ✅ Active |
+| `pushConversation()` | ✅ Active |
+| `pushMessage()` | ✅ Active |
+| `acquireLease()` | ✅ Active (with ensure-remote guard — see idiosyncrasies #11) |
+| `renewLease()` / heartbeat | ✅ Active |
+| `releaseLease()` | ✅ Active |
+| `syncCapability()` | ✅ Active |
+| `syncEnvironment()` | ✅ Active |
+| Supabase Realtime subscriptions | ✅ Active |
+| Sign-out stops the engine | ✅ Active |
+
+**Domain tables from Components 10–22 (missions, plans, evidence, memory, skills, etc.):** These tables exist in Supabase but not all have push methods wired yet. They persist locally via sql.js; cloud push for these domains is a future enhancement.
+
+### SyncEngine Constructor Note
+
+The `SyncEngine` constructor accepts an already-authenticated `SupabaseClient`, not raw credentials. This is required for RLS policies to work. See idiosyncrasies #18 and Decision 16.
+
+### Lease Race-Condition Guard
+
+`acquireLease()` calls `pushConversation()` before attempting to insert a `ConversationLease` row. This ensures the FK constraint on `conversation_leases.conversation_id` is satisfied. Do NOT remove this guard. See idiosyncrasies #11.
+

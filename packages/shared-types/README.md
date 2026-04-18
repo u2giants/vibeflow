@@ -1,6 +1,14 @@
 # @vibeflow/shared-types
 
-## What This Package Does
+> **Status: Partially canonical — types live in two places**
+>
+> The shared types are defined in both this package (`packages/shared-types/src/`) and in
+> [`apps/desktop/src/lib/shared-types/`](../../apps/desktop/src/lib/shared-types/) (the canonical runtime location).
+> The desktop app uses the `lib/` version directly via TypeScript path aliases in `tsconfig.json`
+> and Vite `resolveId` plugin rather than `workspace:*` imports (exFAT drive, pnpm symlinks don't work).
+> See [`docs/idiosyncrasies.md`](../../docs/idiosyncrasies.md) entry #12.
+
+## What This Package Is For
 
 This package contains all TypeScript interfaces and types used across the entire VibeFlow codebase. It is the single source of truth for the data model.
 

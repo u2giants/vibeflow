@@ -1,14 +1,30 @@
 # VibeFlow — Test Plan
 
-Last updated: 2026-04-11
+Last updated: 2026-04-18
 
 ---
 
-## Automated Test Coverage Plan
+## Current Test State (2026-04-18)
 
-Each package must have unit tests. Tests live in `<package>/src/__tests__/`.
+~90+ scoped `.test.cjs` test files exist in `apps/desktop/src/lib/` and adjacent directories, covering:
+- `memory-lifecycle` tests
+- `browser-automation` tests
+- `verification-engine` tests
+- `framework-detector` tests
+- `approval-engine` tests
+- And many more domain-specific test files
 
-| Package | What to Test |
+**These test files are NOT wired to `pnpm test` yet.** Running `pnpm test` in `apps/desktop` will fail or do nothing. CI does not run these tests.
+
+**To wire tests:** See [`docs/what-is-left.md`](what-is-left.md) item #4 for the plan (add Vitest, configure glob to find `**/*.test.cjs`, add CI step).
+
+---
+
+## Planned Automated Test Coverage (Design Intent)
+
+Each package should eventually have unit tests. Tests should live in `<package>/src/__tests__/` or as `*.test.cjs` co-located files.
+
+| Package / Domain | What to Test |
 |---|---|
 | `shared-types` | Type guards and validation helpers |
 | `core-orchestrator` | Mode routing logic, message dispatch, result aggregation |
@@ -19,17 +35,16 @@ Each package must have unit tests. Tests live in `<package>/src/__tests__/`.
 | `approval` | Tier classification, second-model review flow (mocked), audit log |
 | `handoff` | Handoff document generation, idiosyncrasies update |
 | `build-metadata` | Metadata injection script output validation |
+| `change-engine` | Change proposal, validation, apply, checkpoint, rollback |
+| `verification-engine` | Acceptance criteria evaluation, evidence recording |
+| `memory-manager` | Memory CRUD, search, scoped retrieval |
+| `observability` | Watch session lifecycle, anomaly detection |
 
 **Test runner:** Vitest (fast, TypeScript-native, compatible with Vite)
 
-**Run all tests:**
+**Run all tests (once wired):**
 ```
 pnpm test
-```
-
-**Run tests for one package:**
-```
-pnpm --filter @vibeflow/core-orchestrator test
 ```
 
 ---

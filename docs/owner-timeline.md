@@ -1,6 +1,6 @@
 # VibeFlow — Owner Timeline
 
-Last updated: 2026-04-12 (MVP Complete)
+Last updated: 2026-04-18 (Post-MVP brownfield rebuild complete)
 
 ---
 
@@ -87,20 +87,37 @@ Status: ✅ Complete — MVP is done!
 
 ---
 
+## Post-MVP Brownfield Rebuild (Sprints 12–18, completed 2026-04-18)
+
+After MVP, 13 additional components were built as a brownfield rebuild on top of the running app.
+
+| Component | What Was Built | Status |
+|---|---|---|
+| **C10** | OrchestrationEngine, MissionPanel, PlanPanel, ContextPanel | ✅ Complete |
+| **C11** | ChangeEngine, EvidencePanel | ✅ Complete |
+| **C12** | VerificationEngine, verification runner, acceptance criteria | ✅ Complete |
+| **C13** | CapabilityRegistry, CapabilitiesPanel | ✅ Complete |
+| **C14** | MCPManager, MCPPanel | ✅ Complete |
+| **C15** | EnvironmentManager, EnvironmentsPanel | ✅ Complete |
+| **C16** | SecretsManager, SecretsPanel | ✅ Complete |
+| **C17** | MemoryManager, MemoryPanel | ✅ Complete |
+| **C18** | ObservabilityManager, ObservabilityPanel, WatchSession, AnomalyEvent | ✅ Complete |
+| **C19** | Approval system expanded to 6 risk classes (critical_infrastructure, data_destruction, auth_security, production_deploy, code_change, read_only); AuditHistory with checkpoints | ✅ Complete |
+| **C20** | SelfHealingEngine, self-healing action runner | ✅ Complete |
+| **C21** | SkillLibrary, skills management | ✅ Complete |
+| **C22** | Cloud sync re-enabled: SyncEngine constructor fixed (accepts authenticated SupabaseClient), Supabase migration run, RLS hotfix, race-condition guard | ✅ Complete |
+
+All Components 10–22 are implemented locally in `apps/desktop/src/lib/`. Supabase tables exist for all domains. Not all have cloud push methods yet — see [`docs/what-is-left.md`](what-is-left.md).
+
 ## Next Decision Needed From Albert
 
-**MVP is complete!** All 10 milestones are done. VibeFlow can now:
-- Sign in with GitHub
-- Create and manage projects
-- Chat with AI (Orchestrator Mode) with streaming responses
-- Read/write files, run terminal commands, manage git, test SSH
-- Monitor GitHub Actions, deploy to Coolify, run health checks
-- Use a three-tier approval system with second-model review
-- Generate handoff documents for new AI sessions
-- Show real version numbers and auto-update from GitHub Releases
-- **Work on its own source code with extra safety guards**
+**Brownfield rebuild is complete!** VibeFlow now has all planned subsystems. Next priorities:
+- Validate two-device sync (has second device available)
+- Test packaged build end-to-end
+- Fix `.env` loading for packaged builds
+- Wire `pnpm test` and CI
 
-Future work will be driven by user feedback and feature requests.
+See [`docs/what-is-left.md`](what-is-left.md) for the full list.
 
 ---
 

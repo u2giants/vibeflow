@@ -1,6 +1,6 @@
 # VibeFlow — Troubleshooting Guide
 
-Last updated: 2026-04-14
+Last updated: 2026-04-18
 
 This guide covers common issues and how to diagnose and fix them.
 
@@ -180,11 +180,95 @@ del %APPDATA%\vibeflow\vibeflow.db
 
 ### Symptom: Sync indicator always shows 🔴 Offline
 
-**This is expected behavior.** Cloud sync is intentionally disabled in the current build. The [`initSyncEngine()`](../apps/desktop/src/main/index.ts:94) function is a no-op that sends `'offline'` status.
+As of 2026-04-18, cloud sync is **active** — this is now a real problem, not expected behavior.
 
-**This is NOT a bug.** See [`docs/decisions.md`](decisions.md) Decision 10 for why sync was disabled.
+**Diagnose:**
 
-**When will it be fixed?** See [`docs/what-is-left.md`](what-is-left.md) item #4 for the sync re-enablement plan.
+**Check 1: .env file present and correct?**
+```cmd
+type .env
+```
+Verify `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set. If these are missing, the Supabase client cannot connect.
+
+**Check 2: Network reachable?**
+Verify that `https://your-project.supabase.co` is reachable. Check for proxy/firewall blocking HTTPS or WSS connections.
+
+**Check 3: Session still valid?**
+Sign out and sign back in. A stale auth session can cause the Supabase client to be in an authenticated-but-disconnected state.
+
+**Check 4: DevTools → Console**
+Open DevTools (`Ctrl+Shift+I`) → Console. Look for Supabase client errors or `SyncEngine` initialization errors.
+
+**Check 5: Supabase project status**
+Log into the Supabase dashboard and verify the project (ref: `wnbazobqhyhncksjfxvq`) is not paused or over quota.
+
+---
+
+## App Boot Crash: "near `/`: syntax error"
+
+### Symptom: App crashes at startup with a SQLite syntax error mentioning `/`
+
+**Cause:** A SQL string in the codebase contains `//` inside a query (used as a comment), but sql.js parses `//` as a division operator, not a comment.
+
+**Fix:** Find the offending SQL string and change `//` comments to `--` comments.
+
+```
+❌  SELECT * FROM projects -- WHERE deleted = 0 // old filter
+✅  SELECT * FROM projects -- WHERE deleted = 0 -- old filter
+```
+
+See [`docs/idiosyncrasies.md`](idiosyncrasies.md) entry #16 for details.
+
+---
+
+## App Boot Crash: "Attempted to register a second handler for"
+
+### Symptom: App crashes immediately after launch with an error like `Error: Attempted to register a second handler for 'conversations:list'`
+
+**Cause:** A duplicate IPC handler registration. The main process calls `ipcMain.handle()` twice for the same channel. This crashes the app at boot with no recovery.
+
+**Fix:**
+1. Search the entire `apps/desktop/src/main/index.ts` file for the duplicated channel name
+2. Remove the duplicate registration — keep only one
+3. Check git blame or recent commits to identify which change added the duplicate
+
+**Prevention:** Always `grep` for the channel name before adding a new `ipcMain.handle()` call. See [`docs/idiosyncrasies.md`](idiosyncrasies.md) entry #15.
+
+---
+
+## Conversation Lease Error: "new row violates row-level security policy"
+
+### Symptom: Error `new row violates row-level security policy for table "conversation_leases"` in the console
+
+**Cause:** The conversation row doesn't exist in Supabase yet when `acquireLease()` tries to insert a `conversation_leases` row. Supabase RLS requires the FK target to exist AND the user to own it.
+
+**This should not happen in normal use** because `acquireLease()` calls `pushConversation()` first. If you see this error:
+1. Check that `SyncEngine.acquireLease()` still has the `pushConversation()` guard at the top — do not remove it
+2. If the guard is missing (e.g., after a refactor), add it back
+
+See [`docs/idiosyncrasies.md`](idiosyncrasies.md) entry #11.
+
+---
+
+## Projects List Empty After Sign-In
+
+### Symptom: User signs in successfully but the project list is always empty, even though projects exist in Supabase
+
+**Cause:** `listProjects()` was called with an empty string (`''`) as the user ID instead of the real Supabase user ID. An empty string matches no rows (silently, no error).
+
+**Fix:** Wherever `listProjects()` is called, ensure it receives `session.user.id` — the actual UUID from the Supabase auth session. Never pass an empty string or hardcoded placeholder.
+
+See [`docs/idiosyncrasies.md`](idiosyncrasies.md) entry #17.
+
+---
+
+## Conversations Button Not Responding
+
+### Symptom: Clicking the "Conversations" button in the project panel does nothing
+
+**Cause:** The `handleOpenConversations` handler is missing or not wired in `PanelWorkspace.tsx`. The button renders but has no `onClick` function attached.
+
+**Fix:** Verify that `PanelWorkspace.tsx` has `handleOpenConversations` defined and passed as the `onOpenConversations` prop to the relevant panel component. This was a known bug fixed in the brownfield rebuild.
 
 ---
 
@@ -303,4 +387,4 @@ Host myserver
 3. **Look for `[main]` prefixed logs** — The main process logs important events with `[main]` prefix.
 4. **Read idiosyncrasies.md before "fixing" anything** — Many things that look like bugs are intentional. Check [`docs/idiosyncrasies.md`](idiosyncrasies.md) first.
 5. **The Modes screen is the most complex layout** — If you're testing layout changes, always verify on the Modes screen.
-6. **Sync is disabled on purpose** — The 🔴 Offline indicator is expected. Don't try to fix it without following the full re-enablement plan.
+6. **Sync is now active** — The 🔴 Offline indicator is a real problem since 2026-04-18. See the "Sync Showing Offline" section above to diagnose.

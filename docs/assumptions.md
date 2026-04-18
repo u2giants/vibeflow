@@ -41,7 +41,7 @@ Agents must add entries here when making assumptions that affect architecture or
 **Assumption:** Albert has a second Windows machine or VM available for testing Milestone 4 (cloud sync).
 **Why made:** Albert confirmed this on 2026-04-11.
 **Confidence:** High
-**Validation:** Confirmed by Albert directly.
+**Validation:** Confirmed by Albert directly. Two-device sync test is still pending as of 2026-04-18.
 **Impact if wrong:** Sync tests would need to be partially simulated on one machine.
 
 ---
@@ -81,7 +81,7 @@ Agents must add entries here when making assumptions that affect architecture or
 **Assumption:** Supabase Realtime (Broadcast channels) can handle the heartbeat frequency (every 15 seconds) and ownership coordination without significant latency or reliability issues.
 **Why made:** Supabase Realtime is designed for this use case. 15-second heartbeats are low-frequency.
 **Confidence:** Medium
-**Validation:** Test in Milestone 4 with two devices. Monitor latency and reliability.
+**Validation:** Not yet validated in practice. Two-device sync test is pending as of 2026-04-18. See R7 in [`docs/risks.md`](risks.md).
 **Impact if wrong:** May need to implement a lightweight Edge Function for lease management, or increase heartbeat interval.
 
 ---
