@@ -17,6 +17,7 @@ export { registerHandoffHandlers } from './handoff';
 export { registerApprovalHandlers } from './approval';
 export { registerChangeEngineHandlers } from './change-engine';
 export { registerSecretsHandlers } from './secrets';
+export { registerOAuthHandlers } from './oauth';
 export { registerMigrationHandlers } from './migration';
 export { registerDeployHandlers } from './deploy';
 export { registerEnvironmentHandlers } from './environment';

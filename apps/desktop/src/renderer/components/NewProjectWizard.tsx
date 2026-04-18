@@ -435,11 +435,18 @@ export default function NewProjectWizard({
   // Google OAuth
   const [googleClientId, setGoogleClientId] = useState('');
   const [googleClientSecret, setGoogleClientSecret] = useState('');
+  const [googleServiceAccountJson, setGoogleServiceAccountJson] = useState('');
 
   // Azure OAuth
   const [azureClientId, setAzureClientId] = useState('');
   const [azureClientSecret, setAzureClientSecret] = useState('');
   const [azureTenantId, setAzureTenantId] = useState('');
+  // Azure Service Principal (for auto-create)
+  const [azureSpClientId, setAzureSpClientId] = useState('');
+  const [azureSpClientSecret, setAzureSpClientSecret] = useState('');
+  const [azureSpTenantId, setAzureSpTenantId] = useState('');
+  const [azureAutoCreating, setAzureAutoCreating] = useState(false);
+  const [azureAutoMsg, setAzureAutoMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
   // Custom MCP servers
   const [mcpServers, setMcpServers] = useState<McpServerDraft[]>([]);
@@ -599,6 +606,7 @@ export default function NewProjectWizard({
       if (brevoApiKey) secrets.push({ credentialType: 'brevo-key', value: brevoApiKey });
       if (clawdtalkApiKey) secrets.push({ credentialType: 'clawdtalk-key', value: clawdtalkApiKey });
       if (googleClientSecret) secrets.push({ credentialType: 'google-oauth-secret', value: googleClientSecret });
+      if (googleServiceAccountJson.trim()) secrets.push({ credentialType: 'google-service-account-json', value: googleServiceAccountJson.trim() });
       if (azureClientSecret) secrets.push({ credentialType: 'azure-oauth-secret', value: azureClientSecret });
 
       const project = await window.vibeflow.projects.create({
@@ -1371,6 +1379,11 @@ export default function NewProjectWizard({
     </div>
   );
 
+  const googleProjectId = (() => {
+    try { return googleServiceAccountJson.trim() ? (JSON.parse(googleServiceAccountJson) as Record<string, unknown>).project_id as string : null; }
+    catch { return null; }
+  })();
+
   const renderGoogle = () => (
     <div>
       <h2 style={sectionHeading}>Google OAuth</h2>
@@ -1378,7 +1391,7 @@ export default function NewProjectWizard({
 
       <Field
         label="Client ID"
-        help="From Google Cloud Console → APIs & Services → Credentials"
+        help="From Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client IDs"
       >
         <input
           type="text"
@@ -1402,15 +1415,44 @@ export default function NewProjectWizard({
         />
       </Field>
 
-      {(googleClientId || googleClientSecret) && (
-        <div style={infoBoxStyle}>
-          After saving, add these redirect URIs in Google Cloud Console:<br />
-          &bull; https://[your-app-domain]/auth/google/callback<br />
-          &bull; http://localhost:[port]/auth/google/callback (for local dev)<br />
-          <br />
-          Note: VibeFlow can automate Google OAuth app creation in a future update.
+      <div style={{ ...infoBoxStyle, marginTop: 12 }}>
+        <strong style={{ color: '#90caf9' }}>Add these redirect URIs in Google Cloud Console:</strong><br />
+        <div style={{ margin: '8px 0 4px', fontFamily: 'monospace', fontSize: 11, color: '#e0e0e0' }}>
+          https://[your-app-domain]/auth/google/callback
         </div>
-      )}
+        <div style={{ fontFamily: 'monospace', fontSize: 11, color: '#e0e0e0' }}>
+          http://localhost:[port]/auth/google/callback
+        </div>
+        {googleProjectId ? (
+          <div style={{ marginTop: 10 }}>
+            <a
+              href={`https://console.cloud.google.com/apis/credentials?project=${googleProjectId}`}
+              target="_blank"
+              rel="noreferrer"
+              style={{ color: '#64b5f6', fontSize: 12 }}
+            >
+              → Open Google Cloud Console for project &ldquo;{googleProjectId}&rdquo;
+            </a>
+          </div>
+        ) : (
+          <div style={{ marginTop: 8, fontSize: 11, color: '#888' }}>
+            Paste your Service Account JSON below to get a direct link to the right Google Cloud project.
+          </div>
+        )}
+      </div>
+
+      <Field
+        label="Service Account JSON (optional)"
+        help="Paste your service account JSON to auto-link to the correct Google Cloud project and store it encrypted for future automation"
+      >
+        <textarea
+          value={googleServiceAccountJson}
+          onChange={e => setGoogleServiceAccountJson(e.target.value)}
+          placeholder={'{\n  "type": "service_account",\n  "project_id": "your-project",\n  ...\n}'}
+          rows={5}
+          style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 11, resize: 'vertical' }}
+        />
+      </Field>
 
       <CopyFromProject
         existingProjects={existingProjects}
@@ -1425,11 +1467,43 @@ export default function NewProjectWizard({
     </div>
   );
 
+  const handleAzureAutoCreate = async () => {
+    if (!azureSpClientId.trim() || !azureSpClientSecret.trim() || !azureSpTenantId.trim()) {
+      setAzureAutoMsg({ text: 'Fill in all three Service Principal fields first.', ok: false });
+      return;
+    }
+    setAzureAutoCreating(true);
+    setAzureAutoMsg(null);
+    try {
+      const result = await window.vibeflow.oauth.createAzureApp({
+        sp: { tenantId: azureSpTenantId.trim(), clientId: azureSpClientId.trim(), clientSecret: azureSpClientSecret.trim() },
+        appDisplayName: name.trim() || 'VibeFlow App',
+        redirectUris: [
+          'https://[your-app-domain]/auth/microsoft/callback',
+          'http://localhost:3000/auth/microsoft/callback',
+        ],
+      });
+      if (result.success && result.appId && result.clientSecret) {
+        setAzureClientId(result.appId);
+        setAzureClientSecret(result.clientSecret);
+        setAzureTenantId(azureSpTenantId.trim());
+        setAzureAutoMsg({ text: `App registered successfully. Client ID and secret have been pre-filled.`, ok: true });
+      } else {
+        setAzureAutoMsg({ text: result.error ?? 'Auto-registration failed.', ok: false });
+      }
+    } catch (err) {
+      setAzureAutoMsg({ text: String(err instanceof Error ? err.message : err), ok: false });
+    } finally {
+      setAzureAutoCreating(false);
+    }
+  };
+
   const renderAzure = () => (
     <div>
       <h2 style={sectionHeading}>Microsoft / Azure OAuth</h2>
-      <p style={sectionSubheading}>Set up Microsoft sign-in for your project.</p>
+      <p style={sectionSubheading}>Set up Microsoft sign-in for your project. Enter credentials manually, or auto-create an app registration using a Service Principal.</p>
 
+      {/* Manual entry */}
       <Field
         label="Client ID (Application ID)"
         help="From Azure Portal → App registrations → your app → Overview"
@@ -1469,12 +1543,79 @@ export default function NewProjectWizard({
         />
       </Field>
 
-      <div style={infoBoxStyle}>
-        After saving, register these redirect URIs in Azure Portal → your app → Authentication:<br />
-        &bull; https://[your-app-domain]/auth/microsoft/callback<br />
-        &bull; http://localhost:[port]/auth/microsoft/callback (for local dev)<br />
-        <br />
-        Note: VibeFlow can automate Azure app registration in a future update.
+      <div style={{ ...infoBoxStyle, marginBottom: 16 }}>
+        <strong style={{ color: '#90caf9' }}>Register these redirect URIs in Azure Portal → Authentication:</strong><br />
+        <div style={{ margin: '8px 0 4px', fontFamily: 'monospace', fontSize: 11, color: '#e0e0e0' }}>
+          https://[your-app-domain]/auth/microsoft/callback
+        </div>
+        <div style={{ fontFamily: 'monospace', fontSize: 11, color: '#e0e0e0' }}>
+          http://localhost:[port]/auth/microsoft/callback
+        </div>
+      </div>
+
+      {/* Auto-create via Service Principal */}
+      <div style={{ border: '1px solid #333', borderRadius: 6, padding: '14px 16px', marginBottom: 16, backgroundColor: '#161b22' }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: '#90caf9', marginBottom: 4 }}>
+          Auto-create app registration
+        </div>
+        <div style={{ fontSize: 11, color: '#888', marginBottom: 12, lineHeight: '1.5' }}>
+          Provide a Service Principal with <code style={{ color: '#aaa' }}>Application.ReadWrite.OwnedBy</code> permission.
+          VibeFlow will call the Microsoft Graph API to create the app registration and generate a client secret.
+        </div>
+
+        <Field label="Service Principal — Tenant ID" help="The Azure tenant where the Service Principal lives">
+          <input
+            type="text"
+            value={azureSpTenantId}
+            onChange={e => setAzureSpTenantId(e.target.value)}
+            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+            style={inputStyle}
+          />
+        </Field>
+
+        <Field label="Service Principal — Client ID" help="Application (client) ID of the Service Principal">
+          <input
+            type="text"
+            value={azureSpClientId}
+            onChange={e => setAzureSpClientId(e.target.value)}
+            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+            style={inputStyle}
+          />
+        </Field>
+
+        <Field label="Service Principal — Client Secret" help="Secret credential of the Service Principal (not stored)">
+          <MaskedInput
+            id="azure-sp-secret"
+            value={azureSpClientSecret}
+            onChange={setAzureSpClientSecret}
+            showSecrets={showSecrets}
+            setShowSecrets={setShowSecrets}
+          />
+        </Field>
+
+        <button
+          onClick={handleAzureAutoCreate}
+          disabled={azureAutoCreating || !azureSpClientId.trim() || !azureSpClientSecret.trim() || !azureSpTenantId.trim()}
+          style={{
+            padding: '8px 16px', background: azureAutoCreating ? '#1a237e' : '#283593',
+            border: '1px solid #3949ab', borderRadius: 4, color: '#e0e0e0',
+            fontSize: 12, cursor: azureAutoCreating ? 'default' : 'pointer',
+            opacity: (!azureSpClientId.trim() || !azureSpClientSecret.trim() || !azureSpTenantId.trim()) ? 0.5 : 1,
+          }}
+        >
+          {azureAutoCreating ? 'Creating…' : '⚡ Auto-create app registration'}
+        </button>
+
+        {azureAutoMsg && (
+          <div style={{
+            marginTop: 10, padding: '8px 12px', borderRadius: 4, fontSize: 12,
+            background: azureAutoMsg.ok ? '#1b3a1f' : '#3a1b1b',
+            color: azureAutoMsg.ok ? '#69f0ae' : '#ff5252',
+            border: `1px solid ${azureAutoMsg.ok ? '#2e7d3244' : '#c6282844'}`,
+          }}>
+            {azureAutoMsg.text}
+          </div>
+        )}
       </div>
 
       <CopyFromProject

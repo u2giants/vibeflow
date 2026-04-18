@@ -754,6 +754,16 @@ export interface SecretsChannel {
   syncDown: () => Promise<{ success: boolean; restored: number; error?: string }>;
 }
 
+// ── OAuth Automation IPC ─────────────────────────────────────────────────────
+
+export interface OAuthChannel {
+  createAzureApp: (args: {
+    sp: { tenantId: string; clientId: string; clientSecret: string };
+    appDisplayName: string;
+    redirectUris: string[];
+  }) => Promise<{ success: boolean; appId?: string; clientSecret?: string; tenantId?: string; error?: string }>;
+}
+
 // ── Component 18: Migration IPC ─────────────────────────────────────────────
 
 export interface MigrationChannel {
@@ -1021,6 +1031,7 @@ export interface VibeFlowAPI {
   acceptance: AcceptanceChannel;
   // Component 18: Secrets and Migration
   secrets: SecretsChannel;
+  oauth: OAuthChannel;
   migration: MigrationChannel;
   // Component 17: Deploy, Environment, Drift
   deploy: DeployChannel;

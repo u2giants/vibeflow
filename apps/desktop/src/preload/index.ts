@@ -314,6 +314,10 @@ const api: VibeFlowAPI = {
     syncUp: () => ipcRenderer.invoke('secrets:syncUp'),
     syncDown: () => ipcRenderer.invoke('secrets:syncDown'),
   },
+  oauth: {
+    createAzureApp: (args: { sp: { tenantId: string; clientId: string; clientSecret: string }; appDisplayName: string; redirectUris: string[] }) =>
+      ipcRenderer.invoke('oauth:createAzureApp', args),
+  },
   migration: {
     createPlan: (plan: Omit<MigrationPlan, 'id' | 'createdAt' | 'updatedAt'>) => ipcRenderer.invoke('migration:createPlan', plan),
     getPlan: (id: string) => ipcRenderer.invoke('migration:getPlan', id),
