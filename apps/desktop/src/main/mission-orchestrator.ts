@@ -1,5 +1,5 @@
 /**
- * MissionOrchestrator — 18-step lifecycle coordinator (MVP: Steps 1–11).
+ * MissionOrchestrator — 18-step lifecycle coordinator.
  *
  * This is a coordinator class, not a service. It calls existing injected
  * services in sequence and persists MissionLifecycleState before every
@@ -14,6 +14,8 @@ import type { OrchestrationEngine } from '../lib/orchestrator/orchestration-engi
 import type { ChangeEngine } from '../lib/change-engine/change-engine';
 import type { VerificationEngine } from '../lib/verification/verification-engine';
 import type { ContextPackAssembler } from '../lib/project-intelligence/context-pack-assembler';
+import type { WatchEngine } from '../lib/observability/watch-engine';
+import type { DeployEngine } from '../lib/deploy-engine';
 import { PatchEdit } from '../lib/change-engine/patch-applier';
 import {
   assessRisk,
@@ -28,6 +30,7 @@ import type {
   MissionLifecycleState,
   PlanRecord,
   RiskAssessment,
+  DeployCandidate,
 } from '../lib/shared-types';
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -51,8 +54,16 @@ export class MissionOrchestrator {
     private changeEngine: ChangeEngine,
     private verificationEngine: VerificationEngine,
     private contextPackAssembler: ContextPackAssembler | null,
+    private watchEngine: WatchEngine | null,
     private webContents: WebContents,
   ) {}
+
+  /** Lazily create a DeployEngine on demand. */
+  private getDeployEngine(): DeployEngine {
+    const { CoolifyClient } = require('../lib/devops/coolify-client');
+    const { DeployEngine } = require('../lib/deploy-engine');
+    return new DeployEngine(this.localDb, new CoolifyClient('', ''));
+  }
 
   // ── Public API ──────────────────────────────────────────────────────
 
@@ -65,6 +76,8 @@ export class MissionOrchestrator {
     let workspaceRunId: string | null = null;
     let verificationRunId: string | null = null;
     let riskAssessment: RiskAssessment | null = null;
+    let deployWorkflowId: string | null = null;
+    let watchSessionId: string | null = null;
 
     try {
       // ── Step 1–2: Mission record already created by caller ─────────
@@ -117,6 +130,12 @@ export class MissionOrchestrator {
       // ── Step 4: Assemble context pack ───────────────────────────────
       currentStep = 4;
       this.persistLifecycleState(missionId, currentStep, 'running', null, null, null);
+
+      if (this.contextPackAssembler === null) {
+        // Create assembler on-demand if not injected
+        const { ContextPackAssembler } = require('../lib/project-intelligence');
+        this.contextPackAssembler = new ContextPackAssembler(this.localDb, mission.projectId);
+      }
 
       if (this.contextPackAssembler) {
         const pack = this.contextPackAssembler.assemble(missionId, {
@@ -380,22 +399,202 @@ export class MissionOrchestrator {
 
       if (this.isCancelled(missionId)) return;
 
-      // ── Steps 12–18: Deploy / Watch / Self-Healing (stub) ──────────
-      console.log('[MissionOrchestrator] Steps 12–18 not yet implemented — setting mission to completed');
+      // ── Step 12: Get environments and initiate deploy ────────────────
+      currentStep = 12;
+      this.persistLifecycleState(missionId, currentStep, 'running', riskAssessment, workspaceRunId, verificationRunId, deployWorkflowId, watchSessionId);
+
+      const environments = this.localDb.listEnvironments(mission.projectId);
+
+      if (environments.length === 0) {
+        // No deployment environment configured — mark as completed
+        this.localDb.updateMission(missionId, { status: 'completed' });
+        this.persistLifecycleState(missionId, currentStep, 'completed', riskAssessment, workspaceRunId, verificationRunId, null, null);
+        this.sendToRenderer('mission:completed', {
+          missionId,
+          summary: 'Verification passed. No deployment environment configured — changes are ready to deploy manually.',
+        });
+        return;
+      }
+
+      // Pick the first non-production environment, or fall back to first
+      const environment =
+        environments.find(e => e.type !== 'production') ?? environments[0];
+
+      // Create a deploy candidate
+      const now12 = new Date().toISOString();
+      const candidate: DeployCandidate = {
+        id: `candidate-${missionId}-${Date.now()}`,
+        projectId: mission.projectId,
+        environmentId: environment.id,
+        commitSha: '',
+        version: `mission-${missionId.slice(0, 8)}`,
+        status: 'pending',
+        deployedAt: null,
+        deployedBy: 'orchestrator',
+        evidenceIds: verificationRunId ? [verificationRunId] : [],
+        verificationRunId: verificationRunId,
+        rollbackCheckpointId: null,
+      };
+      this.localDb.upsertDeployCandidate(candidate);
+
+      const deployEngine = this.getDeployEngine();
+      const workflow = await deployEngine.initiateDeploy(
+        candidate.id,
+        environment.id,
+        mission.projectId,
+      );
+      deployWorkflowId = workflow.id;
+
+      this.persistLifecycleState(missionId, currentStep, 'running', riskAssessment, workspaceRunId, verificationRunId, deployWorkflowId, watchSessionId);
+      this.sendToRenderer('mission:deployProgress', { missionId, workflow });
+
+      if (this.isCancelled(missionId)) return;
+
+      // ── Step 13: Deploy-specific verification ────────────────────────
+      currentStep = 13;
+      this.persistLifecycleState(missionId, currentStep, 'running', riskAssessment, workspaceRunId, verificationRunId, deployWorkflowId, watchSessionId);
+
+      const deployVerifRun = await this.verificationEngine.runVerification({
+        missionId,
+        workspaceRunId: workspaceRunId ?? undefined,
+        riskClass: 'medium',
+        affectedFiles: [],
+        workspacePath: '',
+      });
+
+      if (deployVerifRun.verdict === 'block') {
+        this.localDb.updateMission(missionId, { status: 'failed' });
+        this.persistLifecycleState(missionId, currentStep, 'failed', riskAssessment, workspaceRunId, verificationRunId, deployWorkflowId, watchSessionId);
+        this.sendToRenderer('mission:failed', {
+          missionId,
+          reason: deployVerifRun.verdictReason ?? 'Deploy verification blocked',
+          step: currentStep,
+        });
+        return;
+      }
+
+      this.persistLifecycleState(missionId, currentStep, 'running', riskAssessment, workspaceRunId, verificationRunId, deployWorkflowId, watchSessionId);
+
+      if (this.isCancelled(missionId)) return;
+
+      // ── Step 14: Approval gate for protected environments ────────────
+      currentStep = 14;
+      this.persistLifecycleState(missionId, currentStep, 'running', riskAssessment, workspaceRunId, verificationRunId, deployWorkflowId, watchSessionId);
+
+      if (environment.type === 'production') {
+        // Suspend and wait for human decision
+        this.localDb.updateMission(missionId, { status: 'paused' });
+        this.persistLifecycleState(missionId, currentStep, 'awaiting-approval', riskAssessment, workspaceRunId, verificationRunId, deployWorkflowId, watchSessionId);
+
+        const deployApprovalAction: ActionRequest = {
+          id: `deploy-approval-${missionId}-${Date.now()}`,
+          description: `Deploy to production environment: ${environment.name}`,
+          reason: `Mission "${mission.title}" is ready to deploy to production.`,
+          affectedResources: [environment.id],
+          rollbackDifficulty: 'difficult',
+          requestingModeId: 'orchestrator',
+          requestingModelId: '',
+          conversationId: '',
+          actionType: 'deploy:production' as any,
+          payload: { environmentId: environment.id, workflowId: deployWorkflowId },
+          createdAt: new Date().toISOString(),
+        };
+
+        this.sendToRenderer('mission:awaitingApproval', {
+          missionId,
+          action: deployApprovalAction,
+          tier: 3,
+        });
+
+        const deployApproved = await this.waitForApproval(missionId);
+
+        if (!deployApproved || this.isCancelled(missionId)) {
+          this.localDb.updateMission(missionId, { status: 'cancelled' });
+          this.persistLifecycleState(missionId, currentStep, 'failed', riskAssessment, workspaceRunId, verificationRunId, deployWorkflowId, watchSessionId);
+          this.sendToRenderer('mission:failed', {
+            missionId,
+            reason: 'Production deploy approval rejected by human reviewer',
+            step: currentStep,
+          });
+          return;
+        }
+
+        // Approved — resume
+        this.localDb.updateMission(missionId, { status: 'running' });
+        this.persistLifecycleState(missionId, currentStep, 'running', riskAssessment, workspaceRunId, verificationRunId, deployWorkflowId, watchSessionId);
+      }
+      // Non-production: auto-proceed
+
+      if (this.isCancelled(missionId)) return;
+
+      // ── Step 15: Execute deploy ──────────────────────────────────────
+      currentStep = 15;
+      this.persistLifecycleState(missionId, currentStep, 'running', riskAssessment, workspaceRunId, verificationRunId, deployWorkflowId, watchSessionId);
+
+      const executedWorkflow = await deployEngine.executeWorkflow(workflow.id);
+
+      if (executedWorkflow.status === 'failed' || executedWorkflow.verdict === 'block') {
+        this.localDb.updateMission(missionId, { status: 'failed' });
+        this.persistLifecycleState(missionId, currentStep, 'failed', riskAssessment, workspaceRunId, verificationRunId, deployWorkflowId, watchSessionId);
+        this.sendToRenderer('mission:failed', {
+          missionId,
+          reason: executedWorkflow.verdictReason ?? 'Deploy workflow failed',
+          step: currentStep,
+        });
+        return;
+      }
+
+      this.persistLifecycleState(missionId, currentStep, 'running', riskAssessment, workspaceRunId, verificationRunId, deployWorkflowId, watchSessionId);
+      this.sendToRenderer('mission:deployProgress', { missionId, workflow: executedWorkflow });
+
+      if (this.isCancelled(missionId)) return;
+
+      // ── Step 16: Start watch session ─────────────────────────────────
+      currentStep = 16;
+      this.persistLifecycleState(missionId, currentStep, 'running', riskAssessment, workspaceRunId, verificationRunId, deployWorkflowId, watchSessionId);
+
+      if (this.watchEngine !== null) {
+        try {
+          const watchSession = await this.watchEngine.startSession({
+            deployWorkflowId: executedWorkflow.id,
+            environmentId: environment.id,
+            projectId: mission.projectId,
+          });
+          watchSessionId = watchSession.id;
+        } catch (watchErr) {
+          // Watch session failure is non-fatal — log and continue
+          console.warn('[MissionOrchestrator] WatchEngine.startSession failed (non-fatal):', watchErr);
+        }
+      } else {
+        console.log('[MissionOrchestrator] watchEngine not available — skipping watch session');
+      }
+
+      this.persistLifecycleState(missionId, currentStep, 'running', riskAssessment, workspaceRunId, verificationRunId, deployWorkflowId, watchSessionId);
+
+      if (this.isCancelled(missionId)) return;
+
+      // ── Step 17: Report results ──────────────────────────────────────
+      currentStep = 17;
       this.localDb.updateMission(missionId, { status: 'completed' });
-      this.persistLifecycleState(missionId, 18, 'completed', riskAssessment, workspaceRunId, verificationRunId);
+      this.persistLifecycleState(missionId, currentStep, 'completed', riskAssessment, workspaceRunId, verificationRunId, deployWorkflowId, watchSessionId);
+
+      const completionSummary = watchSessionId
+        ? `Deploy to ${environment.name} succeeded. Watch session started. The AI will monitor for anomalies.`
+        : `Deploy to ${environment.name} succeeded.`;
 
       this.sendToRenderer('mission:completed', {
         missionId,
-        summary: 'Mission completed (steps 12–18 pending implementation)',
+        summary: completionSummary,
       });
+
+      // Step 18: Handled internally by WatchEngine — no extra wiring needed here.
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`[MissionOrchestrator] Mission ${missionId} failed at step ${currentStep}:`, err);
 
       try {
         this.localDb.updateMission(missionId, { status: 'failed' });
-        this.persistLifecycleState(missionId, currentStep, 'failed', riskAssessment, workspaceRunId, verificationRunId);
+        this.persistLifecycleState(missionId, currentStep, 'failed', riskAssessment, workspaceRunId, verificationRunId, deployWorkflowId, watchSessionId);
       } catch (persistErr) {
         console.error('[MissionOrchestrator] Failed to persist error state:', persistErr);
       }
@@ -446,6 +645,8 @@ export class MissionOrchestrator {
     riskAssessment: RiskAssessment | null,
     workspaceRunId: string | null,
     verificationRunId: string | null,
+    deployWorkflowId: string | null = null,
+    watchSessionId: string | null = null,
   ): void {
     const state: MissionLifecycleState = {
       missionId,
@@ -454,8 +655,8 @@ export class MissionOrchestrator {
       riskAssessment,
       workspaceRunId,
       verificationRunId,
-      deployWorkflowId: null,
-      watchSessionId: null,
+      deployWorkflowId,
+      watchSessionId,
       updatedAt: new Date().toISOString(),
     };
     try {

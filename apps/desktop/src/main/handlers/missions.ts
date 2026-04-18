@@ -15,6 +15,7 @@ import {
   orchestrationEngine,
   changeEngine,
   verificationEngine,
+  watchEngine,
 } from './state';
 
 /** Module-level map of missionId → active MissionOrchestrator instance. */
@@ -67,7 +68,8 @@ export function registerMissionsHandlers(): void {
       orchestrationEngine,
       changeEngine,
       verificationEngine,
-      null,
+      null,           // contextPackAssembler — created on-demand inside orchestrator
+      watchEngine,    // watch session started after deploy
       mainWindow.webContents,
     );
     orchestratorMap.set(missionId, orchestrator);
@@ -147,7 +149,8 @@ export function registerMissionsHandlers(): void {
       orchestrationEngine,
       changeEngine,
       verificationEngine,
-      null,
+      null,           // contextPackAssembler — created on-demand inside orchestrator
+      watchEngine,    // watch session started after deploy
       mainWindow.webContents,
     );
     orchestratorMap.set(missionId, orchestrator);

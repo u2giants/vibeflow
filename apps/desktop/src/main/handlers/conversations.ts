@@ -6,7 +6,7 @@ import { ipcMain } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import keytar from 'keytar';
 import type { CreateConversationArgs, SendMessageArgs, Message, MissionStartArgs, Mission } from '../../lib/shared-types';
-import { localDb, mainWindow, syncEngine, KEYTAR_SERVICE, KEYTAR_OPENROUTER_KEY, orchestrationEngine, changeEngine, verificationEngine } from './state';
+import { localDb, mainWindow, syncEngine, KEYTAR_SERVICE, KEYTAR_OPENROUTER_KEY, orchestrationEngine, changeEngine, verificationEngine, watchEngine } from './state';
 import { getCurrentUserId } from './helpers';
 import { runOrchestrator } from '../../lib/orchestrator/orchestrator';
 import { MissionOrchestrator } from '../mission-orchestrator';
@@ -101,7 +101,8 @@ export function registerConversationsHandlers(): void {
         orchestrationEngine,
         changeEngine,
         verificationEngine,
-        null,
+        null,           // contextPackAssembler — created on-demand inside orchestrator
+        watchEngine,    // watch session started after deploy
         webContents,
       );
 
