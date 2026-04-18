@@ -1743,3 +1743,59 @@ Every agent must update this file when work begins and when work ends.
   **Verification:**
   - `tsc --noEmit` — zero new errors from Component 20 files (all errors are pre-existing in codebase)
   - Scoped tests: 15+ tests for redaction guard, lifecycle transitions, keyword extraction
+
+---
+
+## SESSION RESUME — 2026-04-18
+
+### Orchestrator Resume
+- Status: **Active**
+- Picked up from previous session handoff
+- Previous session completed: main/index.ts split (2,442 → 172 lines, 29 domain handler files + barrel export) — TypeScript compiles with zero errors
+- Split work is **locally done, not yet committed** (untracked `apps/desktop/src/main/handlers/` directory)
+- Routing queue:
+  1. **Reviewer-Pusher**: Review and commit the main/index.ts split
+  2. **Builder**: Priority 2 — fix `.env` loading for packaged builds
+  3. **Architect**: Priority 1 — design the end-to-end mission lifecycle wiring (18-step spec §9)
+
+### Refactor — Split main/index.ts into 29 handler files (2026-04-18)
+- Status: **Pending Reviewer-Pusher** — work complete locally, not yet committed
+- Mode: Builder (previous session)
+- What was done:
+  - `apps/desktop/src/main/index.ts` shrunk from 2,442 lines to 172 lines
+  - All IPC handlers extracted into `apps/desktop/src/main/handlers/` (29 files + barrel export `index.ts`)
+  - `index.ts` now calls `register*Handlers()` functions from each handler module
+  - Pure mechanical extraction — zero behavior change, zero new logic
+  - `tsc --noEmit` passes with zero errors
+- Files changed:
+  - [`apps/desktop/src/main/index.ts`](apps/desktop/src/main/index.ts) — Reduced to 172 lines (app lifecycle + calls register*Handlers())
+  - [`apps/desktop/src/main/handlers/`](apps/desktop/src/main/handlers/) — 29 new handler files + barrel export (NEW directory)
+- Result: **COMMITTED** — `b82ac27` pushed to `origin/main`. 31 files. TypeScript zero errors. Reviewed by Reviewer-Pusher.
+- Note: dotenv `app.isPackaged` fix was already folded into the split refactor by Builder in previous session.
+
+### Bug Fix — .env loading for packaged builds (2026-04-18)
+- Status: **Pending Reviewer-Pusher** — work complete locally, not yet committed
+- Mode: Builder (this session)
+- What was done:
+  - `apps/desktop/src/main/index.ts` — dotenv block already uses `app.isPackaged` (committed in split above)
+  - `apps/desktop/electron-builder.yml` — removed `.env` from ASAR files list (security: credentials should not be bundled); added `extraResources` entry for `docs/idiosyncrasies.md` (needed by memory-seed.ts in packaged builds)
+- Files changed:
+  - [`apps/desktop/electron-builder.yml`](apps/desktop/electron-builder.yml) — removed `.env`, added extraResources for idiosyncrasies.md
+- Known gap: Packaged builds still need `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` injected at build time. Future task: add build-time injection step (like `inject-build-metadata.js`) that writes a `generated-supabase-config.ts` constant from CI secrets.
+- Result: **COMMITTED** — `a165ebf` pushed to `origin/main`.
+
+### Priority 1 — End-to-End Mission Lifecycle Wiring — Architect Design Phase (2026-04-18)
+- Status: **DESIGN COMPLETE — Awaiting Albert approval to proceed to Builder**
+- Mode: Orchestrator → Architect
+- Design document: [`docs/mission-lifecycle-wiring-plan.md`](docs/mission-lifecycle-wiring-plan.md) (not yet committed)
+- Key design decisions:
+  1. `missionMode: boolean` flag on `SendMessageArgs` forks the chat send path — no intent-sniffing heuristics
+  2. `MissionOrchestrator` is a new coordinator class in `main/` — calls existing services in sequence, does not rewrite any service
+  3. Only ONE new DB table needed: `mission_lifecycle_state` (step tracking for crash recovery)
+  4. MVP slice = steps 1–11 (intent → plan → context → risk → approval → workspace changes → validity → verification → changeset view), no deploy/watch yet
+  5. 2 new files to create, 8 existing files to modify, 4 new types, 13 new IPC channels
+- Pending: Albert review + approval → Builder implementation in 4 phases:
+  - Phase 1: Types + storage (entities.ts, ipc.ts, local-db.ts)
+  - Phase 2: MissionOrchestrator coordinator (main/mission-orchestrator.ts, steps 1-11)
+  - Phase 3: IPC handlers (missions.ts, conversations.ts fork)
+  - Phase 4: UI minimal wiring (ConversationScreen mission mode toggle + push event subscriptions)
