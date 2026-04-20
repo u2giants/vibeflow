@@ -41,3 +41,9 @@ pnpm-debug.log*
 *.AppImage
 *.deb
 *.rpm
+
+# TypeScript build cache
+*.tsbuildinfo
+
+# Supabase temp
+supabase/.temp/
