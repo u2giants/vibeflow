@@ -137,6 +137,10 @@ All 10 MVP milestones are complete. The brownfield rebuild (Components 10–22) 
 - **Problem:** `main/index.ts` had 5 duplicate `secrets:*`/`migration:*` handler blocks (461 lines). App crashed at boot with `Attempted to register a second handler`.
 - **Solution:** Removed duplicates. See idiosyncrasies #15.
 
+### 11. `Cannot find module './handlers/state'` runtime crash
+- **Problem:** Dynamic `require('./handlers/state')` calls in handler function bodies crashed at runtime. electron-vite/Rollup bundles everything into a single `out/main/index.js` — no `state.js` exists at runtime. TypeScript compiled fine; the crash was only at runtime.
+- **Solution:** Replaced all dynamic requires with static ES module imports + the `container` pattern in `handlers/state.ts` (a plain object with getters/setters for all mutable service references). Static imports are resolved at bundle time and always work. See idiosyncrasies #19.
+
 ---
 
 ## Where the Code Lives
@@ -145,7 +149,9 @@ All 10 MVP milestones are complete. The brownfield rebuild (Components 10–22) 
 
 | Component | Path | Lines | Purpose |
 |---|---|---|---|
-| Main process | [`apps/desktop/src/main/index.ts`](../apps/desktop/src/main/index.ts) | ~2,441 | IPC handler registry, app lifecycle |
+| Main process entry | [`apps/desktop/src/main/index.ts`](../apps/desktop/src/main/index.ts) | ~120 | App lifecycle, window creation, register*Handlers() |
+| IPC handlers | [`apps/desktop/src/main/handlers/`](../apps/desktop/src/main/handlers/) | ~2,400 total | One file per domain (auth, projects, modes, …) |
+| Shared state | [`apps/desktop/src/main/handlers/state.ts`](../apps/desktop/src/main/handlers/state.ts) | ~100 | container object with getters/setters for all mutable service refs |
 | Preload bridge | [`apps/desktop/src/preload/index.ts`](../apps/desktop/src/preload/index.ts) | ~200+ | window.vibeflow API |
 | React app root | [`apps/desktop/src/renderer/App.tsx`](../apps/desktop/src/renderer/App.tsx) | ~150 | Screen routing |
 
@@ -277,3 +283,4 @@ If you are a new developer or AI session, read these in order:
 10. **The `ELECTRON_RUN_AS_NODE` env var must NOT be set** — See idiosyncrasies #2.
 11. **Layout changes are risky** — Test on the Modes screen (most complex layout) after any CSS changes. See idiosyncrasies #6 in risks.md.
 12. **`apps/desktop/src/lib/` is authoritative** — Do not look for code in `packages/` (except shared-types, storage, build-metadata).
+13. **Do NOT use `require('./state')` inside function bodies in the main process** — Rollup bundles everything into one file; dynamic requires for local modules crash at runtime. Use static imports + the `container` object from `handlers/state.ts`. See idiosyncrasies #19.

@@ -442,8 +442,7 @@ The `/api/v1/models/user` endpoint returns only models the user's API key has ac
 
 **Consequences:**
 - The codebase is now ~200+ source files and well over 10,000 lines
-- `main/index.ts` has grown to ~2,441 lines — splitting into domain handler files is the next refactor priority
-- The rebuild spec in `rebuild/` remains the binding design source of truth
+- `main/index.ts` has since been split into `src/main/handlers/*.ts` domain files (done 2026-04-18, see idiosyncrasies #13)
 - The `capabilities` table has dual schema (old columns + new columns) pending back-fill migration (see idiosyncrasies #14)
 
 ---

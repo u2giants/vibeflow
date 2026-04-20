@@ -178,19 +178,13 @@ These fixes are fragile — any CSS change to the layout containers could re-int
 
 ---
 
-## R10 — Main Process File Size
+## R10 — ~~Main Process File Size~~ — RESOLVED 2026-04-18
 
-**Likelihood:** Low
-**Impact:** Medium
-**Status:** ⚠️ Technical debt (size has grown significantly)
+**Status:** ✅ Resolved
 
-**Description:** [`apps/desktop/src/main/index.ts`](../apps/desktop/src/main/index.ts) is now ~2,441 lines (up from 959 at MVP). It contains all IPC handler registrations across 30+ domains and 100+ handlers. While the file is well-organized (it delegates immediately to `src/lib/` services), it is increasingly hard to navigate.
+**Resolution:** The IPC handlers have been split into `src/main/handlers/*.ts` files (one per domain). `index.ts` is now a thin entry point: app lifecycle, window creation, and `register*Handlers()` calls only. The state container pattern in `handlers/state.ts` handles the Rollup bundling constraint. See [idiosyncrasies #19](idiosyncrasies.md).
 
-**Mitigation:**
-- The file is structured with clear section comments per domain
-- A future refactor should split into `src/main/handlers/*.ts` files (see [`docs/what-is-left.md`](what-is-left.md) item #7)
-- This is not blocking any functionality
-- Adding a duplicate handler registration will crash the app at boot (see idiosyncrasies #15)
+**Warning still active:** Duplicate `ipcMain.handle()` registrations crash the app at boot with `Attempted to register a second handler for 'channel-name'`. See [idiosyncrasies #15](idiosyncrasies.md).
 
 ---
 
@@ -242,4 +236,19 @@ This means the app works as a single-Mode AI chat, not as the multi-Mode orchest
 - The guard is documented in idiosyncrasies #11
 - Any code review that "cleans up" the `acquireLease()` method must preserve this guard
 - The guard is cheap — it is a no-op if the conversation row already exists in Supabase
+
+---
+
+## R14 — Domain Table Cloud Push Methods Incomplete
+
+**Likelihood:** Certain (current state)
+**Impact:** Low (local use is fine; becomes Medium once multi-device use is needed)
+**Status:** ⚠️ Known gap
+
+**Description:** Tables added in Components 10–22 (missions, plans, evidence_items, memory_items, skills, decision_records, capabilities, environments, incidents, watch_sessions, anomaly_events, self_healing_actions, drift_reports, audit_records, deploy_workflows, deploy_candidates) exist in both local SQLite and Supabase (migration applied 2026-04-18). However, most do not have push methods wired in `SyncEngine`. Data in these tables persists locally but is not synced to the cloud and therefore not visible on a second device.
+
+**Mitigation:**
+- Core app data (projects, conversations, messages, devices, leases) all sync correctly
+- Domain table push is a future enhancement tracked in [`docs/what-is-left.md`](what-is-left.md)
+- The tables and RLS policies exist in Supabase, so wiring push methods is additive work only
 

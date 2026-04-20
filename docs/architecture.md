@@ -105,13 +105,12 @@ The provider abstraction layer means other providers (direct Anthropic, OpenAI, 
 
 Electron enforces a security boundary between the main process and the renderer:
 
-### Main Process ([`apps/desktop/src/main/index.ts`](../apps/desktop/src/main/index.ts))
+### Main Process
 - Runs in Node.js with full OS access
-- Handles all IPC requests from the renderer
-- Manages: file I/O, terminal execution, git operations, SSH, keytar secrets, auto-updater, database
-- Creates the BrowserWindow and initializes the local SQLite database on startup
-- Seeds default Modes on first run
-- **~2,441 lines** — intentionally large; it is an IPC handler registry, not business logic. Business logic lives in `src/lib/`. See [`docs/what-is-left.md`](what-is-left.md) for the planned split.
+- Entry point: [`apps/desktop/src/main/index.ts`](../apps/desktop/src/main/index.ts) — app lifecycle, BrowserWindow creation, `register*Handlers()` calls, Mode seeding on first run
+- All IPC handlers live in [`apps/desktop/src/main/handlers/`](../apps/desktop/src/main/handlers/) — one file per domain (auth, projects, modes, openrouter, conversations, sync, tooling, devops, approval, handoff, updater, orchestrator, capabilities, mcp, memory, verification, secrets, environments, observability, connection-test)
+- Shared mutable service references (localDb, supabase, syncEngine, etc.) live in [`handlers/state.ts`](../apps/desktop/src/main/handlers/state.ts) as a `container` object with getters/setters — required by the Rollup bundling constraint (see [idiosyncrasies #19](idiosyncrasies.md))
+- Business logic delegates to `src/lib/`; handler files only orchestrate
 
 ### Preload Script ([`apps/desktop/src/preload/index.ts`](../apps/desktop/src/preload/index.ts))
 - Runs in a special context between main and renderer
@@ -236,7 +235,7 @@ All approval decisions are now persisted to SQLite audit history (survives app r
 
 ## Brownfield Rebuild Components (10–22)
 
-The brownfield rebuild added major subsystems. Each component has a binding spec in `rebuild/` and an implementation analysis file.
+The brownfield rebuild added major subsystems across 13 components.
 
 | Component | Subsystem | Key Files |
 |---|---|---|
@@ -266,7 +265,10 @@ vibeflow/
 │   ├── package.json                 ← App dependencies
 │   ├── tsconfig.json                ← TypeScript config with @vibeflow/* paths
 │   └── src/
-│       ├── main/index.ts            ← Main process entry (~2,441 lines, IPC handler registry)
+│       ├── main/
+│       │   ├── index.ts             ← App lifecycle + register*Handlers() calls
+│       │   └── handlers/            ← IPC domain files (auth, projects, modes, sync, …)
+│       │       └── state.ts         ← Shared mutable refs (container — see idiosyncrasies #19)
 │       ├── preload/index.ts         ← Preload bridge (window.vibeflow API)
 │       ├── renderer/                ← React app
 │       │   ├── App.tsx              ← Root component, screen routing
@@ -335,7 +337,6 @@ vibeflow/
 │   ├── storage/                     ← Canonical storage code
 │   ├── build-metadata/              ← Canonical build metadata code
 │   └── (others: README stubs only)
-├── rebuild/                         ← Binding spec files for Components 10–22
 ├── docs/                            ← All documentation
 ├── scripts/                         ← Build and dev scripts
 ├── supabase/                        ← Migration SQL files
@@ -401,11 +402,11 @@ All tool actions run in the Electron main process for security. The renderer nev
 
 ## Where the App Is Intentionally Simplified Right Now
 
-| Area | Current State | Full Design |
+| Area | Current State | Notes |
 |---|---|---|
-| **Cloud sync** | Active but two-device validation not yet done | Full verified multi-device sync |
-| **Database** | sql.js (pure JS, in-memory with file persistence) | better-sqlite3 (native, faster) — blocked by native compilation issues |
-| **Approval second-model** | Calls OpenRouter for review | Could cache common approval patterns to reduce API calls |
-| **Conversation summarization** | Not implemented | Auto-summarize long conversations |
-| **Packaged installer** | Not yet tested | Verified NSIS installer on clean machine |
-| **main/index.ts split** | ~2,441-line monolith (intentional IPC registry) | Split into domain handler files |
+| **Cloud sync** | Active but two-device validation not yet done | Full multi-device test outstanding — see [`docs/what-is-left.md`](what-is-left.md) |
+| **Database** | sql.js (pure JS, in-memory with file persistence) | Permanent choice — better-sqlite3 native compilation failed repeatedly on this machine; see [idiosyncrasies #6](idiosyncrasies.md) |
+| **Approval second-model** | Calls OpenRouter for review | Could cache common patterns to reduce API calls |
+| **Conversation summarization** | Not implemented | Needed once context windows are hit in long conversations |
+| **Packaged installer** | Not yet tested on clean machine | See [`docs/what-is-left.md`](what-is-left.md) |
+| **Domain table cloud push** | Local only (sql.js); Supabase tables exist but push methods not wired for missions/plans/memory/skills/etc. | See [`docs/cloud-sync.md`](cloud-sync.md) "What's Actually Wired Today" |

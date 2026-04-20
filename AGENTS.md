@@ -48,7 +48,12 @@ Also read PROJECT_SOUL.md and CURRENT_TASK.md before starting any work.
 ```
 vibeflow/
 ├── apps/desktop/                  ← Electron app (main + renderer + preload + ALL lib code)
-│   └── src/lib/                   ← Authoritative application code (NOT packages/)
+│   └── src/
+│       ├── main/
+│       │   ├── index.ts           ← App lifecycle + register*Handlers() calls
+│       │   └── handlers/          ← IPC domain files (one per domain)
+│       │       └── state.ts       ← Shared mutable refs (container pattern — see idiosyncrasies #19)
+│       └── lib/                   ← Authoritative application code (NOT packages/)
 │       ├── approval/              ← Approval engine, audit store
 │       ├── capability-fabric/     ← Capability registry
 │       ├── change-engine/         ← Change engine, checkpoint manager
@@ -74,7 +79,6 @@ vibeflow/
 │   ├── storage/                   ← CANONICAL storage code
 │   ├── build-metadata/            ← CANONICAL build metadata code
 │   └── (others: README stubs only — code lives in apps/desktop/src/lib/)
-├── rebuild/                       ← Binding spec files for Components 10–22 brownfield rebuild
 ├── docs/                          ← All documentation (Architect maintains)
 ├── scripts/                       ← inject-build-metadata.js and build helpers
 ├── supabase/                      ← Supabase migration SQL files

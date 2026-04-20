@@ -128,7 +128,7 @@ A Tier 2 approval where a fast, cheap AI model reviews a proposed action and eit
 See "Mode Soul."
 
 **Sprint**
-A named phase of development work with a specific set of steps and goals. VibeFlow tracks the current sprint in `CURRENT_TASK.md` and `/docs/owner-timeline.md`.
+A named phase of development work with a specific set of steps and goals. VibeFlow tracks the current sprint in `CURRENT_TASK.md`.
 
 **SQLite**
 A lightweight database that runs locally on the device. Used in VibeFlow as a local cache for synced data, so the app works fast and can function offline.
@@ -147,7 +147,30 @@ A fast build tool for web applications. Used in VibeFlow to build the React UI q
 
 ---
 
+**State Container**
+The `container` object exported from `apps/desktop/src/main/handlers/state.ts`. Holds getters and setters for every mutable service reference in the main process (localDb, supabase, syncEngine, etc.). Required because electron-vite/Rollup bundles all main-process code into a single file — dynamic `require('./state')` calls inside function bodies would crash at runtime. See idiosyncrasies #19.
+
+---
+
 ## Terms Added in Post-MVP Brownfield Rebuild (Components 10–22)
+
+**Brownfield Rebuild**
+The structured addition of 13 major subsystems (Components 10–22) to a working MVP app without breaking existing functionality. The "brownfield" label distinguishes this from a greenfield rewrite — the app was live and usable throughout.
+
+**Component**
+A numbered subsystem added during the brownfield rebuild (C10–C22). Each Component has a binding specification describing its expected behavior and a corresponding implementation in `apps/desktop/src/lib/`. Example: Component 14 added the Capability Fabric and MCP integration.
+
+**EvidenceRail**
+A UI component in `apps/desktop/src/renderer/components/EvidenceRail.tsx` that shows a live feed of Evidence Items as they are captured during a run. Displayed alongside the conversation.
+
+**Handler File**
+A TypeScript module in `apps/desktop/src/main/handlers/` that registers `ipcMain.handle()` calls for one domain (e.g., `projects.ts`, `auth.ts`). Business logic is always delegated to a service in `src/lib/`. All handler files import shared mutable state via the `container` object from `handlers/state.ts`.
+
+**LeftRail**
+The navigation sidebar in `apps/desktop/src/renderer/components/LeftRail.tsx`. Shows 8 section tabs for the mission workspace (Mission, Plan, Context, Evidence, Change, Verification, Audit, Environment). Introduced in Component 10.
+
+**PanelWorkspace**
+The right-side workspace panel area in `apps/desktop/src/renderer/components/PanelWorkspace.tsx`. Shows the currently selected mission workspace panel (one of 14 collapsible panels). Introduced in Component 10.
 
 **Acceptance Criteria**
 A set of testable conditions that must pass before a change is considered complete. Managed by the VerificationEngine and stored per-task.

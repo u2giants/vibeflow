@@ -46,6 +46,12 @@ The MVP milestones and brownfield rebuild (Components 10–22) are all complete.
 
 Completed. `src/main/handlers/*.ts` now holds all IPC domain files. `index.ts` is a thin lifecycle + registration entry point. The state container pattern in `handlers/state.ts` resolves the Rollup bundling constraint — see [idiosyncrasies #19](idiosyncrasies.md).
 
+### 5b. Wire domain table push methods in SyncEngine
+- **What:** Tables added in Components 10–22 (missions, plans, evidence_items, memory_items, skills, decision_records, capabilities, environments, incidents, watch_sessions, anomaly_events, self_healing_actions, drift_reports, audit_records, deploy_workflows) exist in both SQLite and Supabase but have no push methods wired in `SyncEngine`. Data is local-only until these are added.
+- **Fix:** For each table, add a `pushX()` method to `sync-engine.ts` following the pattern of `pushConversation()` / `pushMessage()`.
+- **Effort:** Medium (2–4 hours per table, can be batched)
+- **See:** R14 in [`docs/risks.md`](risks.md)
+
 ### 6. Back-fill capabilities table dual schema
 - **What:** The `capabilities` table has both old columns (`type`, `permissions_json`) and new columns (`class`, `owner`, `description`, `scope`, `actions_json`). Old rows need their data migrated to the new columns.
 - **Steps:**
