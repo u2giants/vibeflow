@@ -1,7 +1,7 @@
 # VibeFlow — Handoff Document
 
-Last updated: 2026-04-18
-Written by: Architect (updated after brownfield rebuild Components 10–22 and sync re-enablement)
+Last updated: 2026-04-20
+Written by: Architect (updated after wizard completion, connection testing, OAuth Phase 2, delete project, MCP test, doc overhaul)
 
 **This is the single best file for a new developer or AI session to read to understand where VibeFlow is and what to do next.**
 
@@ -19,15 +19,15 @@ VibeFlow is a Windows desktop Electron app that lets non-programmers build and m
 
 ---
 
-## Current State of the App (2026-04-18)
+## Current State of the App (2026-04-20)
 
-All 10 MVP milestones are complete. The brownfield rebuild (Components 10–22) is also complete. Cloud sync is re-enabled.
+All 10 MVP milestones are complete. The brownfield rebuild (Components 10–22) is also complete. Cloud sync is re-enabled. New Project Wizard is complete including connection testing for all integrations. Current version: **0.1.36**.
 
 | Area | State |
 |---|---|
 | App launches via `pnpm dev` | ✅ Works |
 | GitHub OAuth sign-in | ✅ Works (dual-flow: PKCE + implicit) |
-| Project CRUD (list, create, configure, delete) | ✅ Works |
+| Project CRUD (list, create, configure, **delete**) | ✅ Works — delete added 2026-04-19, cascades all child rows + keytar secrets |
 | Conversation + AI streaming | ✅ Works |
 | Mode system (6 Modes, soul editor, model picker) | ✅ Works |
 | OpenRouter integration | ✅ Works (user-scoped models) |
@@ -50,9 +50,15 @@ All 10 MVP milestones are complete. The brownfield rebuild (Components 10–22) 
 | Persistent audit history + rollback | ✅ Works (Component 19) |
 | Memory / skills / decision knowledge | ✅ Works (Component 20) |
 | Observability / self-healing | ✅ Works (Component 21) |
-| **Cloud sync** | **✅ Re-enabled 2026-04-18** |
-| **IPC handlers split** | **✅ Done 2026-04-18 (handlers/*.ts)** |
-| **Domain tables in Supabase** | **✅ Migrated 2026-04-18 (missions, evidence_items, capabilities, incidents, environments)** |
+| Cloud sync (16 tables + encrypted secrets) | ✅ Re-enabled 2026-04-18 |
+| IPC handlers split into handlers/*.ts | ✅ Done 2026-04-18 |
+| Domain tables in Supabase | ✅ Migrated 2026-04-19 (missions, evidence_items, capabilities, incidents, environments) |
+| **New Project Wizard (14-step)** | **✅ Complete 2026-04-18 — GitHub, Coolify, Railway, Supabase, SSH, MCP, Cloudflare, Brevo, ClawdTalk, Google OAuth, Azure OAuth** |
+| **Wizard connection testing** | **✅ Complete 2026-04-18 — Railway, Brevo, ClawdTalk test buttons in wizard steps** |
+| **Wizard MCP server test connection** | **✅ Complete 2026-04-20 — spawns stdio server, sends JSON-RPC initialize, shows result inline** |
+| **Azure OAuth auto-registration** | **✅ Complete 2026-04-18 — MS Graph API creates AAD app, returns client ID + secret** |
+| **Google OAuth enhanced UX** | **✅ Complete 2026-04-18 — redirect URI panel, service account JSON option** |
+| **Nine UX improvements** | **✅ Complete 2026-04-18 — see commit `9e061e4` for full list** |
 | **Two-device sync validation** | **⚠️ Not yet tested in practice** |
 | **Packaged installer** | **⚠️ Not tested on clean machine** |
 | **Auto-update** | **⚠️ Not tested with real release** |
@@ -93,6 +99,23 @@ All 10 MVP milestones are complete. The brownfield rebuild (Components 10–22) 
 | C20 | Memory + skills: memory-lifecycle, memory-retriever, memory-seed, MemoryPanel |
 | C21 | Observability: watch-engine, anomaly-detector, self-healing-engine, WatchPanel |
 | C22 | Sync re-enablement: SyncEngine constructor fix, Supabase migration run, handoffs bucket, RLS hotfix |
+
+### Phase 3 — Wizard + Connectivity Sprint (2026-04-18 → 2026-04-20)
+
+| Sprint | What Was Done |
+|---|---|
+| Wizard Phase 1–4 | 14-step NewProjectWizard modal (basics, checklist, GitHub, Coolify, Railway, Supabase, SSH, custom MCP, Cloudflare, Brevo, ClawdTalk, Google OAuth, Azure OAuth, summary). Replaces the old 2-field inline form. Credentials saved to keytar; config saved to `project_config` SQLite table. |
+| Connection testing | "Test connection" buttons added for Railway (GraphQL `me` query), Brevo (account endpoint), ClawdTalk, and SSH directly inside wizard steps. Results inline. |
+| Google OAuth UX | Enhanced: redirect URI panel shown after credential entry; service account JSON option for Phase 2 auto-registration. |
+| Azure OAuth auto-registration | Full MS Graph API integration: provide Service Principal → app auto-created in AAD, client ID + secret returned to wizard. |
+| Nine UX improvements | See commit `9e061e4` — includes improved error states, UX polish across wizard, project list, and conversation screens. |
+| Full cloud sync | Encrypted secrets sync (AES-256-GCM, PBKDF2 passphrase) + 16 new Supabase sync tables. `SecretsSyncPanel` accessible via "☁ Sync" button. |
+| IPC handlers split | `main/index.ts` split into `main/handlers/*.ts` domain files. `handlers/state.ts` container pattern resolves Rollup bundling constraint. |
+| Domain tables migration | Supabase migration `20260419221706_domain_tables` adds missions, evidence_items, capabilities, incidents, environments with RLS. No more startup "table not found" errors. |
+| Delete project | Full-stack delete: `localDb.deleteProject()` cascades 17 child tables; `projects:delete` IPC handler removes keytar secrets and guards self-maintenance project; hover button with confirmation dialog in `ProjectListScreen`. |
+| MCP test connection | `connectionTest:mcp` IPC handler spawns stdio server via `child_process.spawn`, sends JSON-RPC `initialize`, parses response or times out in 15 s. "Test" button added to both the draft form and each saved server card in the wizard MCP step. |
+| Dead wizard copy block removed | Removed the no-op "Copy all settings" button from wizard checklist step. Per-step copy dropdowns remain and work. |
+| Doc overhaul | All `.md` docs updated to reflect current architecture: state container pattern, handlers/ structure, no stale `rebuild/` references, new glossary terms, updated risks + decisions. |
 
 ---
 
@@ -140,6 +163,20 @@ All 10 MVP milestones are complete. The brownfield rebuild (Components 10–22) 
 ### 11. `Cannot find module './handlers/state'` runtime crash
 - **Problem:** Dynamic `require('./handlers/state')` calls in handler function bodies crashed at runtime. electron-vite/Rollup bundles everything into a single `out/main/index.js` — no `state.js` exists at runtime. TypeScript compiled fine; the crash was only at runtime.
 - **Solution:** Replaced all dynamic requires with static ES module imports + the `container` pattern in `handlers/state.ts` (a plain object with getters/setters for all mutable service references). Static imports are resolved at bundle time and always work. See idiosyncrasies #19.
+
+### 12. `git push` rejected — CI auto-bumps version on every merge
+- **Problem:** After every merge to `main`, a GitHub Actions workflow runs `chore: bump version to 0.1.X [skip ci]`. If you push without pulling that commit first, git rejects the push as "non-fast-forward". Attempting `git pull --rebase` can also fail if you touched the same files as the version bump (e.g. `NewProjectWizard.tsx`).
+- **Solution:** Always run `git fetch origin && git merge origin/main --no-edit` before pushing. Merge handles the version bump cleanly. Never use `--rebase` for this repo — use merge.
+- **Pattern to memorize:**
+  ```
+  git fetch origin
+  git merge origin/main --no-edit
+  git push origin main
+  ```
+
+### 13. MCP stdio test — `npx`-based servers take 5–10 s on first run
+- **Problem:** The first `npx @modelcontextprotocol/server-github` run downloads the package, which can take 5–10 seconds. With a 5 s timeout this would always fail.
+- **Solution:** The `connectionTest:mcp` handler uses a 15 s timeout. `shell: true` is set on Windows because `npx` is a `.cmd` file and can't be spawned directly.
 
 ---
 
@@ -222,6 +259,7 @@ See [`docs/what-is-left.md`](what-is-left.md) for the full list. The critical it
 3. **Validate two-device sync** — Sync is on and implemented; run the test with two devices
 4. **Test auto-update** — Publish a real GitHub Release, verify the update flow
 5. **Wire `pnpm test`** — ~90+ scoped `.test.cjs` tests exist but are not yet wired to a test runner
+6. **Wire domain table push methods in SyncEngine** — `missions`, `evidence_items`, `capabilities`, `incidents`, `environments` exist in Supabase (migration `20260419221706_domain_tables`) but `SyncEngine` has no `push*()` methods for them yet; data is local-only until wired
 
 ---
 
@@ -284,3 +322,4 @@ If you are a new developer or AI session, read these in order:
 11. **Layout changes are risky** — Test on the Modes screen (most complex layout) after any CSS changes. See idiosyncrasies #6 in risks.md.
 12. **`apps/desktop/src/lib/` is authoritative** — Do not look for code in `packages/` (except shared-types, storage, build-metadata).
 13. **Do NOT use `require('./state')` inside function bodies in the main process** — Rollup bundles everything into one file; dynamic requires for local modules crash at runtime. Use static imports + the `container` object from `handlers/state.ts`. See idiosyncrasies #19.
+14. **Always `git fetch && git merge origin/main --no-edit` before pushing** — CI auto-bumps the version after every merge; your push will be rejected as non-fast-forward if you skip this. Do not use `--rebase`; merge works cleanly. See Bug #12.
