@@ -8,6 +8,7 @@ import * as http from 'http';
 import * as url from 'url';
 import type { AuthSignInResult } from '../../lib/shared-types';
 import { getSupabaseClient, initSyncEngine } from './helpers';
+import { container as state } from './state';
 
 export function registerAuthHandlers(): void {
   /**
@@ -222,7 +223,6 @@ export function registerAuthHandlers(): void {
 
   ipcMain.handle('auth:signOut', async (): Promise<void> => {
     // Stop sync engine before signing out to prevent stale session operations
-    const state = require('./state');
     if (state.syncEngine) {
       state.syncEngine.stop();
       state.syncEngine = null;

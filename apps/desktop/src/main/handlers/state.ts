@@ -48,3 +48,38 @@ export let evidenceEngine: EvidenceCaptureEngine | null = null;
 export let runtimeService: RuntimeExecutionService | null = null;
 export let browserService: BrowserAutomationService | null = null;
 export let verificationEngine: VerificationEngine | null = null;
+
+// Mutable container for use in write contexts. Getters/setters reference the
+// module-level let variables so that both the individual exports and the
+// container stay in sync — no dynamic require() needed.
+export const container = {
+  get mainWindow() { return mainWindow; },
+  set mainWindow(v: typeof mainWindow) { mainWindow = v; },
+  get localDb() { return localDb; },
+  set localDb(v: typeof localDb) { localDb = v; },
+  get supabase() { return supabase; },
+  set supabase(v: typeof supabase) { supabase = v; },
+  get syncEngine() { return syncEngine; },
+  set syncEngine(v: typeof syncEngine) { syncEngine = v; },
+  get secretsSync() { return secretsSync; },
+  set secretsSync(v: typeof secretsSync) { secretsSync = v; },
+  get orchestrationEngine() { return orchestrationEngine; },
+  set orchestrationEngine(v: typeof orchestrationEngine) { orchestrationEngine = v; },
+  get changeEngine() { return changeEngine; },
+  set changeEngine(v: typeof changeEngine) { changeEngine = v; },
+  get watchEngine() { return watchEngine; },
+  set watchEngine(v: typeof watchEngine) { watchEngine = v; },
+  get evidenceEngine() { return evidenceEngine; },
+  set evidenceEngine(v: typeof evidenceEngine) { evidenceEngine = v; },
+  get runtimeService() { return runtimeService; },
+  set runtimeService(v: typeof runtimeService) { runtimeService = v; },
+  get browserService() { return browserService; },
+  set browserService(v: typeof browserService) { browserService = v; },
+  get verificationEngine() { return verificationEngine; },
+  set verificationEngine(v: typeof verificationEngine) { verificationEngine = v; },
+  // Immutable singletons — convenience access via the same object
+  get KEYTAR_SERVICE() { return KEYTAR_SERVICE; },
+  get capabilityRegistry() { return capabilityRegistry; },
+  get mcpConnectionManager() { return mcpConnectionManager; },
+  get sshService() { return sshService; },
+};

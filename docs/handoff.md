@@ -27,7 +27,7 @@ All 10 MVP milestones are complete. The brownfield rebuild (Components 10–22) 
 |---|---|
 | App launches via `pnpm dev` | ✅ Works |
 | GitHub OAuth sign-in | ✅ Works (dual-flow: PKCE + implicit) |
-| Project CRUD | ✅ Works |
+| Project CRUD (list, create, configure, delete) | ✅ Works |
 | Conversation + AI streaming | ✅ Works |
 | Mode system (6 Modes, soul editor, model picker) | ✅ Works |
 | OpenRouter integration | ✅ Works (user-scoped models) |
@@ -51,6 +51,8 @@ All 10 MVP milestones are complete. The brownfield rebuild (Components 10–22) 
 | Memory / skills / decision knowledge | ✅ Works (Component 20) |
 | Observability / self-healing | ✅ Works (Component 21) |
 | **Cloud sync** | **✅ Re-enabled 2026-04-18** |
+| **IPC handlers split** | **✅ Done 2026-04-18 (handlers/*.ts)** |
+| **Domain tables in Supabase** | **✅ Migrated 2026-04-18 (missions, evidence_items, capabilities, incidents, environments)** |
 | **Two-device sync validation** | **⚠️ Not yet tested in practice** |
 | **Packaged installer** | **⚠️ Not tested on clean machine** |
 | **Auto-update** | **⚠️ Not tested with real release** |

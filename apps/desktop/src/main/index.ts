@@ -80,8 +80,7 @@ import {
 } from './handlers';
 
 import { getSupabaseClient, createWindow, initSyncEngine } from './handlers/helpers';
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const state = require('./handlers/state');
+import { container as state } from './handlers/state';
 
 // ── App initialization ────────────────────────────────────────────
 

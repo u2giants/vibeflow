@@ -14,7 +14,30 @@ apps/desktop/
 ├── tsconfig.json             ← TypeScript config with @vibeflow/* path mappings
 └── src/
     ├── main/
-    │   └── index.ts          ← Main process entry (~2,441 lines — intentional IPC registry)
+    │   ├── index.ts          ← Main process entry: app lifecycle + register*Handlers() calls
+    │   └── handlers/         ← IPC handler files (one per domain)
+    │       ├── state.ts      ← Shared mutable service refs (container pattern — see idiosyncrasies #19)
+    │       ├── auth.ts
+    │       ├── projects.ts
+    │       ├── modes.ts
+    │       ├── openrouter.ts
+    │       ├── conversations.ts
+    │       ├── sync.ts
+    │       ├── tooling.ts
+    │       ├── devops.ts
+    │       ├── approval.ts
+    │       ├── handoff.ts
+    │       ├── updater.ts
+    │       ├── orchestrator.ts
+    │       ├── capabilities.ts
+    │       ├── mcp.ts
+    │       ├── memory.ts
+    │       ├── verification.ts
+    │       ├── secrets.ts
+    │       ├── environments.ts
+    │       ├── observability.ts
+    │       ├── connection-test.ts
+    │       └── helpers.ts    ← getCurrentUserId, initSyncEngine, etc.
     ├── preload/
     │   └── index.ts          ← Preload bridge: exposes window.vibeflow.* API to renderer
     ├── renderer/
@@ -111,7 +134,7 @@ Output: `apps/desktop/dist/VibeFlow-Setup-x.y.z.exe`
 
 ## Key Concepts
 
-- The **main process** (`src/main/index.ts`) has full Node.js access for files, terminal, git, SSH, secrets. It is intentionally large (~2,441 lines) because it is a flat IPC handler registry — business logic lives in `src/lib/`.
+- The **main process** (`src/main/index.ts`) has full Node.js access for files, terminal, git, SSH, secrets. It is a thin entry point; all IPC handlers live in `src/main/handlers/*.ts` (one file per domain). Business logic delegates to `src/lib/`.
 - The **preload script** (`src/preload/index.ts`) exposes a typed `window.vibeflow.*` API to the renderer via Electron's `contextBridge`. The renderer has no direct Node.js access.
 - The **renderer** is a sandboxed React app that calls `window.vibeflow.*` for all privileged operations.
 - All application library code lives in `src/lib/`. The `packages/` directory at the repo root contains canonical versions of only three packages (`shared-types`, `storage`, `build-metadata`) — everything else in `packages/` is a README stub.

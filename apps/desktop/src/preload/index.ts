@@ -27,6 +27,7 @@ const api: VibeFlowAPI = {
     copyCredential: (sourceProjectId: string, credentialType: string) => ipcRenderer.invoke('projects:copyCredential', sourceProjectId, credentialType),
     pickFolder: () => ipcRenderer.invoke('projects:pickFolder'),
     updateWizard: (projectId: string, args: import('../lib/shared-types').CreateProjectArgs) => ipcRenderer.invoke('projects:updateWizard', projectId, args),
+    delete: (projectId: string) => ipcRenderer.invoke('projects:delete', projectId),
   },
   buildMetadata: {
     get: () => ipcRenderer.invoke('buildMetadata:get'),

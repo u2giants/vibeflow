@@ -4,7 +4,7 @@
 
 import { ipcMain } from 'electron';
 import keytar from 'keytar';
-import { localDb, orchestrationEngine, mainWindow, KEYTAR_SERVICE, KEYTAR_OPENROUTER_KEY } from './state';
+import { localDb, orchestrationEngine, mainWindow, KEYTAR_SERVICE, KEYTAR_OPENROUTER_KEY, container as state } from './state';
 import { OrchestrationEngine } from '../../lib/orchestrator/orchestration-engine';
 
 export function registerOrchestratorHandlers(): void {
@@ -21,9 +21,7 @@ export function registerOrchestratorHandlers(): void {
 
     // Initialize or reuse the engine
     if (!orchestrationEngine) {
-      const state = require('./state');
       state.orchestrationEngine = new OrchestrationEngine(apiKey, modes, (orchState) => {
-        // Broadcast state changes to renderer
         if (state.mainWindow) {
           state.mainWindow.webContents.send('orchestrator:stateChanged', orchState);
         }
@@ -32,8 +30,7 @@ export function registerOrchestratorHandlers(): void {
       orchestrationEngine.setApiKey(apiKey);
     }
 
-    const state = require('./state');
-    const plan = await state.orchestrationEngine.decomposeMission(mission);
+    const plan = await state.orchestrationEngine!.decomposeMission(mission);
 
     // Persist the plan to local DB
     localDb.upsertPlan({

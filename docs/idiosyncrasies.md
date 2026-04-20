@@ -1,6 +1,6 @@
 # VibeFlow — Idiosyncrasies
 
-Last updated: 2026-04-18 (Doc Audit + Sync Re-enablement Sprint)
+Last updated: 2026-04-18 (handlers split + state container pattern + delete project)
 
 ---
 
@@ -161,14 +161,12 @@ If you see something in the codebase that looks odd and it is NOT in this file, 
 
 ---
 
-### 13. main/index.ts is intentionally large (~2,441 lines)
+### 13. ~~main/index.ts is intentionally large~~ — RESOLVED 2026-04-18
 
-- **What looks odd:** [`apps/desktop/src/main/index.ts`](../apps/desktop/src/main/index.ts) is approximately 2,441 lines. For most TypeScript projects this would be a red flag.
-- **Where it is:** `apps/desktop/src/main/index.ts`
-- **Why it was done:** The file is an IPC handler registry — a flat list of `ipcMain.handle()` registrations, each delegating immediately to a service in `apps/desktop/src/lib/`. Business logic does not live in this file. The size reflects the breadth of the IPC API surface (100+ handlers across 30+ domains), not complexity. Splitting it into per-domain handler files is desirable but has been deferred.
-- **What breaks if cleaned up:** Nothing breaks if you split it correctly (same IPC channel names, same handler implementations). But a bad split risks breaking channel names or handler registration order.
-- **Permanent or temporary:** Temporary — a split into `src/main/handlers/*.ts` files is planned (see [`docs/what-is-left.md`](what-is-left.md) item #7).
-- **How to safely remove later:** Create `src/main/handlers/` directory, move groups of handlers by domain, import and register them all in `index.ts`. Keep `index.ts` as the registration file only.
+- **Resolution:** The IPC handlers have been split into `src/main/handlers/*.ts` files. `index.ts` is now a thin entry point: app lifecycle, window creation, and `register*Handlers()` call sites only. Handler files: `auth.ts`, `projects.ts`, `modes.ts`, `openrouter.ts`, `conversations.ts`, `sync.ts`, `tooling.ts`, `devops.ts`, `approval.ts`, `handoff.ts`, `updater.ts`, `orchestrator.ts`, `capabilities.ts`, `mcp.ts`, `memory.ts`, `verification.ts`, `secrets.ts`, `environments.ts`, `observability.ts`, `connection-test.ts`.
+- **What this entry was:** `index.ts` was approximately 2,441 lines when all handlers lived inline. Business logic already delegated to `src/lib/`, so the size was breadth (100+ channels), not complexity. The split was deferred until a clean session could do it without introducing duplicate registrations.
+- **Warning that still applies:** Do NOT introduce duplicate `ipcMain.handle()` registrations. Electron throws `Attempted to register a second handler for 'channel-name'` at boot — the crash message includes the channel name (see entry #15).
+- **Permanent or temporary:** Resolved — kept for historical reference.
 
 ---
 
@@ -224,6 +222,17 @@ If you see something in the codebase that looks odd and it is NOT in this file, 
 - **What breaks if cleaned up:** If you change the constructor to accept raw credentials and call `createClient()` internally, all sync writes will fail with RLS policy violations.
 - **Permanent or temporary:** Permanent — this is the correct design for RLS-enforced sync.
 - **How to safely remove later:** N/A — this is intentional.
+
+---
+
+### 19. State container pattern — dynamic require('./state') is broken in bundled output
+
+- **What looks odd:** `apps/desktop/src/main/handlers/state.ts` exports a `container` object with getters and setters for every mutable service reference (`localDb`, `supabase`, `syncEngine`, etc.). All handler files import it as `import { container as state } from './state'` and write `state.syncEngine = new SyncEngine(...)` instead of reassigning the imported binding directly. This is unusual.
+- **Where it is:** `apps/desktop/src/main/handlers/state.ts` — `container` export at the bottom; all `apps/desktop/src/main/handlers/*.ts` files.
+- **Why it was done:** electron-vite/Rollup bundles the entire main process into a single file (`out/main/index.js`). There is no `handlers/state.js` at runtime. Any `require('./state')` or `require('./handlers/state')` call inside a function body will throw `Cannot find module './state'` at runtime — even though TypeScript compilation succeeds. This crashed the app on every startup. Static ES module imports are resolved at bundle time and work correctly. The `container` object (a plain object with getters/setters) is the mechanism that lets handler files share the same mutable references via static imports: you import the object once, then mutate its properties, and all importers see the same updated values.
+- **What breaks if cleaned up:** If you change any `import { container as state } from './state'` to a dynamic `require('./state')` inside a function body, the app will throw `Cannot find module` at runtime.
+- **Permanent or temporary:** Permanent — this is required by the bundling architecture.
+- **How to safely remove later:** N/A — do not use dynamic require for local modules in the main process.
 
 ---
 

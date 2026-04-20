@@ -1107,6 +1107,28 @@ export class LocalDb {
     this.save();
   }
 
+  deleteProject(projectId: string): void {
+    // Cascade-delete all child data before removing the project row.
+    // Subquery-based deletes handle grandchild rows (plans, evidence_items).
+    this.db!.run('DELETE FROM plans WHERE mission_id IN (SELECT id FROM missions WHERE project_id = ?)', [projectId]);
+    this.db!.run('DELETE FROM evidence_items WHERE mission_id IN (SELECT id FROM missions WHERE project_id = ?)', [projectId]);
+    this.db!.run('DELETE FROM missions WHERE project_id = ?', [projectId]);
+    this.db!.run('DELETE FROM capabilities WHERE project_id = ?', [projectId]);
+    this.db!.run('DELETE FROM incidents WHERE project_id = ?', [projectId]);
+    this.db!.run('DELETE FROM environments WHERE project_id = ?', [projectId]);
+    this.db!.run('DELETE FROM deploy_candidates WHERE project_id = ?', [projectId]);
+    this.db!.run('DELETE FROM deploy_runs WHERE project_id = ?', [projectId]);
+    this.db!.run('DELETE FROM mcp_servers WHERE project_id = ?', [projectId]);
+    this.db!.run('DELETE FROM ssh_targets WHERE project_id = ?', [projectId]);
+    this.db!.run('DELETE FROM watch_sessions WHERE project_id = ?', [projectId]);
+    this.db!.run('DELETE FROM anomaly_events WHERE project_id = ?', [projectId]);
+    this.db!.run('DELETE FROM project_devops_configs WHERE project_id = ?', [projectId]);
+    this.db!.run('DELETE FROM project_config WHERE project_id = ?', [projectId]);
+    this.db!.run('DELETE FROM conversations WHERE project_id = ?', [projectId]);
+    this.db!.run('DELETE FROM projects WHERE id = ?', [projectId]);
+    this.save();
+  }
+
   getSelfMaintenanceProject(): Project | null {
     const result = this.db!.exec('SELECT * FROM projects WHERE is_self_maintenance = 1 LIMIT 1')[0];
     const objs = this.toObjAll(result);

@@ -6,7 +6,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { app, BrowserWindow } from 'electron';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { mainWindow, localDb, supabase, syncEngine } from './state';
+import { localDb, supabase, container as state } from './state';
 import { SyncEngine } from '../../lib/sync/sync-engine';
 import { SecretsSync } from '../../lib/secrets/secrets-sync';
 
@@ -20,12 +20,7 @@ export function getSupabaseClient(): SupabaseClient | null {
     return null;
   }
 
-  // Re-import to avoid circular dependency — we assign to the shared state
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { supabase: supabaseState } = require('./state');
   const client = createClient(supabaseUrl, anonKey);
-  // Assign via require to update the shared module state
-  const state = require('./state');
   state.supabase = client;
   return client;
 }
@@ -46,14 +41,10 @@ export async function getProjectRepoPath(projectId: string): Promise<string> {
     if (app.isPackaged) return app.getAppPath();
     return path.resolve(__dirname, '../../../..');
   }
-  // For regular projects, default to current working directory
-  // In a real implementation, this would read a stored project path
   return process.cwd();
 }
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 export async function initSyncEngine(userId: string): Promise<void> {
-  const state = require('./state');
   if (!state.localDb) {
     console.warn('[main] Cannot init sync: LocalDb not initialized');
     if (state.mainWindow) {
@@ -71,7 +62,6 @@ export async function initSyncEngine(userId: string): Promise<void> {
     return;
   }
 
-  // Get or create stable device ID
   let deviceId = state.localDb.getDeviceId();
   if (!deviceId) {
     deviceId = crypto.randomUUID();
@@ -81,10 +71,8 @@ export async function initSyncEngine(userId: string): Promise<void> {
 
   const deviceName = os.hostname();
 
-  // Pass the authenticated SupabaseClient so RLS policies work correctly
   state.syncEngine = new SyncEngine(client, deviceId, deviceName, userId, state.localDb);
 
-  // Forward sync events to renderer
   state.syncEngine.on((event) => {
     if (event.type === 'sync-status-changed' && state.mainWindow) {
       state.mainWindow.webContents.send('sync:statusChanged', event.data);
@@ -101,12 +89,10 @@ export async function initSyncEngine(userId: string): Promise<void> {
     }
   }
 
-  // Initialize SecretsSync (passphrase not set yet — user sets it via IPC)
   state.secretsSync = new SecretsSync(client, userId);
 }
 
 export function createWindow(): void {
-  const state = require('./state');
   state.mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,

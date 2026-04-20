@@ -47,7 +47,6 @@ vibeflow/
 ├── packages/              ← Canonical shared packages (shared-types, storage, build-metadata)
 │                            All other packages/ are README stubs — authoritative code is in apps/desktop/src/lib/
 ├── docs/                  ← All documentation
-├── rebuild/               ← Binding specification files for the brownfield rebuild (Components 10–22)
 ├── scripts/               ← inject-build-metadata.js and other build helpers
 ├── supabase/              ← Supabase migration SQL files
 └── .github/workflows/     ← CI/CD (ci.yml, release.yml, build.yml)
@@ -92,3 +91,4 @@ vibeflow/
 3. **Do NOT rename `electron.vite.config.ts`** — electron-vite requires this exact filename (see idiosyncrasies #1).
 4. **The Vite config file is `electron.vite.config.ts`, not `vite.config.ts`.**
 5. **`apps/desktop/src/lib/` is the authoritative app code.** `packages/` is canonical only for `shared-types`, `storage`, and `build-metadata`; everything else in `packages/` is a README stub.
+6. **Do NOT use `require('./state')` inside function bodies in the main process** — Rollup bundles everything into a single file; dynamic requires for local modules crash at runtime. Use static imports + the `container` object from `handlers/state.ts` (see [idiosyncrasies #19](docs/idiosyncrasies.md)).

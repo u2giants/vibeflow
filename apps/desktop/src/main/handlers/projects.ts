@@ -9,7 +9,7 @@ import type { IpcMainInvokeEvent } from 'electron';
 import * as path from 'path';
 import keytar from 'keytar';
 import type { CreateProjectArgs, ProjectConfig } from '../../lib/shared-types';
-import { localDb, syncEngine, KEYTAR_SERVICE, KEYTAR_VIBEFLOW_REPO_PATH, changeEngine } from './state';
+import { localDb, syncEngine, KEYTAR_SERVICE, KEYTAR_VIBEFLOW_REPO_PATH, changeEngine, container as state } from './state';
 import { getCurrentUserId } from './helpers';
 import { SecretsStore } from '../../lib/secrets/secrets-store';
 import { DriftDetector } from '../../lib/drift-detector';
@@ -208,12 +208,11 @@ export function registerProjectsHandlers(): void {
     // Lazy-initialize DB if it failed during startup (e.g. better-sqlite3 native module issue)
     if (!localDb) {
       try {
-        const state = require('./state');
+        const { LocalDb } = await import('../../lib/storage');
         const dbPath = path.join(app.getPath('userData'), 'vibeflow-cache.sqlite');
-        const { LocalDb } = require('../../lib/storage');
         state.localDb = new LocalDb(dbPath);
         await state.localDb.init();
-        const { ChangeEngine } = require('../../lib/change-engine');
+        const { ChangeEngine } = await import('../../lib/change-engine');
         state.changeEngine = new ChangeEngine(state.localDb);
         const secretsStore = new SecretsStore(state.localDb);
         const driftDetector = new DriftDetector(state.localDb, secretsStore);
@@ -224,7 +223,8 @@ export function registerProjectsHandlers(): void {
         state.browserService = new BrowserAutomationService(state.localDb, state.evidenceEngine, lazyScreenshotDir);
         const lazyValidityPipeline = new ValidityPipeline();
         state.verificationEngine = new VerificationEngine(state.localDb, lazyValidityPipeline, state.evidenceEngine, state.browserService);
-        state.localDb.seedDefaultModes(require('../../lib/modes/default-modes').DEFAULT_MODES);
+        const { DEFAULT_MODES } = await import('../../lib/modes/default-modes');
+        state.localDb.seedDefaultModes(DEFAULT_MODES);
         state.localDb.migrateDefaultModelId('anthropic/claude-sonnet-4-5', 'anthropic/claude-sonnet-4-6');
         console.log('[main] LocalDb lazy-initialized in createSelfMaintenance');
       } catch (err) {
@@ -366,4 +366,24 @@ export function registerProjectsHandlers(): void {
       }
     },
   );
+
+  // ── projects:delete ───────────────────────────────────────────────────────
+  ipcMain.handle('projects:delete', async (_e: IpcMainInvokeEvent, projectId: string): Promise<void> => {
+    if (!localDb) throw new Error('DB not initialized');
+    const userId = await getCurrentUserId();
+    const projects = localDb.listProjects(userId);
+    const project = projects.find(p => p.id === projectId);
+    if (!project) throw new Error('Project not found');
+    if (project.isSelfMaintenance) throw new Error('Cannot delete the self-maintenance project');
+
+    const credentialTypes = [
+      'github-pat', 'coolify-token', 'railway-key', 'supabase-service-role',
+      'cloudflare-token', 'brevo-key', 'clawdtalk-key', 'google-oauth-secret', 'azure-oauth-secret',
+    ];
+    for (const ct of credentialTypes) {
+      await keytar.deletePassword(KEYTAR_SERVICE, `project-${projectId}-${ct}`);
+    }
+
+    localDb.deleteProject(projectId);
+  });
 }

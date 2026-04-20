@@ -38,6 +38,7 @@ export interface ProjectsChannel {
   copyCredential: (sourceProjectId: string, credentialType: string) => Promise<string | null>;
   pickFolder: () => Promise<string | null>;
   updateWizard: (projectId: string, args: CreateProjectArgs) => Promise<void>;
+  delete: (projectId: string) => Promise<void>;
 }
 
 // ── Build Metadata IPC ────────────────────────────────────────────

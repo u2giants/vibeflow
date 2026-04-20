@@ -7,8 +7,7 @@ import { ipcMain } from 'electron';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const keytar = require('keytar') as { getPassword: (s: string, a: string) => Promise<string | null>; setPassword: (s: string, a: string, p: string) => Promise<void> };
 import type { SecretRecord } from '../../lib/shared-types';
-import { localDb, secretsSync } from './state';
-import { KEYTAR_SERVICE } from './state';
+import { localDb, secretsSync, KEYTAR_SERVICE, container as state } from './state';
 
 /** Map of integration slug → keytar credential type suffix (mirrors wizard naming). */
 const INTEGRATION_CRED_TYPES: Record<string, string> = {
@@ -71,30 +70,25 @@ export function registerSecretsHandlers(): void {
   // ── Cloud sync handlers ───────────────────────────────────────────────────
 
   ipcMain.handle('secrets:setPassphrase', async (_event, passphrase: string): Promise<{ success: boolean; error?: string }> => {
-    const state = require('./state');
     if (!state.secretsSync) return { success: false, error: 'Secrets sync not initialized — sign in first' };
     state.secretsSync.setPassphrase(passphrase);
     return { success: true };
   });
 
   ipcMain.handle('secrets:hasPassphrase', async (): Promise<boolean> => {
-    const state = require('./state');
     return state.secretsSync?.hasPassphrase() ?? false;
   });
 
   ipcMain.handle('secrets:clearPassphrase', async (): Promise<{ success: boolean }> => {
-    const state = require('./state');
     state.secretsSync?.clearPassphrase();
     return { success: true };
   });
 
   ipcMain.handle('secrets:syncUp', async (): Promise<{ success: boolean; uploaded: number; error?: string }> => {
-    const state = require('./state');
     if (!state.secretsSync) return { success: false, uploaded: 0, error: 'Secrets sync not initialized — sign in first' };
     if (!state.secretsSync.hasPassphrase()) return { success: false, uploaded: 0, error: 'Set a passphrase first' };
     if (!localDb) return { success: false, uploaded: 0, error: 'Database not initialized' };
 
-    // Gather all keytar secrets across all projects
     const userId = await (await import('./helpers')).getCurrentUserId();
     const projects = localDb.listProjects(userId);
     const secrets: Array<{ projectId: string; credentialType: string; value: string }> = [];
@@ -114,7 +108,6 @@ export function registerSecretsHandlers(): void {
   });
 
   ipcMain.handle('secrets:syncDown', async (): Promise<{ success: boolean; restored: number; error?: string }> => {
-    const state = require('./state');
     if (!state.secretsSync) return { success: false, restored: 0, error: 'Secrets sync not initialized — sign in first' };
     if (!state.secretsSync.hasPassphrase()) return { success: false, restored: 0, error: 'Set a passphrase first' };
 

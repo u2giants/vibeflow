@@ -10,7 +10,7 @@ interface ProjectListScreenProps {
   onOpenProject: (project: Project) => void;
 }
 
-function ProjectCard({ project, onClick, onConfigure }: { project: Project; onClick: () => void; onConfigure: (e: React.MouseEvent) => void }) {
+function ProjectCard({ project, onClick, onConfigure, onDelete }: { project: Project; onClick: () => void; onConfigure: (e: React.MouseEvent) => void; onDelete: (e: React.MouseEvent) => void }) {
   const [hover, setHover] = useState(false);
   const initials = project.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
   const hue = (project.name.charCodeAt(0) * 37 + project.name.charCodeAt(Math.min(1, project.name.length - 1)) * 13) % 360;
@@ -55,18 +55,30 @@ function ProjectCard({ project, onClick, onConfigure }: { project: Project; onCl
         )}
       </div>
       {hover && (
-        <button
-          onClick={onConfigure}
-          title="Configure integrations"
-          style={{
-            padding: '4px 10px', background: C.bg4,
-            border: `1px solid ${C.border2}`, borderRadius: R.md,
-            color: C.text3, fontSize: 11, cursor: 'pointer',
-            flexShrink: 0,
-          }}
-        >
-          Configure
-        </button>
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+          <button
+            onClick={onConfigure}
+            title="Configure integrations"
+            style={{
+              padding: '4px 10px', background: C.bg4,
+              border: `1px solid ${C.border2}`, borderRadius: R.md,
+              color: C.text3, fontSize: 11, cursor: 'pointer',
+            }}
+          >
+            Configure
+          </button>
+          <button
+            onClick={onDelete}
+            title="Delete project"
+            style={{
+              padding: '4px 10px', background: 'transparent',
+              border: `1px solid ${C.redBd}`, borderRadius: R.md,
+              color: C.red, fontSize: 11, cursor: 'pointer',
+            }}
+          >
+            Delete
+          </button>
+        </div>
       )}
       <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
         <path d="M6 3l5 5-5 5" stroke={hover ? C.text2 : C.text3} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
@@ -89,6 +101,16 @@ export default function ProjectListScreen({ onSignOut, onOpenModes, onOpenProjec
   useEffect(() => { load(); }, [load]);
 
   const handleSignOut = async () => { await window.vibeflow.auth.signOut(); onSignOut(); };
+
+  const handleDelete = useCallback(async (project: Project) => {
+    if (!window.confirm(`Delete "${project.name}"? This cannot be undone.`)) return;
+    try {
+      await window.vibeflow.projects.delete(project.id);
+      load();
+    } catch (err) {
+      alert(`Failed to delete project: ${String(err)}`);
+    }
+  }, [load]);
 
   const openSelfMaintenance = useCallback(async () => {
     try {
@@ -195,6 +217,7 @@ export default function ProjectListScreen({ onSignOut, onOpenModes, onOpenProjec
               project={p}
               onClick={() => onOpenProject(p)}
               onConfigure={(e) => { e.stopPropagation(); setEditingProject(p); }}
+              onDelete={(e) => { e.stopPropagation(); handleDelete(p); }}
             />
           ))}
         </div>

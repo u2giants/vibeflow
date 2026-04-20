@@ -42,35 +42,9 @@ The MVP milestones and brownfield rebuild (Components 10–22) are all complete.
   3. Add a `test` step to `.github/workflows/ci.yml`
 - **Effort:** Small-Medium (2–4 hours)
 
-### 5. Split main/index.ts into domain-specific handler files
-- **What:** The main process entry point is now ~2,441 lines (IPC handler registry for 100+ handlers across 30+ domains). Should be split into domain files.
-- **Proposed structure:**
-  ```
-  apps/desktop/src/main/
-  ├── index.ts              ← App lifecycle, window creation, handler registration
-  └── handlers/
-      ├── auth.ts
-      ├── projects.ts
-      ├── modes.ts
-      ├── openrouter.ts
-      ├── conversations.ts
-      ├── sync.ts
-      ├── tooling.ts
-      ├── devops.ts
-      ├── approval.ts
-      ├── handoff.ts
-      ├── updater.ts
-      ├── orchestrator.ts
-      ├── capabilities.ts
-      ├── mcp.ts
-      ├── memory.ts
-      ├── verification.ts
-      ├── secrets.ts
-      ├── environments.ts
-      └── observability.ts
-  ```
-- **Warning:** Do NOT introduce duplicate handler registrations (see idiosyncrasies #15).
-- **Effort:** Medium (half a day)
+### ~~5. Split main/index.ts into domain-specific handler files~~ — DONE 2026-04-18
+
+Completed. `src/main/handlers/*.ts` now holds all IPC domain files. `index.ts` is a thin lifecycle + registration entry point. The state container pattern in `handlers/state.ts` resolves the Rollup bundling constraint — see [idiosyncrasies #19](idiosyncrasies.md).
 
 ### 6. Back-fill capabilities table dual schema
 - **What:** The `capabilities` table has both old columns (`type`, `permissions_json`) and new columns (`class`, `owner`, `description`, `scope`, `actions_json`). Old rows need their data migrated to the new columns.

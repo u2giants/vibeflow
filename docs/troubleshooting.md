@@ -45,6 +45,21 @@ echo electron.exe > node_modules\electron\path.txt
 
 If you see `TypeError: Cannot read properties of undefined (reading 'whenReady')`, this is the `ELECTRON_RUN_AS_NODE` issue. See Check 1 above.
 
+### Symptom: `Cannot find module './handlers/state'` or `Cannot find module './state'`
+
+**Cause:** A dynamic `require('./state')` or `require('./handlers/state')` call exists inside a function body in the main process. electron-vite/Rollup bundles everything into a single `out/main/index.js` — there is no `state.js` at runtime. TypeScript compiles without error, but the require fails at runtime.
+
+**Fix:** Change the dynamic require to a static import at the top of the file, then use the `container` object from `handlers/state.ts`:
+```ts
+// WRONG — crashes at runtime:
+const state = require('./handlers/state');
+
+// RIGHT — resolved at bundle time:
+import { container as state } from './state';
+```
+
+See [idiosyncrasies #19](idiosyncrasies.md) for the full explanation of the state container pattern.
+
 ### Symptom: White screen after launch
 
 **Check 1: Vite dev server running?**

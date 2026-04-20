@@ -848,43 +848,6 @@ export default function NewProjectWizard({
         })}
       </div>
 
-      {existingProjects.length > 0 && (
-        <div style={{
-          padding: '12px 14px',
-          backgroundColor: C.bg4,
-          border: `1px solid ${C.border}`,
-          borderRadius: R.md,
-          marginTop: 8,
-        }}>
-          <div style={{ fontSize: 12, color: C.text3, marginBottom: 8, fontWeight: 600 }}>
-            Copy all settings from an existing project
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <select
-              value={copySource}
-              onChange={e => setCopySource(e.target.value)}
-              style={{ ...selectStyle, flex: 1, fontSize: 12, padding: '6px 10px' }}
-            >
-              <option value="">— select project —</option>
-              {existingProjects.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-            <button
-              type="button"
-              disabled={!copySource || copying}
-              onClick={() => {/* full copy handled per-step */}}
-              style={{
-                ...subtleBtn,
-                opacity: (!copySource || copying) ? 0.5 : 1,
-                cursor: (!copySource || copying) ? 'not-allowed' : 'pointer',
-              }}
-            >
-              {copying ? 'Copying…' : 'Copy settings'}
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 
