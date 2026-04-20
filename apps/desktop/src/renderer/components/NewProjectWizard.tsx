@@ -482,6 +482,10 @@ export default function NewProjectWizard({
   const [mcpDraftEnv, setMcpDraftEnv] = useState('');
   const [mcpDraftJson, setMcpDraftJson] = useState('');
   const [mcpDraftJsonError, setMcpDraftJsonError] = useState<string | null>(null);
+  const [mcpDraftTesting, setMcpDraftTesting] = useState(false);
+  const [mcpDraftTestResult, setMcpDraftTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [mcpCardTesting, setMcpCardTesting] = useState<Record<number, boolean>>({});
+  const [mcpCardTestResults, setMcpCardTestResults] = useState<Record<number, { success: boolean; message: string } | null>>({});
 
   // Show/hide toggles
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
@@ -635,6 +639,54 @@ export default function NewProjectWizard({
     setMcpDraftEnv('');
     setMcpDraftJson('');
     setMcpDraftJsonError(null);
+    setMcpDraftTesting(false);
+    setMcpDraftTestResult(null);
+  };
+
+  const handleMcpDraftTest = async () => {
+    setMcpDraftTesting(true);
+    setMcpDraftTestResult(null);
+    let command = mcpDraftCommand.trim();
+    let args = mcpDraftArgs.split(' ').filter(Boolean);
+    let transport: string = mcpDraftTransport;
+    let envObj: Record<string, string> = {};
+
+    if (mcpFormMode === 'json') {
+      try {
+        const parsed = JSON.parse(mcpDraftJson) as Record<string, unknown>;
+        command = String(parsed.command ?? '');
+        args = Array.isArray(parsed.args) ? parsed.args as string[] : [];
+        transport = String(parsed.transport ?? 'stdio');
+        envObj = typeof parsed.env === 'object' && parsed.env !== null ? parsed.env as Record<string, string> : {};
+      } catch {
+        setMcpDraftTestResult({ success: false, message: 'Invalid JSON — fix the JSON first.' });
+        setMcpDraftTesting(false);
+        return;
+      }
+    } else {
+      mcpDraftEnv.split('\n').forEach(line => {
+        const eq = line.indexOf('=');
+        if (eq > 0) envObj[line.slice(0, eq).trim()] = line.slice(eq + 1).trim();
+      });
+    }
+
+    const r = await window.vibeflow.connectionTest.mcp({ command, args, transport, env: envObj });
+    setMcpDraftTestResult(r);
+    setMcpDraftTesting(false);
+  };
+
+  const handleMcpCardTest = async (idx: number) => {
+    setMcpCardTesting(prev => ({ ...prev, [idx]: true }));
+    setMcpCardTestResults(prev => ({ ...prev, [idx]: null }));
+    const srv = mcpServers[idx];
+    const r = await window.vibeflow.connectionTest.mcp({
+      command: srv.command,
+      args: srv.args,
+      transport: srv.transport,
+      env: srv.env,
+    });
+    setMcpCardTesting(prev => ({ ...prev, [idx]: false }));
+    setMcpCardTestResults(prev => ({ ...prev, [idx]: r }));
   };
 
   const handleCreate = async () => {
@@ -1217,34 +1269,65 @@ export default function NewProjectWizard({
 
       {mcpServers.length > 0 && (
         <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {mcpServers.map((srv, idx) => (
-            <div key={idx} style={{
-              padding: '10px 14px',
-              backgroundColor: C.bg4,
-              border: `1px solid ${C.border2}`,
-              borderRadius: R.md,
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'flex-start',
-            }}>
-              <div>
-                <div style={{ color: C.text1, fontWeight: 600, fontSize: 13 }}>{srv.name}</div>
-                {srv.description && (
-                  <div style={{ color: C.text3, fontSize: 11, marginTop: 2 }}>{srv.description}</div>
-                )}
-                <div style={{ color: C.text3, fontSize: 11, fontFamily: 'monospace', marginTop: 2 }}>
-                  {srv.command} {srv.args.join(' ')} · {srv.transport}
+          {mcpServers.map((srv, idx) => {
+            const cardResult = mcpCardTestResults[idx];
+            const cardTesting = mcpCardTesting[idx] ?? false;
+            return (
+              <div key={idx} style={{
+                padding: '10px 14px',
+                backgroundColor: C.bg4,
+                border: `1px solid ${cardResult ? (cardResult.success ? C.greenBd : C.redBd) : C.border2}`,
+                borderRadius: R.md,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ color: C.text1, fontWeight: 600, fontSize: 13 }}>{srv.name}</div>
+                    {srv.description && (
+                      <div style={{ color: C.text3, fontSize: 11, marginTop: 2 }}>{srv.description}</div>
+                    )}
+                    <div style={{ color: C.text3, fontSize: 11, fontFamily: 'monospace', marginTop: 2 }}>
+                      {srv.command} {srv.args.join(' ')} · {srv.transport}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexShrink: 0, marginLeft: 10 }}>
+                    <button
+                      type="button"
+                      disabled={cardTesting}
+                      onClick={() => handleMcpCardTest(idx)}
+                      style={{
+                        ...subtleBtn,
+                        opacity: cardTesting ? 0.5 : 1,
+                        cursor: cardTesting ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      {cardTesting ? 'Testing…' : 'Test'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMcpServers(prev => prev.filter((_, i) => i !== idx));
+                        setMcpCardTestResults({});
+                        setMcpCardTesting({});
+                      }}
+                      style={dangerBtn}
+                    >
+                      Remove
+                    </button>
+                  </div>
                 </div>
+                {cardResult && (
+                  <div style={{
+                    marginTop: 8, padding: '5px 10px', borderRadius: R.md, fontSize: 12,
+                    backgroundColor: cardResult.success ? C.greenBg : C.redBg,
+                    color: cardResult.success ? C.green : C.red,
+                    border: `1px solid ${cardResult.success ? C.greenBd : C.redBd}`,
+                  }}>
+                    {cardResult.message}
+                  </div>
+                )}
               </div>
-              <button
-                type="button"
-                onClick={() => setMcpServers(prev => prev.filter((_, i) => i !== idx))}
-                style={dangerBtn}
-              >
-                Remove
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -1343,6 +1426,34 @@ export default function NewProjectWizard({
               )}
             </>
           )}
+
+          {/* Test connection */}
+          <div style={{ marginBottom: 12 }}>
+            <button
+              type="button"
+              disabled={mcpDraftTesting || (mcpFormMode === 'fields' ? !mcpDraftCommand.trim() : !mcpDraftJson.trim())}
+              onClick={handleMcpDraftTest}
+              style={{
+                padding: '7px 14px', background: 'transparent',
+                border: `1px solid ${C.border2}`, borderRadius: R.md,
+                color: C.text2, fontSize: 12,
+                cursor: (mcpDraftTesting || (mcpFormMode === 'fields' ? !mcpDraftCommand.trim() : !mcpDraftJson.trim())) ? 'not-allowed' : 'pointer',
+                opacity: (mcpFormMode === 'fields' ? !mcpDraftCommand.trim() : !mcpDraftJson.trim()) ? 0.5 : 1,
+              }}
+            >
+              {mcpDraftTesting ? 'Testing…' : 'Test connection'}
+            </button>
+            {mcpDraftTestResult && (
+              <div style={{
+                marginTop: 8, padding: '6px 10px', borderRadius: R.md, fontSize: 12,
+                backgroundColor: mcpDraftTestResult.success ? C.greenBg : C.redBg,
+                color: mcpDraftTestResult.success ? C.green : C.red,
+                border: `1px solid ${mcpDraftTestResult.success ? C.greenBd : C.redBd}`,
+              }}>
+                {mcpDraftTestResult.message}
+              </div>
+            )}
+          </div>
 
           <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
             <button type="button" onClick={addMcpServer} style={primaryBtn}>Add</button>

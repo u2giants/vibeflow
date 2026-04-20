@@ -326,6 +326,7 @@ const api: VibeFlowAPI = {
     brevo: (apiKey: string) => ipcRenderer.invoke('connectionTest:brevo', apiKey),
     clawdtalk: (apiKey: string) => ipcRenderer.invoke('connectionTest:clawdtalk', apiKey),
     ssh: (host: { hostname: string; username: string; port?: number; identityFile?: string }) => ipcRenderer.invoke('connectionTest:ssh', host),
+    mcp: (server: { command: string; args: string[]; transport: string; env: Record<string, string> }) => ipcRenderer.invoke('connectionTest:mcp', server),
   },
   migration: {
     createPlan: (plan: Omit<MigrationPlan, 'id' | 'createdAt' | 'updatedAt'>) => ipcRenderer.invoke('migration:createPlan', plan),

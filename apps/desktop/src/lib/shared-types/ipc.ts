@@ -769,6 +769,7 @@ export interface ConnectionTestChannel {
   brevo: (apiKey: string) => Promise<ConnectionTestResult>;
   clawdtalk: (apiKey: string) => Promise<ConnectionTestResult>;
   ssh: (host: { hostname: string; username: string; port?: number; identityFile?: string }) => Promise<ConnectionTestResult>;
+  mcp: (server: { command: string; args: string[]; transport: string; env: Record<string, string> }) => Promise<ConnectionTestResult>;
 }
 
 // ── OAuth Automation IPC ─────────────────────────────────────────────────────

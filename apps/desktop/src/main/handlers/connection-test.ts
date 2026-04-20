@@ -6,6 +6,7 @@
  */
 
 import * as https from 'https';
+import { spawn } from 'child_process';
 import { ipcMain } from 'electron';
 import { sshService } from './state';
 
@@ -130,6 +131,100 @@ export function registerConnectionTestHandlers(): void {
       } catch (err) {
         return { success: false, message: `Connection failed: ${String(err instanceof Error ? err.message : err)}` };
       }
+    },
+  );
+
+  // ── MCP (stdio only) ─────────────────────────────────────────────────────
+  // Spawns the server process, sends a JSON-RPC initialize request over stdin,
+  // and waits up to 15 s for a valid initialize response on stdout.
+  // SSE/HTTP servers cannot be tested here without a URL — they get an info message.
+  ipcMain.handle(
+    'connectionTest:mcp',
+    async (_event, server: { command: string; args: string[]; transport: string; env: Record<string, string> }): Promise<{ success: boolean; message: string }> => {
+      if (!server?.command?.trim()) return { success: false, message: 'No command provided.' };
+
+      if (server.transport !== 'stdio') {
+        return {
+          success: false,
+          message: `Cannot auto-test ${server.transport} servers — add the server, then test it from the MCP screen.`,
+        };
+      }
+
+      return new Promise((resolve) => {
+        const env: Record<string, string> = { ...(process.env as Record<string, string>), ...server.env };
+        let resolved = false;
+        let stdout = '';
+        let stderr = '';
+
+        const child = spawn(server.command.trim(), server.args, {
+          env,
+          stdio: ['pipe', 'pipe', 'pipe'],
+          shell: process.platform === 'win32',
+        });
+
+        const finish = (result: { success: boolean; message: string }) => {
+          if (resolved) return;
+          resolved = true;
+          clearTimeout(timer);
+          try { child.kill(); } catch { /* ignore */ }
+          resolve(result);
+        };
+
+        const timer = setTimeout(() => {
+          const hint = stderr.trim() ? ` stderr: ${stderr.trim().slice(0, 120)}` : '';
+          finish({ success: false, message: `Timed out (15 s) — server did not respond to initialize.${hint}` });
+        }, 15000);
+
+        child.on('error', (err) => {
+          finish({ success: false, message: `Failed to start process: ${err.message}` });
+        });
+
+        child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+
+        child.stdout?.on('data', (chunk: Buffer) => {
+          stdout += chunk.toString();
+          for (const line of stdout.split('\n')) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            try {
+              const msg = JSON.parse(trimmed) as Record<string, unknown>;
+              if (msg.id === 1 && msg.result) {
+                const result = msg.result as Record<string, unknown>;
+                const info = result.serverInfo as Record<string, unknown> | undefined;
+                const name = info?.name as string | undefined;
+                const proto = result.protocolVersion as string | undefined;
+                finish({
+                  success: true,
+                  message: name
+                    ? `Connected — ${name}${proto ? ` (MCP ${proto})` : ''}`
+                    : `Connected (MCP ${proto ?? 'unknown'})`,
+                });
+              } else if (msg.id === 1 && msg.error) {
+                const e = msg.error as Record<string, unknown>;
+                finish({ success: false, message: `Server error: ${String(e.message ?? 'unknown')}` });
+              }
+            } catch { /* partial line — keep reading */ }
+          }
+        });
+
+        child.on('exit', (code) => {
+          const hint = stderr.trim() ? `: ${stderr.trim().slice(0, 160)}` : '';
+          finish({ success: false, message: `Process exited (code ${code ?? '?'}) before responding${hint}` });
+        });
+
+        const initRequest = JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: {
+            protocolVersion: '2024-11-05',
+            capabilities: {},
+            clientInfo: { name: 'vibeflow', version: '1.0.0' },
+          },
+        }) + '\n';
+
+        try { child.stdin?.write(initRequest); } catch { /* ignore */ }
+      });
     },
   );
 
