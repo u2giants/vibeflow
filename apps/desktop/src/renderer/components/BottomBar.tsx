@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import type { Mode, ActionRequest, ApprovalResult } from '../../lib/shared-types';
+import type { Mode, ActionRequest, ApprovalResult, ConversationTokenUsage } from '../../lib/shared-types';
 import ApprovalQueue from './ApprovalQueue';
 import { C } from '../theme';
+import { fmtTokens, getContextWindow } from '../../lib/providers/model-context-windows';
 
 interface BottomBarProps {
   currentMode: Mode | null;
@@ -14,6 +15,7 @@ export default function BottomBar({ currentMode, openRouterConnected, onPendingA
   const [recentApprovals, setRecentApprovals] = useState<Array<{
     decision: string; tier: number; description: string; reviewerModel: string | null;
   }>>([]);
+  const [tokenUsage, setTokenUsage] = useState<ConversationTokenUsage | null>(null);
 
   useEffect(() => {
     window.vibeflow.approval.getLog().then(log =>
@@ -37,6 +39,11 @@ export default function BottomBar({ currentMode, openRouterConnected, onPendingA
     return () => { window.vibeflow.approval.removePendingApprovalListener(); };
   }, []);
 
+  useEffect(() => {
+    window.vibeflow.conversations.onTokenUsage((data) => setTokenUsage(data));
+    return () => { window.vibeflow.conversations.onTokenUsage(() => {}); };
+  }, []);
+
   return (
     <div style={{
       display: 'flex',
@@ -47,6 +54,7 @@ export default function BottomBar({ currentMode, openRouterConnected, onPendingA
       backgroundColor: C.bg0,
       borderTop: `1px solid ${C.border}`,
       flexShrink: 0,
+      position: 'relative',
     }}>
       {/* Left — mode info */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -65,6 +73,23 @@ export default function BottomBar({ currentMode, openRouterConnected, onPendingA
         ) : (
           <span style={{ fontSize: 11, color: C.text3 }}>No mode</span>
         )}
+      </div>
+
+      {/* Center — context window meter */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>
+        {tokenUsage && (() => {
+          const limit = getContextWindow(tokenUsage.modelId);
+          const pct = Math.min(tokenUsage.promptTokens / limit, 1);
+          const barFill = Math.round(pct * 10);
+          const bar = '▓'.repeat(barFill) + '░'.repeat(10 - barFill);
+          const pctLabel = pct < 0.01 ? '<1%' : `${Math.round(pct * 100)}%`;
+          const color = pct > 0.85 ? C.red : pct > 0.6 ? C.yellow : C.text3;
+          return (
+            <span style={{ fontSize: 10, color, fontFamily: 'monospace', letterSpacing: '0.02em', userSelect: 'none' }}>
+              ctx {fmtTokens(tokenUsage.promptTokens)}/{fmtTokens(limit)} {bar} {pctLabel}
+            </span>
+          );
+        })()}
       </div>
 
       {/* Right — approval + connection */}

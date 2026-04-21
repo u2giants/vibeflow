@@ -99,6 +99,9 @@ interface MessageRow {
   mode_id: string | null;
   model_id: string | null;
   created_at: string;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  total_tokens: number | null;
 }
 
 export class LocalDb {
@@ -1046,6 +1049,15 @@ export class LocalDb {
       // Column already exists — safe to skip
     }
 
+    // ── Token usage: brownfield migration for messages table ──
+    for (const col of ['prompt_tokens INTEGER', 'completion_tokens INTEGER', 'total_tokens INTEGER']) {
+      try {
+        this.db!.run(`ALTER TABLE messages ADD COLUMN ${col}`);
+      } catch {
+        // Column already exists — safe to skip
+      }
+    }
+
     // ── Component 14: back-fill capabilities dual-schema rows ──
     // Rows created before Component 14 have data in old columns (type, permissions_json)
     // but NULL in new columns (class, owner, actions_json). Normalize them now.
@@ -1397,16 +1409,16 @@ export class LocalDb {
 
   insertMessage(msg: Message): void {
     this.db!.run(
-      'INSERT INTO messages (id, conversation_id, role, content, mode_id, model_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [msg.id, msg.conversationId, msg.role, msg.content, msg.modeId, msg.modelId, msg.createdAt]
+      'INSERT INTO messages (id, conversation_id, role, content, mode_id, model_id, created_at, prompt_tokens, completion_tokens, total_tokens) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [msg.id, msg.conversationId, msg.role, msg.content, msg.modeId, msg.modelId, msg.createdAt, msg.promptTokens ?? null, msg.completionTokens ?? null, msg.totalTokens ?? null]
     );
     this.save();
   }
 
   upsertMessage(msg: Message): void {
     this.db!.run(
-      'INSERT OR REPLACE INTO messages (id, conversation_id, role, content, mode_id, model_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [msg.id, msg.conversationId, msg.role, msg.content, msg.modeId, msg.modelId, msg.createdAt]
+      'INSERT OR REPLACE INTO messages (id, conversation_id, role, content, mode_id, model_id, created_at, prompt_tokens, completion_tokens, total_tokens) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [msg.id, msg.conversationId, msg.role, msg.content, msg.modeId, msg.modelId, msg.createdAt, msg.promptTokens ?? null, msg.completionTokens ?? null, msg.totalTokens ?? null]
     );
     this.save();
   }
@@ -1420,6 +1432,9 @@ export class LocalDb {
       modeId: row.mode_id,
       modelId: row.model_id,
       createdAt: row.created_at,
+      promptTokens: row.prompt_tokens ?? null,
+      completionTokens: row.completion_tokens ?? null,
+      totalTokens: row.total_tokens ?? null,
     };
   }
 

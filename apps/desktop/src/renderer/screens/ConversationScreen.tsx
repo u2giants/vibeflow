@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { Message, ConversationThread, Mode, StreamTokenData, RunState, GitStatus, TerminalCommandResult, ActionRequest, ApprovalResult, HandoffResult, MissionPlanReadyEvent, MissionAwaitingApprovalEvent, MissionVerificationCompleteEvent, MissionCompletedEvent, MissionFailedEvent } from '../../lib/shared-types';
+import { fmtTokens } from '../../lib/providers/model-context-windows';
 import ApprovalCard from '../components/ApprovalCard';
 import HandoffDialog from '../components/HandoffDialog';
 import MissionApprovalButtons from '../components/MissionApprovalButtons';
@@ -628,18 +629,24 @@ export default function ConversationScreen({ conversation, currentMode, onNewCon
                     {currentMode?.icon ?? '🤖'}
                   </div>
                 )}
-                <div style={{
-                  maxWidth: '72%',
-                  padding: '9px 13px',
-                  borderRadius: msg.role === 'user' ? `${R.xl}px ${R.xl}px ${R.sm}px ${R.xl}px` : `${R.xl}px ${R.xl}px ${R.xl}px ${R.sm}px`,
-                  backgroundColor: msg.role === 'user' ? C.accent : C.bg3,
-                  color: msg.role === 'user' ? '#fff' : C.text1,
-                  fontSize: 13,
-                  whiteSpace: 'pre-wrap',
-                  lineHeight: 1.55,
-                  border: msg.role === 'user' ? 'none' : `1px solid ${C.border}`,
-                }}>
-                  {msg.content}
+                <div style={{ maxWidth: '72%', display: 'flex', flexDirection: 'column', alignItems: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                  <div style={{
+                    padding: '9px 13px',
+                    borderRadius: msg.role === 'user' ? `${R.xl}px ${R.xl}px ${R.sm}px ${R.xl}px` : `${R.xl}px ${R.xl}px ${R.xl}px ${R.sm}px`,
+                    backgroundColor: msg.role === 'user' ? C.accent : C.bg3,
+                    color: msg.role === 'user' ? '#fff' : C.text1,
+                    fontSize: 13,
+                    whiteSpace: 'pre-wrap',
+                    lineHeight: 1.55,
+                    border: msg.role === 'user' ? 'none' : `1px solid ${C.border}`,
+                  }}>
+                    {msg.content}
+                  </div>
+                  {msg.role === 'assistant' && msg.promptTokens != null && (
+                    <div style={{ fontSize: 10, color: C.text3, fontFamily: 'monospace', marginTop: 3, paddingLeft: 2 }}>
+                      ↑ {fmtTokens(msg.promptTokens)} · ↓ {fmtTokens(msg.completionTokens ?? 0)}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

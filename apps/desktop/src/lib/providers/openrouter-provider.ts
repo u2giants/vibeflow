@@ -9,9 +9,15 @@
  * - Producing the full response content
  */
 
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
 export interface OpenRouterStreamCallbacks {
   onToken: (token: string) => void;
-  onDone: (fullContent: string) => void;
+  onDone: (fullContent: string, usage?: TokenUsage) => void;
   onError: (error: string) => void;
 }
 
@@ -104,6 +110,7 @@ export class OpenRouterProvider {
     const decoder = new TextDecoder();
     let fullContent = '';
     let buffer = '';
+    let lastUsage: TokenUsage | undefined;
 
     try {
       while (true) {
@@ -118,7 +125,7 @@ export class OpenRouterProvider {
           if (!line.startsWith('data: ')) continue;
           const data = line.slice(6).trim();
           if (data === '[DONE]') {
-            callbacks.onDone(fullContent);
+            callbacks.onDone(fullContent, lastUsage);
             return;
           }
           try {
@@ -127,6 +134,13 @@ export class OpenRouterProvider {
             if (token) {
               fullContent += token;
               callbacks.onToken(token);
+            }
+            if (parsed.usage) {
+              lastUsage = {
+                promptTokens: parsed.usage.prompt_tokens ?? 0,
+                completionTokens: parsed.usage.completion_tokens ?? 0,
+                totalTokens: parsed.usage.total_tokens ?? 0,
+              };
             }
           } catch {
             // Skip malformed SSE lines
@@ -146,7 +160,7 @@ export class OpenRouterProvider {
       return;
     }
 
-    callbacks.onDone(fullContent);
+    callbacks.onDone(fullContent, lastUsage);
   }
 
   /** Simple delay utility for retry backoff. */

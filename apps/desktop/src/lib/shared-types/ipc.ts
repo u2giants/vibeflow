@@ -124,6 +124,14 @@ export interface ExecutionEventData {
   type: 'info' | 'delegation' | 'specialist' | 'error';
 }
 
+export interface ConversationTokenUsage {
+  conversationId: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  modelId: string;
+}
+
 export interface ConversationsChannel {
   list: (projectId: string) => Promise<ConversationThread[]>;
   create: (args: CreateConversationArgs) => Promise<ConversationThread>;
@@ -133,6 +141,7 @@ export interface ConversationsChannel {
   onStreamDone: (callback: (data: StreamDoneData) => void) => void;
   onStreamError: (callback: (data: StreamErrorData) => void) => void;
   onExecutionEvent: (callback: (data: ExecutionEventData) => void) => void;
+  onTokenUsage: (callback: (data: ConversationTokenUsage) => void) => void;
   removeStreamListeners: () => void;
 }
 

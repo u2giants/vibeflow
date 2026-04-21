@@ -10,21 +10,29 @@ import { localDb, mainWindow, syncEngine, KEYTAR_SERVICE, KEYTAR_OPENROUTER_KEY,
 import { getCurrentUserId } from './helpers';
 import { runOrchestrator } from '../../lib/orchestrator/orchestrator';
 import { MissionOrchestrator } from '../mission-orchestrator';
-import { OpenRouterProvider } from '../../lib/providers/openrouter-provider';
+import { OpenRouterProvider, type TokenUsage } from '../../lib/providers/openrouter-provider';
+import { getContextWindow } from '../../lib/providers/model-context-windows';
 
-/** Max messages before compressing old history into a summary. */
-const SUMMARY_THRESHOLD = 20;
+/** Fraction of the context window that triggers history compression. */
+const COMPRESS_AT = 0.75;
 /** How many recent messages to always keep verbatim. */
 const KEEP_RECENT = 8;
 
+/** Rough char-to-token estimate when no real token data is available. */
+function estimateTokens(messages: Message[]): number {
+  return messages.reduce((sum, m) => sum + Math.ceil(m.content.length / 4), 0);
+}
+
 /**
- * Compress conversation history when it exceeds SUMMARY_THRESHOLD.
- * Takes the oldest (length - KEEP_RECENT) messages, asks the model to
- * summarize them, and returns [summaryMessage, ...recentMessages].
- * Falls back to returning the original history if summarization fails.
+ * Compress conversation history when prompt token usage approaches the
+ * model's context window limit.  Uses real token data from the last
+ * assistant message when available, falls back to character estimation.
  */
 async function compressHistory(messages: Message[], mode: Mode, apiKey: string): Promise<Message[]> {
-  if (messages.length <= SUMMARY_THRESHOLD) return messages;
+  const contextLimit = getContextWindow(mode.modelId);
+  const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant' && m.promptTokens != null);
+  const currentTokens = lastAssistant?.promptTokens ?? estimateTokens(messages);
+  if (currentTokens < contextLimit * COMPRESS_AT) return messages;
 
   const toSummarize = messages.slice(0, messages.length - KEEP_RECENT);
   const recent = messages.slice(messages.length - KEEP_RECENT);
@@ -59,6 +67,9 @@ async function compressHistory(messages: Message[], mode: Mode, apiKey: string):
     modeId: null,
     modelId: mode.modelId,
     createdAt: toSummarize[0]?.createdAt ?? new Date().toISOString(),
+    promptTokens: null,
+    completionTokens: null,
+    totalTokens: null,
   };
 
   return [summaryMsg, ...recent];
@@ -176,6 +187,9 @@ export function registerConversationsHandlers(): void {
       modeId: null,
       modelId: null,
       createdAt: new Date().toISOString(),
+      promptTokens: null,
+      completionTokens: null,
+      totalTokens: null,
     };
     localDb.insertMessage(userMsg);
 
@@ -213,12 +227,14 @@ export function registerConversationsHandlers(): void {
 
     // Stream orchestrator response
     let fullContent = '';
+    let primaryUsage: TokenUsage | undefined;
     await runOrchestrator(effectiveHistory, requestedMode, apiKey, {
       onToken: (token) => {
         event.sender.send('conversations:streamToken', { conversationId: args.conversationId, token });
       },
-      onDone: (content) => {
+      onDone: (content, usage) => {
         fullContent = content;
+        primaryUsage = usage;
       },
       onError: (error) => {
         event.sender.send('conversations:streamError', { conversationId: args.conversationId, error });
@@ -255,17 +271,21 @@ export function registerConversationsHandlers(): void {
             modeId: requestedMode.id,
             modelId: requestedMode.modelId,
             createdAt: new Date().toISOString(),
+            promptTokens: null,
+            completionTokens: null,
+            totalTokens: null,
           }
         ];
 
         let specialistContent = '';
+        let specialistUsage: TokenUsage | undefined;
         await runOrchestrator(specialistMessages, specialistMode, apiKey, {
           onToken: (token) => {
-            // Stream specialist tokens too
             event.sender.send('conversations:streamToken', { conversationId: args.conversationId, token });
           },
-          onDone: (content) => {
+          onDone: (content, usage) => {
             specialistContent = content;
+            specialistUsage = usage;
           },
           onError: (error) => {
             sendExecEvent(`${specialistMode.name} error: ${error}`, 'error');
@@ -274,7 +294,6 @@ export function registerConversationsHandlers(): void {
 
         if (specialistContent) {
           sendExecEvent(`${specialistMode.name} completed`, 'specialist');
-          // Save specialist response as assistant message
           const specialistMsg: Message = {
             id: crypto.randomUUID(),
             conversationId: args.conversationId,
@@ -283,6 +302,9 @@ export function registerConversationsHandlers(): void {
             modeId: specialistMode.id,
             modelId: specialistMode.modelId,
             createdAt: new Date().toISOString(),
+            promptTokens: specialistUsage?.promptTokens ?? null,
+            completionTokens: specialistUsage?.completionTokens ?? null,
+            totalTokens: specialistUsage?.totalTokens ?? null,
           };
           localDb.insertMessage(specialistMsg);
           if (syncEngine) {
@@ -303,6 +325,9 @@ export function registerConversationsHandlers(): void {
       modeId: requestedMode.id,
       modelId: requestedMode.modelId,
       createdAt: new Date().toISOString(),
+      promptTokens: primaryUsage?.promptTokens ?? null,
+      completionTokens: primaryUsage?.completionTokens ?? null,
+      totalTokens: primaryUsage?.totalTokens ?? null,
     };
     localDb.insertMessage(assistantMsg);
 
@@ -310,6 +335,17 @@ export function registerConversationsHandlers(): void {
       syncEngine.pushMessage(assistantMsg).catch(err =>
         console.warn('[main] pushMessage (assistant) failed (non-fatal):', err)
       );
+    }
+
+    // Push token usage to renderer so BottomBar can update context meter
+    if (primaryUsage) {
+      event.sender.send('conversations:tokenUsage', {
+        conversationId: args.conversationId,
+        promptTokens: primaryUsage.promptTokens,
+        completionTokens: primaryUsage.completionTokens,
+        totalTokens: primaryUsage.totalTokens,
+        modelId: requestedMode.modelId,
+      });
     }
 
     event.sender.send('conversations:streamDone', { conversationId: args.conversationId });

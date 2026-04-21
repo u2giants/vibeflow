@@ -102,6 +102,9 @@ export interface Message {
   modeId: string | null;
   modelId: string | null;
   createdAt: string;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  totalTokens: number | null;
 }
 
 export interface ExecutionEvent {

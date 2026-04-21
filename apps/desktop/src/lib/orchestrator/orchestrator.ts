@@ -9,11 +9,11 @@
  */
 
 import type { Message, Mode } from '../shared-types';
-import { OpenRouterProvider, type OpenRouterStreamCallbacks } from '../providers/openrouter-provider';
+import { OpenRouterProvider, type OpenRouterStreamCallbacks, type TokenUsage } from '../providers/openrouter-provider';
 
 export interface OrchestratorCallbacks {
   onToken: (token: string) => void;
-  onDone: (fullContent: string) => void;
+  onDone: (fullContent: string, usage?: TokenUsage) => void;
   onError: (error: string) => void;
 }
 
@@ -27,7 +27,7 @@ export async function runOrchestrator(
 
   const streamCallbacks: OpenRouterStreamCallbacks = {
     onToken: callbacks.onToken,
-    onDone: callbacks.onDone,
+    onDone: (content, usage) => callbacks.onDone(content, usage),
     onError: callbacks.onError,
   };
 

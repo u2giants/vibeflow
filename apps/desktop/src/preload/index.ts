@@ -4,7 +4,7 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
-import type { VibeFlowAPI, CreateConversationArgs, SendMessageArgs, StreamTokenData, StreamDoneData, StreamErrorData, TerminalRunArgs, GitCommitArgs, GitPushArgs, SshHost, ProjectDevOpsConfig, ActionRequest, HumanDecisionArgs, GenerateHandoffArgs, DecomposeMissionArgs, AssignRoleArgs, McpServerConfig, CapabilityHealth, ContextPackOptions, ContextPackUpdates, CreateWorkspaceRunArgs, ApplyPatchArgs, CommitWorkspaceArgs, AuditHistoryFilter, RuntimeStartArgs, BrowserSessionArgs, SecretRecord, MigrationPlan, MigrationRiskClass, Environment, DeployWorkflow, DriftReport, DeployInitiateArgs, WatchStartSessionArgs, SelfHealingExecuteArgs, UpdateModeConfigArgs, ExecutionEventData, CreateSshTargetArgs, MissionStartArgs } from '../lib/shared-types';
+import type { VibeFlowAPI, CreateConversationArgs, SendMessageArgs, StreamTokenData, StreamDoneData, StreamErrorData, TerminalRunArgs, GitCommitArgs, GitPushArgs, SshHost, ProjectDevOpsConfig, ActionRequest, HumanDecisionArgs, GenerateHandoffArgs, DecomposeMissionArgs, AssignRoleArgs, McpServerConfig, CapabilityHealth, ContextPackOptions, ContextPackUpdates, CreateWorkspaceRunArgs, ApplyPatchArgs, CommitWorkspaceArgs, AuditHistoryFilter, RuntimeStartArgs, BrowserSessionArgs, SecretRecord, MigrationPlan, MigrationRiskClass, Environment, DeployWorkflow, DriftReport, DeployInitiateArgs, WatchStartSessionArgs, SelfHealingExecuteArgs, UpdateModeConfigArgs, ExecutionEventData, CreateSshTargetArgs, MissionStartArgs, ConversationTokenUsage } from '../lib/shared-types';
 import { SyncStatus } from '../lib/shared-types';
 
 const api: VibeFlowAPI = {
@@ -81,6 +81,10 @@ const api: VibeFlowAPI = {
     onExecutionEvent: (callback: (data: ExecutionEventData) => void) => {
       ipcRenderer.removeAllListeners('conversations:executionEvent');
       ipcRenderer.on('conversations:executionEvent', (_event, data) => callback(data));
+    },
+    onTokenUsage: (callback: (data: ConversationTokenUsage) => void) => {
+      ipcRenderer.removeAllListeners('conversations:tokenUsage');
+      ipcRenderer.on('conversations:tokenUsage', (_event, data) => callback(data));
     },
     removeStreamListeners: () => {
       ipcRenderer.removeAllListeners('conversations:streamToken');

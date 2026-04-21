@@ -229,6 +229,9 @@ export class SyncEngine {
           modeId: row.mode_id ?? null,
           modelId: row.model_id ?? null,
           createdAt: row.created_at,
+          promptTokens: null,
+          completionTokens: null,
+          totalTokens: null,
         };
         this.localDb.upsertMessage(msg);
       }
@@ -795,6 +798,9 @@ export class SyncEngine {
         modeId: (data.new.mode_id as string) ?? null,
         modelId: (data.new.model_id as string) ?? null,
         createdAt: data.new.created_at as string,
+        promptTokens: null,
+        completionTokens: null,
+        totalTokens: null,
       };
       this.localDb.upsertMessage(msg);
       this.emit({ type: 'message-added', data: msg });
