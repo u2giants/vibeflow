@@ -480,6 +480,7 @@ export interface HandoffApi {
 export interface UpdaterChannel {
   downloadUpdate: () => Promise<void>;
   installUpdate: () => Promise<void>;
+  openReleasePage: () => Promise<void>;
   onUpdateAvailable: (callback: (info: { version: string; releaseDate: string }) => void) => void;
   onDownloadProgress: (callback: (progress: { percent: number }) => void) => void;
   onUpdateDownloaded: (callback: (info: { version: string }) => void) => void;

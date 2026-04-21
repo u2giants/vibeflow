@@ -9,7 +9,7 @@
     "preview": "electron-vite preview",
     "package": "electron-builder",
     "typecheck": "tsc --noEmit",
-    "test": "node src/lib/project-intelligence/framework-detector.test.cjs && node src/lib/runtime-execution/browser-automation-service.test.cjs"
+    "test": "node src/lib/project-intelligence/framework-detector.test.cjs && node src/lib/runtime-execution/browser-automation-service.test.cjs && node src/lib/approval/approval-engine.test.cjs && node src/lib/verification/verification-engine.test.cjs && node src/lib/memory/memory-lifecycle.test.cjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.47.0",

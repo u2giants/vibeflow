@@ -105,6 +105,7 @@ app.whenReady().then(async () => {
     await state.localDb.init();
     console.log('[main] Local SQLite DB initialized at', dbPath);
     state.localDb.seedDefaultModes(DEFAULT_MODES);
+    state.localDb.refreshBuiltInModeSouls(DEFAULT_MODES);
     state.localDb.migrateDefaultModelId('anthropic/claude-sonnet-4-5', 'anthropic/claude-sonnet-4-6');
     console.log('[main] Default modes seeded');
 

@@ -5,11 +5,64 @@
 import { ipcMain } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import keytar from 'keytar';
-import type { CreateConversationArgs, SendMessageArgs, Message, MissionStartArgs, Mission } from '../../lib/shared-types';
+import type { CreateConversationArgs, SendMessageArgs, Message, MissionStartArgs, Mission, Mode } from '../../lib/shared-types';
 import { localDb, mainWindow, syncEngine, KEYTAR_SERVICE, KEYTAR_OPENROUTER_KEY, orchestrationEngine, changeEngine, verificationEngine, watchEngine } from './state';
 import { getCurrentUserId } from './helpers';
 import { runOrchestrator } from '../../lib/orchestrator/orchestrator';
 import { MissionOrchestrator } from '../mission-orchestrator';
+import { OpenRouterProvider } from '../../lib/providers/openrouter-provider';
+
+/** Max messages before compressing old history into a summary. */
+const SUMMARY_THRESHOLD = 20;
+/** How many recent messages to always keep verbatim. */
+const KEEP_RECENT = 8;
+
+/**
+ * Compress conversation history when it exceeds SUMMARY_THRESHOLD.
+ * Takes the oldest (length - KEEP_RECENT) messages, asks the model to
+ * summarize them, and returns [summaryMessage, ...recentMessages].
+ * Falls back to returning the original history if summarization fails.
+ */
+async function compressHistory(messages: Message[], mode: Mode, apiKey: string): Promise<Message[]> {
+  if (messages.length <= SUMMARY_THRESHOLD) return messages;
+
+  const toSummarize = messages.slice(0, messages.length - KEEP_RECENT);
+  const recent = messages.slice(messages.length - KEEP_RECENT);
+
+  const historyText = toSummarize
+    .map(m => `${m.role.toUpperCase()}: ${m.content}`)
+    .join('\n\n');
+
+  const provider = new OpenRouterProvider(apiKey);
+  let summary = '';
+  await provider.stream(
+    {
+      model: mode.modelId,
+      systemPrompt: 'You are a conversation summarizer. Summarize the following conversation history concisely, preserving key decisions, context, and any unresolved questions. Return only the summary, no preamble.',
+      messages: [{ role: 'user', content: historyText }],
+      temperature: 0.3,
+    },
+    {
+      onToken: () => {},
+      onDone: (content) => { summary = content; },
+      onError: (err) => { console.warn('[conversations] summarization failed:', err); },
+    }
+  );
+
+  if (!summary) return messages;
+
+  const summaryMsg: Message = {
+    id: crypto.randomUUID(),
+    conversationId: messages[0]?.conversationId ?? '',
+    role: 'user',
+    content: `[Summary of earlier conversation]\n${summary}`,
+    modeId: null,
+    modelId: mode.modelId,
+    createdAt: toSummarize[0]?.createdAt ?? new Date().toISOString(),
+  };
+
+  return [summaryMsg, ...recent];
+}
 
 export function registerConversationsHandlers(): void {
   ipcMain.handle('conversations:list', async (_event, projectId: string) => {
@@ -152,9 +205,15 @@ export function registerConversationsHandlers(): void {
 
     sendExecEvent(`Running ${requestedMode.name}...`, 'info');
 
+    // Compress long conversation history before sending to the model
+    const effectiveHistory = await compressHistory(history, requestedMode, apiKey);
+    if (effectiveHistory.length < history.length) {
+      sendExecEvent(`Summarized ${history.length - effectiveHistory.length + 1} earlier messages to stay within context`, 'info');
+    }
+
     // Stream orchestrator response
     let fullContent = '';
-    await runOrchestrator(history, requestedMode, apiKey, {
+    await runOrchestrator(effectiveHistory, requestedMode, apiKey, {
       onToken: (token) => {
         event.sender.send('conversations:streamToken', { conversationId: args.conversationId, token });
       },

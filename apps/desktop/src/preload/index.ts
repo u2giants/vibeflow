@@ -167,6 +167,7 @@ const api: VibeFlowAPI = {
   updater: {
     downloadUpdate: () => ipcRenderer.invoke('updater:downloadUpdate'),
     installUpdate: () => ipcRenderer.invoke('updater:installUpdate'),
+    openReleasePage: () => ipcRenderer.invoke('updater:openReleasePage'),
     onUpdateAvailable: (callback: (info: { version: string; releaseDate: string }) => void) => {
       ipcRenderer.on('updater:update-available', (_event, info) => callback(info));
     },

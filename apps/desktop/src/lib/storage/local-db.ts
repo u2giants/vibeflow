@@ -1046,6 +1046,41 @@ export class LocalDb {
       // Column already exists — safe to skip
     }
 
+    // ── Component 14: back-fill capabilities dual-schema rows ──
+    // Rows created before Component 14 have data in old columns (type, permissions_json)
+    // but NULL in new columns (class, owner, actions_json). Normalize them now.
+    try {
+      this.db!.run(`
+        UPDATE capabilities
+        SET class = CASE WHEN type = 'mcp' THEN 'mcp' ELSE 'direct-api' END
+        WHERE class IS NULL
+      `);
+      this.db!.run(`
+        UPDATE capabilities
+        SET owner = 'builtin'
+        WHERE owner IS NULL
+      `);
+      this.db!.run(`
+        UPDATE capabilities
+        SET description = ''
+        WHERE description IS NULL
+      `);
+      this.db!.run(`
+        UPDATE capabilities
+        SET scope = ''
+        WHERE scope IS NULL
+      `);
+      this.db!.run(`
+        UPDATE capabilities
+        SET actions_json = permissions_json
+        WHERE (actions_json IS NULL OR actions_json = '[]')
+          AND permissions_json IS NOT NULL
+          AND permissions_json != '[]'
+      `);
+    } catch (err) {
+      console.warn('[local-db] capabilities back-fill migration failed (non-fatal):', err);
+    }
+
     this.save();
   }
 
@@ -1250,6 +1285,26 @@ export class LocalDb {
     for (const mode of modes) {
       this.upsertMode({ ...mode, createdAt: now, updatedAt: now } as Mode);
     }
+  }
+
+  /**
+   * Update the soul of built-in modes when the default soul has changed,
+   * but only if the user hasn't customized it (detected by absence of a
+   * sentinel string that the new soul contains).
+   */
+  refreshBuiltInModeSouls(modes: Omit<Mode, 'createdAt' | 'updatedAt'>[]): void {
+    const now = new Date().toISOString();
+    for (const def of modes) {
+      if (!def.isBuiltIn) continue;
+      const existing = this.getMode(def.id);
+      if (!existing) continue;
+      // Only update if the current soul is missing delegation syntax
+      // that the new soul introduces — this means it's still the old default.
+      if (existing.soul.includes('<delegate mode=')) continue;
+      if (!def.soul.includes('<delegate mode=')) continue;
+      this.db!.run('UPDATE modes SET soul = ?, updated_at = ? WHERE id = ? AND is_built_in = 1', [def.soul, now, def.id]);
+    }
+    this.save();
   }
 
   migrateDefaultModelId(oldId: string, newId: string): void {

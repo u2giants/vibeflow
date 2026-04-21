@@ -34,14 +34,22 @@ export default function UpdateBanner() {
       {state === 'available' && (
         <>
           <span>Update available: <strong>v{version}</strong></span>
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <button onClick={() => window.vibeflow.updater.downloadUpdate()} style={{
               padding: '3px 10px', backgroundColor: C.accent, color: '#fff',
               border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 11, fontWeight: 600,
             }}>Install</button>
+            <button
+              onClick={() => window.vibeflow.updater.openReleasePage()}
+              style={{
+                padding: '3px 10px', backgroundColor: 'transparent', color: C.text2,
+                border: `1px solid ${C.border2}`, borderRadius: 4, cursor: 'pointer', fontSize: 11,
+              }}
+              title="Open GitHub Releases in browser"
+            >Download manually</button>
             <button onClick={() => setState(null)} style={{
               padding: '3px 10px', backgroundColor: 'transparent', color: C.text2,
-              border: `1px solid ${C.border2}`, borderRadius: 4, cursor: 'pointer', fontSize: 11,
+              border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 11,
             }}>Later</button>
           </div>
         </>
