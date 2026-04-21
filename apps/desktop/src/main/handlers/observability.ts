@@ -4,7 +4,7 @@
 
 import { ipcMain } from 'electron';
 import type { WatchStartSessionArgs, SelfHealingExecuteArgs, Incident, AnomalyEvent, WatchSession, SelfHealingAction, WatchDashboard } from '../../lib/shared-types';
-import { localDb, watchEngine } from './state';
+import { localDb, watchEngine, syncEngine } from './state';
 
 export function registerObservabilityHandlers(): void {
   // ── Component 21: Watch IPC ───────────────────────────────────────────────
@@ -62,12 +62,24 @@ export function registerObservabilityHandlers(): void {
   ipcMain.handle('incident:resolve', async (_event, id: string): Promise<{ success: boolean }> => {
     if (!localDb) return { success: false };
     localDb.updateIncident(id, { status: 'resolved', resolvedAt: new Date().toISOString() });
+    const updated = localDb.getIncident(id);
+    if (updated && syncEngine) {
+      syncEngine.pushIncident(updated).catch(err =>
+        console.warn('[main] pushIncident (resolve) failed (non-fatal):', err)
+      );
+    }
     return { success: true };
   });
 
   ipcMain.handle('incident:dismiss', async (_event, id: string): Promise<{ success: boolean }> => {
     if (!localDb) return { success: false };
     localDb.updateIncident(id, { status: 'dismissed', resolvedAt: new Date().toISOString() });
+    const updated = localDb.getIncident(id);
+    if (updated && syncEngine) {
+      syncEngine.pushIncident(updated).catch(err =>
+        console.warn('[main] pushIncident (dismiss) failed (non-fatal):', err)
+      );
+    }
     return { success: true };
   });
 

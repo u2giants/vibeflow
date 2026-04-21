@@ -16,6 +16,7 @@ import {
   changeEngine,
   verificationEngine,
   watchEngine,
+  syncEngine,
 } from './state';
 
 /** Module-level map of missionId → active MissionOrchestrator instance. */
@@ -48,6 +49,9 @@ export function registerMissionsHandlers(): void {
       updatedAt: now,
     };
     localDb.insertMission(mission);
+    syncEngine?.pushMission(mission).catch(err =>
+      console.warn('[main] pushMission failed (non-fatal):', err)
+    );
 
     // 2. Create initial MissionLifecycleState
     localDb.upsertMissionLifecycleState({
@@ -107,6 +111,12 @@ export function registerMissionsHandlers(): void {
     // Persist cancelled status even if no orchestrator is active
     if (localDb) {
       localDb.updateMission(missionId, { status: 'cancelled' });
+      const updated = localDb.getMission(missionId);
+      if (updated && syncEngine) {
+        syncEngine.pushMission(updated).catch(err =>
+          console.warn('[main] pushMission (cancel) failed (non-fatal):', err)
+        );
+      }
     }
   });
 
@@ -142,6 +152,12 @@ export function registerMissionsHandlers(): void {
       updatedAt: now,
     });
     localDb.updateMission(missionId, { status: 'draft' });
+    const retried = localDb.getMission(missionId);
+    if (retried && syncEngine) {
+      syncEngine.pushMission(retried).catch(err =>
+        console.warn('[main] pushMission (retry) failed (non-fatal):', err)
+      );
+    }
 
     // Spawn a fresh orchestrator and re-run
     const orchestrator = new MissionOrchestrator(
