@@ -72,10 +72,14 @@ export default function App() {
 
   const handleSignedIn = async (userEmail: string) => {
     setEmail(userEmail);
-    // Prompt for passphrase if not already set — ensures secrets sync is visible from day one
+    // Prompt for passphrase once ever — only if the user hasn't dismissed it before.
+    // We track this in localStorage (persists across restarts in Electron).
     try {
-      const has = await window.vibeflow.secrets.hasPassphrase();
-      if (!has) setShowPassphraseOnboarding(true);
+      const alreadySeen = localStorage.getItem('passphrase-onboarding-dismissed');
+      if (!alreadySeen) {
+        const has = await window.vibeflow.secrets.hasPassphrase();
+        if (!has) setShowPassphraseOnboarding(true);
+      }
     } catch {
       // Non-fatal — proceed without passphrase prompt
     }
@@ -111,9 +115,16 @@ export default function App() {
     return <SignInScreen onSignedIn={handleSignedIn} />;
   }
 
-  // Passphrase onboarding — shown once per session after first sign-in
+  // Passphrase onboarding — shown once ever (dismissed flag persisted in localStorage)
   if (showPassphraseOnboarding) {
-    return <PassphraseOnboarding onDone={() => setShowPassphraseOnboarding(false)} />;
+    return (
+      <PassphraseOnboarding
+        onDone={() => {
+          localStorage.setItem('passphrase-onboarding-dismissed', '1');
+          setShowPassphraseOnboarding(false);
+        }}
+      />
+    );
   }
 
   // Component 10: Project screen with left rail + panel layout

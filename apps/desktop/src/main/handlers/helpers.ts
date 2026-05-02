@@ -4,11 +4,51 @@
 
 import * as os from 'os';
 import * as path from 'path';
+import * as fs from 'fs';
 import { app, BrowserWindow } from 'electron';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { localDb, supabase, container as state } from './state';
 import { SyncEngine } from '../../lib/sync/sync-engine';
 import { SecretsSync } from '../../lib/secrets/secrets-sync';
+
+// ── File-based Supabase session storage ───────────────────────────────────────
+// Node.js has no localStorage, so the default Supabase client drops the session
+// on every process exit. We persist it as JSON in the Electron userData directory
+// so the user stays signed in across pnpm dev / app restarts.
+
+function sessionFilePath(): string {
+  return path.join(app.getPath('userData'), 'vibeflow-session.json');
+}
+
+function readSessionStore(): Record<string, string> {
+  try {
+    return JSON.parse(fs.readFileSync(sessionFilePath(), 'utf-8')) as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
+function writeSessionStore(store: Record<string, string>): void {
+  try {
+    fs.writeFileSync(sessionFilePath(), JSON.stringify(store), 'utf-8');
+  } catch (err) {
+    console.warn('[main] Failed to write session store:', err);
+  }
+}
+
+const fileSessionStorage = {
+  getItem: (key: string): string | null => readSessionStore()[key] ?? null,
+  setItem: (key: string, value: string): void => {
+    const store = readSessionStore();
+    store[key] = value;
+    writeSessionStore(store);
+  },
+  removeItem: (key: string): void => {
+    const store = readSessionStore();
+    delete store[key];
+    writeSessionStore(store);
+  },
+};
 
 export function getSupabaseClient(): SupabaseClient | null {
   if (supabase) return supabase;
@@ -20,7 +60,13 @@ export function getSupabaseClient(): SupabaseClient | null {
     return null;
   }
 
-  const client = createClient(supabaseUrl, anonKey);
+  const client = createClient(supabaseUrl, anonKey, {
+    auth: {
+      storage: fileSessionStorage,
+      autoRefreshToken: true,
+      persistSession: true,
+    },
+  });
   state.supabase = client;
   return client;
 }

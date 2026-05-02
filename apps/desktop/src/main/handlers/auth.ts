@@ -242,6 +242,14 @@ export function registerAuthHandlers(): void {
         return { email: null };
       }
       const { data } = await client.auth.getSession();
+      const userId = data.session?.user?.id;
+      // If a session was restored from file storage, init sync (normally only
+      // done inside signInWithGitHub, but that handler is skipped on restart).
+      if (userId && !state.syncEngine) {
+        initSyncEngine(userId).catch((err) =>
+          console.warn('[main] initSyncEngine on session restore failed:', err)
+        );
+      }
       return { email: data.session?.user?.email ?? null };
     }
   );
