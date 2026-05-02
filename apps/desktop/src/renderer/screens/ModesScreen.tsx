@@ -16,8 +16,11 @@ function ModelDropdown({
   onChange: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
   const ref = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
+  // Close on outside click
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
@@ -27,11 +30,25 @@ function ModelDropdown({
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
+  // Auto-focus search input when dropdown opens; clear query on close
+  useEffect(() => {
+    if (open) {
+      setTimeout(() => searchRef.current?.focus(), 0);
+    } else {
+      setQuery('');
+    }
+  }, [open]);
+
   const selected = models.find((m) => m.id === value);
   const displayName = selected ? selected.name : value;
 
   const fmtPrice = (n: number) =>
     n === 0 ? 'free' : n < 0.01 ? `$${n.toFixed(4)}` : `$${n.toFixed(2)}`;
+
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? models.filter((m) => m.name.toLowerCase().includes(q) || m.id.toLowerCase().includes(q))
+    : models;
 
   return (
     <div ref={ref} style={{ position: 'relative', flex: 1 }}>
@@ -60,7 +77,7 @@ function ModelDropdown({
         </svg>
       </div>
 
-      {/* Dropdown list */}
+      {/* Dropdown */}
       {open && (
         <div style={{
           position: 'absolute',
@@ -73,14 +90,71 @@ function ModelDropdown({
           border: `1px solid ${C.border2}`,
           borderRadius: R.lg,
           boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-          maxHeight: 320,
+          maxHeight: 360,
           overflowY: 'auto',
         }}>
-          {/* Header row */}
+          {/* Search input — sticky at top */}
+          <div style={{
+            position: 'sticky',
+            top: 0,
+            backgroundColor: C.bg3,
+            borderBottom: `1px solid ${C.border}`,
+            padding: '8px 10px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}>
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, opacity: 0.4 }}>
+              <circle cx="6.5" cy="6.5" r="4.5" stroke={C.text2} strokeWidth="1.5"/>
+              <path d="M10.5 10.5L14 14" stroke={C.text2} strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
+            <input
+              ref={searchRef}
+              type="text"
+              placeholder="Search models…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') { setOpen(false); }
+                if (e.key === 'Enter' && filtered.length > 0) {
+                  onChange(filtered[0].id);
+                  setOpen(false);
+                }
+              }}
+              style={{
+                flex: 1,
+                background: 'transparent',
+                border: 'none',
+                outline: 'none',
+                color: C.text1,
+                fontSize: 13,
+                fontFamily: 'inherit',
+              }}
+            />
+            {query && (
+              <button
+                onClick={() => setQuery('')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: C.text3,
+                  fontSize: 14,
+                  lineHeight: 1,
+                  padding: 0,
+                  flexShrink: 0,
+                }}
+              >
+                ×
+              </button>
+            )}
+          </div>
+
+          {/* Column header */}
           <div style={{
             display: 'flex',
             justifyContent: 'space-between',
-            padding: '6px 12px',
+            padding: '5px 12px',
             borderBottom: `1px solid ${C.border}`,
             fontSize: 10,
             color: C.text3,
@@ -88,15 +162,15 @@ function ModelDropdown({
             textTransform: 'uppercase',
             letterSpacing: '0.06em',
             position: 'sticky',
-            top: 0,
+            top: 37,
             backgroundColor: C.bg3,
           }}>
-            <span>Model</span>
+            <span>Model {q && filtered.length > 0 ? `(${filtered.length})` : ''}</span>
             <span>Input / Output per 1M tokens</span>
           </div>
 
-          {/* Current value if not in list */}
-          {models.length > 0 && !models.some((m) => m.id === value) && (
+          {/* Current value not in list */}
+          {!q && models.length > 0 && !models.some((m) => m.id === value) && (
             <ModelOption
               name={value}
               subtitle="(current — not in refreshed list)"
@@ -107,13 +181,22 @@ function ModelDropdown({
             />
           )}
 
+          {/* No API key */}
           {models.length === 0 && (
             <div style={{ padding: '12px', fontSize: 13, color: C.text3, textAlign: 'center' }}>
               Enter an API key to see available models
             </div>
           )}
 
-          {models.map((m) => (
+          {/* No search results */}
+          {models.length > 0 && filtered.length === 0 && (
+            <div style={{ padding: '12px', fontSize: 13, color: C.text3, textAlign: 'center' }}>
+              No models match "{query}"
+            </div>
+          )}
+
+          {/* Model list */}
+          {filtered.map((m) => (
             <ModelOption
               key={m.id}
               name={m.name}
